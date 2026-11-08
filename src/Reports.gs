@@ -104,7 +104,7 @@ function buildDay_(date, info, sum, leave, ended) {
     isLate: false, lateMinutes: 0, earlyLeave: false,
     missingIn: false, missingOut: false, inProgress: false,
     leave: leave ? {
-      id: leave.LeaveID, type: leave.LeaveType, typeLabel: LEAVE_TYPES[leave.LeaveType] || leave.LeaveType,
+      id: leave.LeaveID, type: leave.LeaveType, typeLabel: leaveTypeLabel_(leave),
       period: leave.Period || 'FULL', periodLabel: LEAVE_PERIODS[leave.Period || 'FULL']
     } : null
   };
@@ -491,7 +491,7 @@ function reportIndividual_(ctx, p) {
     return l.EmployeeID === emp.EmployeeID && l.EndDate >= from && l.StartDate <= to && l.Status !== 'CANCELLED';
   }).map(function (l, i) {
     return {
-      no: i + 1, type: LEAVE_TYPES[l.LeaveType] || l.LeaveType,
+      no: i + 1, type: leaveTypeLabel_(l),
       period: thaiDate_(l.StartDate, 'short') + (l.EndDate !== l.StartDate ? ' – ' + thaiDate_(l.EndDate, 'short') : '') +
         (l.Period && l.Period !== 'FULL' ? ' (' + LEAVE_PERIODS[l.Period] + ')' : ''),
       days: l.Days, status: REQUEST_STATUS_LABELS[l.Status], reason: l.Reason

@@ -83,6 +83,11 @@ function getAdminOverview_(ctx) {
   var warnings = [];
   if (!s.geofenceConfigured) warnings.push('ยังไม่ได้ตั้งค่าพิกัดโรงเรียน บุคลากรจะยังไม่สามารถลงเวลาได้');
   if (!s.settingsConfirmed) warnings.push('การตั้งค่าเวลาทำงาน/รัศมี GPS ยังเป็นค่าตัวอย่าง กรุณาตรวจสอบให้ตรงกับระเบียบของโรงเรียนแล้วกดยืนยันในหน้าตั้งค่า');
+  var storage = driveStorageInfo_();
+  if (storage && storage.percent >= 85) {
+    warnings.push('พื้นที่ Google Drive ของบัญชีระบบใช้ไปแล้ว ' + storage.percent + '% (' + storage.usedLabel + ' จาก ' + storage.limitLabel +
+      ') หากเต็ม ระบบจะบันทึกการลงเวลาไม่ได้ กรุณาลบไฟล์ที่ไม่ใช้/ล้างถังขยะ/ลบอีเมลเก่า หรือเพิ่มพื้นที่');
+  }
   var info = getDayInfo_(today, s);
   return {
     date: today,
@@ -92,6 +97,7 @@ function getAdminOverview_(ctx) {
     serverNow: nowMs_(),
     workEnd: s.workEnd,
     counts: c,
+    storage: storage,
     pending: {
       registrations: allEmps.filter(function (e) { return e.Status === EMP_STATUS.PENDING; }).length,
       leaves: readAll_('LeaveRequests').filter(function (r) { return r.Status === 'PENDING'; }).length,
@@ -102,6 +108,18 @@ function getAdminOverview_(ctx) {
     today: list,
     warnings: warnings
   };
+}
+
+/** พื้นที่ Google Drive ของบัญชีที่ใช้ติดตั้งระบบ (ใช้ร่วมกับ Gmail/Google Photos) */
+function driveStorageInfo_() {
+  try {
+    var used = DriveApp.getStorageUsed(), limit = DriveApp.getStorageLimit();
+    if (!limit || limit <= 0) return null; // ไม่จำกัด (เช่น บางบัญชีองค์กร)
+    function gb(b) { return round_(b / Math.pow(1024, 3), 2) + ' GB'; }
+    return { used: used, limit: limit, percent: Math.round(used / limit * 100), usedLabel: gb(used), limitLabel: gb(limit) };
+  } catch (e) {
+    return null;
+  }
 }
 
 /* ========================================================================== */
@@ -362,6 +380,7 @@ var SETTING_RULES_ = {
   GPS_RETENTION_DAYS: { type: 'int', min: 30, max: 3650, label: 'ระยะเวลาเก็บพิกัด GPS (วัน)' },
   CORRECTION_MAX_DAYS: { type: 'int', min: 1, max: 365, label: 'ยื่นคำร้องย้อนหลังได้ (วัน)' },
   ALLOW_REGISTRATION: { type: 'bool', label: 'เปิดรับสมัครสมาชิก' },
+  LEAVE_REQUIRES_APPROVAL: { type: 'bool', label: 'การลาที่บุคลากรบันทึกเองต้องรออนุมัติ' },
   SETTINGS_CONFIRMED: { type: 'bool', label: 'ยืนยันการตั้งค่า' }
 };
 
@@ -376,6 +395,7 @@ function getSettingsForAdmin_(ctx) {
     values: values,
     descriptions: desc,
     schoolMaps: s.geofenceConfigured ? mapLinks_(s.schoolLat, s.schoolLng) : null,
+    storage: driveStorageInfo_(),
     serverTime: thaiDate_(todayStr_(), 'long') + ' ' + nowTimeStr_() + ' น.',
     timezone: APP.TZ
   };

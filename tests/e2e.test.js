@@ -223,19 +223,36 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
     await outsider.waitForSelector('#zoneResult.out:not([hidden])', { timeout: 15000 });
   });
 
-  await step('E11', 'ครูยื่นใบลาพร้อมไฟล์แนบ (PNG) → แสดงในรายการ "รออนุมัติ"', async () => {
+  await step('E11', 'ครูแจ้งลาแบบแตะครั้งเดียว: เลือกวัน → แตะ "ลาป่วย" → กล่องยืนยัน (แนบไฟล์ได้) → รออนุมัติ', async () => {
     await teacher.click('#userTabs [data-tab="leave"]');
-    await teacher.selectOption('#leaveType', 'SICK');
-    await teacher.fill('#leaveStart', '2026-11-10');
-    await teacher.dispatchEvent('#leaveStart', 'change');
-    await teacher.fill('#leaveReason', 'มีไข้ ไปพบแพทย์ <img src=x onerror="window.__xss=1">');
+    await teacher.waitForSelector('#leaveTypeGrid [data-type="SICK"]');
+    assert.strictEqual(await teacher.inputValue('#leaveStart'), '2026-11-09'); // ค่าเริ่มต้น = วันนี้
+    await teacher.click('#lvQuickDay [data-val="tomorrow"]');
+    assert.strictEqual(await teacher.inputValue('#leaveStart'), '2026-11-10');
+    await teacher.evaluate(() => window.scrollTo(0, 0));
+    await shot(teacher, '11-leave-quick-mobile.png');
+    await teacher.click('#leaveTypeGrid [data-type="SICK"]');
+    await teacher.locator('.modal', { hasText: 'ยืนยันการลา' }).waitFor();
+    assert.ok(/ลาป่วย/.test(await teacher.textContent('.modal .leave-summary')) && /10 พฤศจิกายน/.test(await teacher.textContent('.modal .leave-summary')));
+    await teacher.fill('#lcReason', 'มีไข้ ไปพบแพทย์ <img src=x onerror="window.__xss=1">');
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
-    await teacher.setInputFiles('#leaveForm input[type=file]', { name: 'medical-cert.png', mimeType: 'image/png', buffer: png });
-    await teacher.click('#leaveForm button[type=submit]');
+    await teacher.setInputFiles('#lcFile', { name: 'medical-cert.png', mimeType: 'image/png', buffer: png });
+    await shot(teacher, '12-leave-confirm-mobile.png');
+    await modalAction(teacher, 'ยืนยันการลา');
     await toast(teacher, /ส่งใบลาเรียบร้อย/);
     await teacher.locator('#myLeaves .req-card', { hasText: 'ลาป่วย' }).waitFor();
     assert.ok(/รออนุมัติ/.test(await teacher.textContent('#myLeaves')));
     assert.ok(await teacher.locator('#myLeaves [data-view-att]').count() === 1);
+    // ประเภท "อื่น ๆ" ต้องพิมพ์ชื่อการลา
+    await teacher.click('#lvQuickDay [data-val="custom"]');
+    await teacher.fill('#leaveStart', '2026-10-01'); await teacher.dispatchEvent('#leaveStart', 'change'); // ย้อนหลังได้
+    await teacher.click('#leaveTypeGrid [data-type="OTHER"]');
+    await modalAction(teacher, 'ยืนยันการลา');
+    await teacher.waitForSelector('.modal [data-field="typeDetail"].has-error');
+    await teacher.fill('#lcDetail', 'ลาไปช่วยเหลือภริยาที่คลอดบุตร');
+    await modalAction(teacher, 'ยืนยันการลา');
+    await toast(teacher, /ลาไปช่วยเหลือภริยาที่คลอดบุตร/);
+    await teacher.locator('#myLeaves .req-card', { hasText: 'ลาไปช่วยเหลือภริยาที่คลอดบุตร' }).waitFor();
   });
 
   await step('E12', 'ครูยื่นคำร้องแก้ไขเวลาเข้างาน (มาถึงก่อนแต่ GPS ขัดข้อง) → แสดงในรายการ', async () => {
@@ -294,6 +311,24 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
     await toast(admin, /ปรับเวลาเรียบร้อย/);
     const logs = app.env.SpreadsheetApp.openById(app.env.state.props.SPREADSHEET_ID).getSheetByName('AttendanceLogs')._records();
     assert.strictEqual(logs.filter(l => l.IsActive === false).length, 1);
+  });
+
+  await step('E22', 'Admin บันทึกการลาให้ครู (เลือกคน → วันที่ → แตะประเภท → ยืนยัน) → อนุมัติทันที', async () => {
+    await admin.click('#adminNav [data-sec="leaves"]');
+    await admin.click('#lvRecordBtn');
+    await admin.waitForSelector('#rlEmp option:nth-child(2)', { state: 'attached' });
+    await admin.locator('#rlTypes [data-type="PERSONAL"]').click();
+    await admin.waitForSelector('[data-field="employeeId"].has-error'); // ต้องเลือกบุคลากรก่อน
+    const empId = await admin.evaluate(() => [...document.querySelectorAll('#rlEmp option')].find(o => /สมศรี/.test(o.textContent)).value);
+    await admin.selectOption('#rlEmp', empId);
+    await admin.click('#rlQuick [data-val="custom"]');
+    await admin.fill('#rlStart', '2026-11-12'); await admin.dispatchEvent('#rlStart', 'change');
+    await admin.locator('#rlTypes [data-type="PERSONAL"]').click();
+    await admin.locator('.modal', { hasText: 'นางสาวสมศรี ใจดี' }).waitFor();
+    await modalAction(admin, 'บันทึกการลา');
+    await toast(admin, /บันทึกการลาให้ นางสาวสมศรี ใจดี เรียบร้อย/);
+    const rec = app.env.SpreadsheetApp.openById(app.env.state.props.SPREADSHEET_ID).getSheetByName('LeaveRequests')._records().find(r => r.StartDate === '2026-11-12');
+    assert.strictEqual(rec.Status, 'APPROVED'); assert.strictEqual(rec.LeaveType, 'PERSONAL');
   });
 
   await step('E15', 'รายงานรายวัน/รายเดือน/รายปี + กราฟ + Export Excel/PDF + พิมพ์รายงาน', async () => {

@@ -80,64 +80,130 @@ function countWorkdays_(from, to) {
   return dateList_(from, to).filter(function (d) { return getDayInfo_(d, s, cal).isWorkday; }).length;
 }
 
+/** ชื่อประเภทการลาสำหรับแสดงผล (ประเภท "อื่น ๆ" ใช้ข้อความที่พิมพ์เอง) */
+function leaveTypeLabel_(r) {
+  if (r.LeaveType === 'OTHER' && r.TypeDetail) return r.TypeDetail;
+  return LEAVE_TYPES[r.LeaveType] || r.LeaveType;
+}
+
+/** บุคลากรยกเลิกเองได้: รออนุมัติ หรืออนุมัติอัตโนมัติ (ไม่มีผู้พิจารณา) */
+function leaveSelfCancellable_(r) {
+  return r.Status === 'PENDING' || (r.Status === 'APPROVED' && r.ReviewedBy === 'AUTO');
+}
+
 function leaveView_(r) {
   return {
     leaveId: r.LeaveID, employeeId: r.EmployeeID, staffCode: r.StaffCode, fullName: r.FullName,
-    type: r.LeaveType, typeLabel: LEAVE_TYPES[r.LeaveType] || r.LeaveType,
+    type: r.LeaveType, typeLabel: leaveTypeLabel_(r), typeDetail: r.TypeDetail || '',
     startDate: r.StartDate, endDate: r.EndDate,
     startLabel: thaiDate_(r.StartDate), endLabel: thaiDate_(r.EndDate),
     period: r.Period || 'FULL', periodLabel: LEAVE_PERIODS[r.Period || 'FULL'],
     days: r.Days, reason: r.Reason, hasAttachment: !!r.AttachmentFileId, attachmentName: r.AttachmentName,
     status: r.Status, statusLabel: REQUEST_STATUS_LABELS[r.Status] || r.Status,
     requestedAt: r.RequestedAt, requestedLabel: thaiStamp_(r.RequestedAt),
-    reviewedByName: r.ReviewedByName, reviewedAt: r.ReviewedAt, reviewedLabel: thaiStamp_(r.ReviewedAt), reviewNote: r.ReviewNote
+    recordedBy: r.RecordedBy && r.RecordedBy !== 'SELF' ? r.RecordedBy : '',
+    reviewedByName: r.ReviewedByName, reviewedAt: r.ReviewedAt, reviewedLabel: thaiStamp_(r.ReviewedAt), reviewNote: r.ReviewNote,
+    cancellable: leaveSelfCancellable_(r)
   };
 }
 
-function submitLeave_(ctx, p) {
-  var emp = ctx.user;
+/**
+ * ตรวจสอบและบันทึกใบลา (ใช้ร่วมกันทั้งบุคลากรบันทึกเองและผู้ดูแลบันทึกให้)
+ * - ลาย้อนหลังได้ไม่จำกัด และล่วงหน้าได้ไม่เกิน 2 ปี, ช่วงลาครั้งละไม่เกิน 1 ปี
+ * - เหตุผลไม่บังคับ; ประเภท "อื่น ๆ" ต้องพิมพ์ชื่อประเภทการลา
+ * @param {Object} emp บุคลากรเจ้าของใบลา
+ * @param {Object} p ข้อมูลจาก Browser
+ * @param {{approvedBy: Object|null, auto: boolean, recordedBy: string}} opts
+ */
+function createLeave_(emp, p, opts) {
   var type = String(p.type || '');
   if (!LEAVE_TYPES[type]) throw appError_('กรุณาเลือกประเภทการลา', 'VALIDATION', { field: 'type' });
+  var detail = cleanLine_(p.typeDetail, 100);
+  if (type === 'OTHER') {
+    if (detail.length < 2) throw appError_('กรุณาพิมพ์ประเภทการลา เช่น ลาอุปสมบท', 'VALIDATION', { field: 'typeDetail' });
+    if (detail.length > 60) throw appError_('ประเภทการลาต้องไม่เกิน 60 ตัวอักษร', 'VALIDATION', { field: 'typeDetail' });
+  } else {
+    detail = '';
+  }
   var start = String(p.startDate || ''), end = String(p.endDate || p.startDate || '');
   if (!isValidYmd_(start)) throw appError_('กรุณาเลือกวันที่เริ่มลา', 'VALIDATION', { field: 'startDate' });
   if (!isValidYmd_(end)) throw appError_('กรุณาเลือกวันที่สิ้นสุด', 'VALIDATION', { field: 'endDate' });
   if (end < start) throw appError_('วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มลา', 'VALIDATION', { field: 'endDate' });
-  if (daysBetween_(start, end) > 90) throw appError_('ยื่นลาได้ครั้งละไม่เกิน 90 วัน', 'VALIDATION', { field: 'endDate' });
-  var today = todayStr_();
-  if (start < addDays_(today, -60)) throw appError_('ไม่สามารถยื่นลาย้อนหลังเกิน 60 วัน กรุณาติดต่อผู้ดูแลระบบ', 'VALIDATION', { field: 'startDate' });
-  if (start > addDays_(today, 365)) throw appError_('ยื่นลาล่วงหน้าได้ไม่เกิน 1 ปี', 'VALIDATION', { field: 'startDate' });
+  if (daysBetween_(start, end) > 365) throw appError_('บันทึกการลาได้ครั้งละไม่เกิน 1 ปี', 'VALIDATION', { field: 'endDate' });
+  if (start > addDays_(todayStr_(), 730)) throw appError_('บันทึกการลาล่วงหน้าได้ไม่เกิน 2 ปี', 'VALIDATION', { field: 'startDate' });
   var period = String(p.period || 'FULL');
   if (!LEAVE_PERIODS[period]) period = 'FULL';
   if (period !== 'FULL' && start !== end) throw appError_('การลาครึ่งวันต้องเป็นวันเดียวกัน', 'VALIDATION', { field: 'period' });
   var reason = cleanText_(p.reason, 1000);
-  if (reason.length < 3) throw appError_('กรุณาระบุเหตุผลการลา', 'VALIDATION', { field: 'reason' });
   if (reason.length > 500) throw appError_('เหตุผลต้องไม่เกิน 500 ตัวอักษร', 'VALIDATION', { field: 'reason' });
   var workdays = countWorkdays_(start, end);
-  if (!workdays) throw appError_('ช่วงวันที่เลือกเป็นวันหยุดทั้งหมด ไม่ต้องยื่นใบลา', 'VALIDATION', { field: 'startDate' });
+  if (!workdays) throw appError_('ช่วงวันที่เลือกเป็นวันหยุดทั้งหมด ไม่ต้องบันทึกการลา', 'VALIDATION', { field: 'startDate' });
   var days = period === 'FULL' ? workdays : 0.5;
 
   var leaveId = newId_('LV');
   var att = saveAttachment_(p.attachment, leaveId);
-  var rec = withAttachmentCleanup_(att, function () { return withLock_(function () {
+  return withAttachmentCleanup_(att, function () { return withLock_(function () {
     var overlap = readAll_('LeaveRequests').filter(function (r) {
       return r.EmployeeID === emp.EmployeeID && (r.Status === 'PENDING' || r.Status === 'APPROVED') &&
         r.StartDate <= end && r.EndDate >= start;
     });
     if (overlap.length) {
-      throw appError_('มีใบลาในช่วงวันที่นี้อยู่แล้ว (' + thaiDate_(overlap[0].StartDate, 'short') + ' – ' +
-        thaiDate_(overlap[0].EndDate, 'short') + ')', 'DUPLICATE');
+      throw appError_('มีใบลาในช่วงวันที่นี้อยู่แล้ว (' + leaveTypeLabel_(overlap[0]) + ' ' + thaiDate_(overlap[0].StartDate, 'short') +
+        (overlap[0].EndDate !== overlap[0].StartDate ? ' – ' + thaiDate_(overlap[0].EndDate, 'short') : '') + ')', 'DUPLICATE');
     }
+    var now = nowStamp_();
     var r = {
       LeaveID: leaveId, EmployeeID: emp.EmployeeID, StaffCode: emp.StaffCode, FullName: emp.FullName,
-      LeaveType: type, StartDate: start, EndDate: end, Period: period, Days: days, Reason: reason,
+      LeaveType: type, TypeDetail: detail, StartDate: start, EndDate: end, Period: period, Days: days, Reason: reason,
       AttachmentFileId: att ? att.fileId : '', AttachmentName: att ? att.name : '',
-      Status: 'PENDING', RequestedAt: nowStamp_(), ReviewedBy: '', ReviewedByName: '', ReviewedAt: '', ReviewNote: ''
+      Status: 'PENDING', RequestedAt: now, RecordedBy: opts.recordedBy || 'SELF',
+      ReviewedBy: '', ReviewedByName: '', ReviewedAt: '', ReviewNote: ''
     };
+    if (opts.approvedBy) {
+      r.Status = 'APPROVED'; r.ReviewedBy = opts.approvedBy.EmployeeID; r.ReviewedByName = opts.approvedBy.FullName;
+      r.ReviewedAt = now; r.ReviewNote = 'บันทึกโดย ' + opts.approvedBy.FullName;
+    } else if (opts.auto) {
+      r.Status = 'APPROVED'; r.ReviewedBy = 'AUTO'; r.ReviewedByName = 'อนุมัติอัตโนมัติ';
+      r.ReviewedAt = now; r.ReviewNote = 'โรงเรียนตั้งค่าให้การลามีผลทันทีโดยไม่ต้องรออนุมัติ';
+    }
     appendRecord_('LeaveRequests', r);
     return r;
   }); });
-  writeAudit_(ctx, 'LEAVE_SUBMIT', 'LeaveRequest', rec.LeaveID, { type: type, start: start, end: end, period: period, days: days });
-  return { leave: leaveView_(rec), message: 'ส่งใบลาเรียบร้อยแล้ว รอผู้บริหาร/ผู้ดูแลระบบพิจารณา' };
+}
+
+/** บุคลากรบันทึกการลาของตนเอง (แตะประเภทการลา → ยืนยัน) */
+function submitLeave_(ctx, p) {
+  var auto = !ctx.settings.leaveRequiresApproval;
+  var rec = createLeave_(ctx.user, p, { auto: auto, recordedBy: 'SELF' });
+  writeAudit_(ctx, 'LEAVE_SUBMIT', 'LeaveRequest', rec.LeaveID, {
+    type: rec.LeaveType, detail: rec.TypeDetail, start: rec.StartDate, end: rec.EndDate, period: rec.Period, days: rec.Days, status: rec.Status
+  });
+  return {
+    leave: leaveView_(rec),
+    message: auto ? 'บันทึกการลาเรียบร้อยแล้ว (' + leaveTypeLabel_(rec) + ' ' + rec.Days + ' วัน)'
+      : 'ส่งใบลาเรียบร้อยแล้ว (' + leaveTypeLabel_(rec) + ' ' + rec.Days + ' วัน) รอผู้บริหาร/ผู้ดูแลระบบอนุมัติ'
+  };
+}
+
+/**
+ * ผู้บริหาร/ผู้ดูแลระบบบันทึกการลาแทนบุคลากร → อนุมัติทันที
+ * (ถ้าบันทึกให้ตนเอง จะเป็นใบลารออนุมัติตามปกติ เพื่อให้ผู้อื่นตรวจสอบ)
+ */
+function adminRecordLeave_(ctx, p) {
+  var emp = getEmployeeById_(String(p.employeeId || ''));
+  if (!emp) throw appError_('กรุณาเลือกบุคลากร', 'VALIDATION', { field: 'employeeId' });
+  if (emp.Status !== EMP_STATUS.ACTIVE) throw appError_('บัญชีนี้ไม่ได้อยู่ในสถานะใช้งาน', 'VALIDATION', { field: 'employeeId' });
+  var self = emp.EmployeeID === ctx.user.EmployeeID;
+  var rec = createLeave_(emp, p, { approvedBy: self ? null : ctx.user, recordedBy: ctx.user.FullName });
+  writeAudit_(ctx, 'LEAVE_RECORD_BY_ADMIN', 'LeaveRequest', rec.LeaveID, {
+    employee: emp.FullName, type: rec.LeaveType, detail: rec.TypeDetail, start: rec.StartDate, end: rec.EndDate,
+    period: rec.Period, days: rec.Days, status: rec.Status
+  });
+  return {
+    leave: leaveView_(rec),
+    message: self ? 'บันทึกใบลาของท่านแล้ว — ต้องให้ผู้บริหาร/ผู้ดูแลท่านอื่นอนุมัติ'
+      : 'บันทึกการลาให้ ' + emp.FullName + ' เรียบร้อย (' + leaveTypeLabel_(rec) + ' ' + rec.Days + ' วัน · อนุมัติแล้ว)'
+  };
 }
 
 function listMyLeaves_(ctx) {
@@ -150,7 +216,7 @@ function cancelLeave_(ctx, p) {
   var rec = withLock_(function () {
     var r = findOne_('LeaveRequests', 'LeaveID', String(p.leaveId || ''));
     if (!r || r.EmployeeID !== ctx.user.EmployeeID) throw appError_('ไม่พบใบลา', 'NOT_FOUND');
-    if (r.Status !== 'PENDING') throw appError_('ยกเลิกได้เฉพาะใบลาที่รออนุมัติ', 'VALIDATION');
+    if (!leaveSelfCancellable_(r)) throw appError_('ใบลานี้ได้รับการพิจารณาแล้ว หากต้องการยกเลิกกรุณาติดต่อผู้บริหาร/ผู้ดูแลระบบ', 'VALIDATION');
     return updateRecord_('LeaveRequests', r._row, { Status: 'CANCELLED', ReviewNote: 'ผู้ยื่นยกเลิกเอง', ReviewedAt: nowStamp_() });
   });
   writeAudit_(ctx, 'LEAVE_CANCEL', 'LeaveRequest', rec.LeaveID, null);

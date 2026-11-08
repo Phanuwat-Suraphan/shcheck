@@ -117,7 +117,8 @@ var SCHEMA_ = {
       ['EmployeeID', 'str', 'รหัสภายในของบุคลากร'],
       ['StaffCode', 'str', 'รหัสประจำตัวบุคลากร'],
       ['FullName', 'str', 'ชื่อ-นามสกุล'],
-      ['LeaveType', 'str', 'SICK=ลาป่วย, PERSONAL=ลากิจ, VACATION=ลาพักผ่อน, OFFICIAL=ไปราชการ, OTHER=อื่น ๆ'],
+      ['LeaveType', 'str', 'SICK=ลาป่วย, PERSONAL=ลากิจ, VACATION=ลาพักผ่อน, MATERNITY=ลาคลอดบุตร, OFFICIAL=ไปราชการ, OTHER=อื่น ๆ'],
+      ['TypeDetail', 'str', 'ประเภทการลาที่พิมพ์เอง (กรณี OTHER เช่น ลาอุปสมบท)'],
       ['StartDate', 'date', 'วันที่เริ่มลา'],
       ['EndDate', 'date', 'วันที่สิ้นสุด'],
       ['Period', 'str', 'FULL=เต็มวัน, MORNING=ครึ่งวันเช้า, AFTERNOON=ครึ่งวันบ่าย'],
@@ -127,7 +128,8 @@ var SCHEMA_ = {
       ['AttachmentName', 'str', 'ชื่อไฟล์เอกสารประกอบ'],
       ['Status', 'str', 'PENDING / APPROVED / REJECTED / CANCELLED'],
       ['RequestedAt', 'datetime', 'วันเวลาที่ยื่น'],
-      ['ReviewedBy', 'str', 'รหัสผู้พิจารณา'],
+      ['RecordedBy', 'str', 'ผู้บันทึก: SELF = บุคลากรบันทึกเอง หรือชื่อผู้บริหาร/ผู้ดูแลที่บันทึกให้'],
+      ['ReviewedBy', 'str', 'รหัสผู้พิจารณา (AUTO = อนุมัติอัตโนมัติ)'],
       ['ReviewedByName', 'str', 'ชื่อผู้พิจารณา'],
       ['ReviewedAt', 'datetime', 'วันเวลาที่พิจารณา'],
       ['ReviewNote', 'str', 'ความเห็นผู้พิจารณา']
@@ -204,6 +206,7 @@ var DEFAULT_SETTINGS_ = [
   ['LOCKOUT_MIN', '15', 'ระยะเวลาล็อกบัญชีชั่วคราว (นาที)'],
   ['GPS_RETENTION_DAYS', '365', 'ระยะเวลาเก็บพิกัด GPS ก่อนลบอัตโนมัติ (วัน)'],
   ['CORRECTION_MAX_DAYS', '30', 'ยื่นคำร้องแก้ไขเวลาย้อนหลังได้ไม่เกิน (วัน)'],
+  ['LEAVE_REQUIRES_APPROVAL', 'TRUE', 'การลาที่บุคลากรบันทึกเองต้องรอผู้บริหาร/ผู้ดูแลอนุมัติ (FALSE = มีผลทันทีเมื่อกดยืนยัน)'],
   ['ALLOW_REGISTRATION', 'TRUE', 'เปิดให้บุคลากรสมัครสมาชิกด้วยตนเอง'],
   ['SETTINGS_CONFIRMED', 'FALSE', 'ผู้ดูแลยืนยันว่าได้ปรับค่าตามระเบียบโรงเรียนแล้ว']
 ];
@@ -578,6 +581,7 @@ function parseSettings_(raw) {
     gpsRetentionDays: Math.max(30, num('GPS_RETENTION_DAYS', 365)),
     correctionMaxDays: Math.max(1, num('CORRECTION_MAX_DAYS', 30)),
     allowRegistration: bool('ALLOW_REGISTRATION'),
+    leaveRequiresApproval: String(raw.LEAVE_REQUIRES_APPROVAL === undefined ? 'TRUE' : raw.LEAVE_REQUIRES_APPROVAL).toUpperCase() !== 'FALSE',
     settingsConfirmed: bool('SETTINGS_CONFIRMED')
   };
 }

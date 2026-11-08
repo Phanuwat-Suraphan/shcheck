@@ -144,57 +144,40 @@
         <div class="page-head"><h2><span class="ms">event_busy</span>แจ้งการลา</h2></div>
         <div class="home-grid">
           <div class="card">
-            <div class="card-title"><span class="ms">edit_note</span>แบบฟอร์มขอลา</div>
-            <form id="leaveForm" novalidate>
-              <div class="field" data-field="type">
-                <label for="leaveType">ประเภทการลา</label>
-                <select id="leaveType" name="type" required>
-                  <option value="">— เลือกประเภท —</option>
-                  <option value="SICK">ลาป่วย</option>
-                  <option value="PERSONAL">ลากิจ</option>
-                  <option value="VACATION">ลาพักผ่อน</option>
-                  <option value="OFFICIAL">ไปราชการ</option>
-                  <option value="OTHER">อื่น ๆ</option>
-                </select>
-                <span class="err"></span>
+            <div class="card-title"><span class="ms">touch_app</span>แจ้งลา (แตะประเภทการลา แล้วกดยืนยัน)</div>
+            <div class="field">
+              <span class="field-label">1. วันที่ลา</span>
+              <div class="seg" id="lvQuickDay" role="radiogroup" aria-label="เลือกวันที่ลาแบบด่วน">
+                <button type="button" data-val="today" class="active">วันนี้</button>
+                <button type="button" data-val="tomorrow">พรุ่งนี้</button>
+                <button type="button" data-val="custom">เลือกวันที่เอง</button>
               </div>
-              <div class="form-grid two">
-                <div class="field" data-field="startDate">
-                  <label for="leaveStart">วันที่เริ่มลา</label>
-                  <input id="leaveStart" name="startDate" type="date" required>
-                  <span class="hint" data-thai-for="leaveStart"></span><span class="err"></span>
-                </div>
-                <div class="field" data-field="endDate">
-                  <label for="leaveEnd">วันที่สิ้นสุด</label>
-                  <input id="leaveEnd" name="endDate" type="date" required>
-                  <span class="hint" data-thai-for="leaveEnd"></span><span class="err"></span>
-                </div>
+            </div>
+            <div class="leave-summary" id="lvDateSummary" style="margin-bottom:12px"></div>
+            <div class="form-grid two" id="lvDateFields" hidden>
+              <div class="field" data-field="startDate">
+                <label for="leaveStart">ตั้งแต่วันที่</label>
+                <input id="leaveStart" name="startDate" type="date">
+                <span class="hint" data-thai-for="leaveStart"></span><span class="err"></span>
               </div>
-              <div class="field" data-field="period">
-                <span class="field-label">ช่วงเวลา</span>
-                <div class="seg" id="leavePeriod" role="radiogroup">
-                  <button type="button" data-val="FULL" class="active">เต็มวัน</button>
-                  <button type="button" data-val="MORNING">ครึ่งวันเช้า</button>
-                  <button type="button" data-val="AFTERNOON">ครึ่งวันบ่าย</button>
-                </div>
-                <span class="hint">ลาครึ่งวันได้เฉพาะเมื่อวันที่เริ่มและสิ้นสุดเป็นวันเดียวกัน</span>
-                <span class="err"></span>
+              <div class="field" data-field="endDate">
+                <label for="leaveEnd">ถึงวันที่</label>
+                <input id="leaveEnd" name="endDate" type="date">
+                <span class="hint" data-thai-for="leaveEnd"></span><span class="err"></span>
               </div>
-              <div class="field" data-field="reason">
-                <label for="leaveReason">เหตุผล</label>
-                <textarea id="leaveReason" name="reason" maxlength="500" required placeholder="ระบุเหตุผลการลา"></textarea>
-                <span class="err"></span>
+            </div>
+            <div class="field" data-field="period">
+              <span class="field-label">ช่วงเวลา</span>
+              <div class="seg" id="leavePeriod" role="radiogroup">
+                <button type="button" data-val="FULL" class="active">เต็มวัน</button>
+                <button type="button" data-val="MORNING">ครึ่งวันเช้า</button>
+                <button type="button" data-val="AFTERNOON">ครึ่งวันบ่าย</button>
               </div>
-              <div class="field" data-field="attachment">
-                <span class="field-label">เอกสารประกอบ (ถ้ามี)</span>
-                <label class="file-drop"><span class="ms" style="color:var(--sky-500)">attach_file</span>
-                  <span class="small" data-file-label>แนบไฟล์ PDF หรือรูปภาพ (ไม่เกิน 5 MB)</span>
-                  <input type="file" name="attachment" accept="application/pdf,image/jpeg,image/png,image/webp">
-                </label>
-                <span class="err"></span>
-              </div>
-              <button type="submit" class="btn lg block"><span class="ms">send</span>ส่งใบลา</button>
-            </form>
+              <span class="hint">ลาครึ่งวันได้เมื่อเลือกวันเดียว · บันทึกย้อนหลังหรือล่วงหน้าได้</span>
+            </div>
+            <span class="field-label">2. แตะประเภทการลา</span>
+            <div class="leave-types" id="leaveTypeGrid"></div>
+            <p class="small muted" id="leaveApprovalNote" style="margin-top:10px"></p>
           </div>
           <div class="card">
             <div class="card-title"><span class="ms">inventory</span>รายการลาของฉัน</div>

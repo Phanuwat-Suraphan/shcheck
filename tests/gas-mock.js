@@ -275,6 +275,8 @@ function createGasEnv(opts = {}) {
     }
   }
   const DriveApp = {
+    getStorageUsed() { return state.storageUsed !== undefined ? state.storageUsed : 2 * 1024 ** 3; },
+    getStorageLimit() { return state.storageLimit !== undefined ? state.storageLimit : 15 * 1024 ** 3; },
     createFolder(n) { return new MockFolder(n); },
     getFolderById(id) { const f = state.driveFolders.get(id); if (!f) throw new Error('Folder not found'); return f; },
     getFileById(id) { const f = state.driveFiles.get(id); if (!f) throw new Error('File not found: ' + id); return f; }

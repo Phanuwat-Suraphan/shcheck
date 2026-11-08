@@ -129,7 +129,8 @@
 
     <!-- ================= อนุมัติการลา ================= -->
     <section data-panel-sec="leaves" hidden>
-      <div class="page-head"><h2><span class="ms">event_busy</span>การลาของบุคลากร</h2></div>
+      <div class="page-head"><h2><span class="ms">event_busy</span>การลาของบุคลากร</h2>
+        <button type="button" class="btn" id="lvRecordBtn"><span class="ms">add_circle</span>บันทึกการลาให้บุคลากร</button></div>
       <div class="toolbar">
         <div class="seg" id="lvStatusSeg"><button type="button" data-val="PENDING" class="active">รออนุมัติ</button><button type="button" data-val="APPROVED">อนุมัติแล้ว</button><button type="button" data-val="REJECTED">ไม่อนุมัติ</button><button type="button" data-val="ALL">ทั้งหมด</button></div>
         <div class="field grow"><input type="search" id="lvSearch" placeholder="ค้นหาชื่อ / รหัส" aria-label="ค้นหา"></div>
@@ -255,6 +256,7 @@
             <div class="field" data-field="GPS_RETENTION_DAYS"><label for="sRetention">ระยะเวลาเก็บพิกัด GPS (วัน)</label><input type="number" id="sRetention" name="GPS_RETENTION_DAYS" min="30" max="3650"><span class="hint">พ้นกำหนดระบบจะลบพิกัดอัตโนมัติทุกคืน</span><span class="err"></span></div>
             <div class="field" data-field="CORRECTION_MAX_DAYS"><label for="sCorrDays">ยื่นคำร้องแก้ไขเวลาย้อนหลังได้ (วัน)</label><input type="number" id="sCorrDays" name="CORRECTION_MAX_DAYS" min="1" max="365"><span class="err"></span></div>
           </div>
+          <label class="switch"><input type="checkbox" name="LEAVE_REQUIRES_APPROVAL"><span class="track"></span>การลาที่บุคลากรบันทึกเองต้องรอผู้บริหาร/ผู้ดูแลอนุมัติ (ปิด = มีผลทันทีเมื่อกดยืนยัน)</label>
         </div>
         <div class="set-group">
           <div class="alert warning" style="margin-bottom:12px"><span class="ms">rule</span><div>ค่าเริ่มต้นเป็น<b>ค่าตัวอย่าง</b> กรุณาตรวจสอบให้ตรงกับระเบียบ/คำสั่งของโรงเรียนก่อนใช้งานจริง</div></div>
@@ -273,6 +275,7 @@
         </div>
         <p class="small muted">ใช้เมื่อมีการแก้ไขข้อมูลในชีตโดยตรง หรือเปลี่ยนเวลาทำงาน/ปฏิทินย้อนหลัง (ไม่แก้ไขรายการลงเวลาต้นฉบับ)</p>
         <button type="button" class="btn ghost" id="mtRunBtn"><span class="ms">cleaning_services</span>ลบพิกัด GPS ที่เกินระยะเวลาเก็บรักษาทันที</button>
+        <div class="alert info" id="mtStorage" style="margin-top:12px" hidden><span class="ms">cloud</span><div id="mtStorageText"></div></div>
       </div>
     </section>
 

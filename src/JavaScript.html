@@ -1008,22 +1008,64 @@
       lab.textContent = inp.files[0] ? inp.files[0].name + ' (' + Math.round(inp.files[0].size / 1024) + ' KB)' : 'แนบไฟล์ PDF หรือรูปภาพ (ไม่เกิน 5 MB)';
     });
   }
+  var LEAVE_TYPE_META = [
+    ['SICK', 'ลาป่วย', 'sick'], ['PERSONAL', 'ลากิจ', 'event_note'], ['VACATION', 'ลาพักผ่อน', 'beach_access'],
+    ['MATERNITY', 'ลาคลอดบุตร', 'pregnant_woman'], ['OFFICIAL', 'ไปราชการ', 'work'], ['OTHER', 'อื่น ๆ (พิมพ์เอง)', 'edit_note']
+  ];
+  var LEAVE_OTHER_SUGGESTIONS = ['ลาอุปสมบท', 'ลาประกอบพิธีฮัจย์', 'ลาไปช่วยเหลือภริยาที่คลอดบุตร', 'ลาไปศึกษา ฝึกอบรม ดูงาน',
+    'ลาติดตามคู่สมรส', 'ลาเข้ารับการตรวจเลือก/เตรียมพล', 'ลาไปฟื้นฟูสมรรถภาพด้านอาชีพ'];
+  var LEAVE_PERIOD_LABEL = { FULL: 'เต็มวัน', MORNING: 'ครึ่งวันเช้า', AFTERNOON: 'ครึ่งวันบ่าย' };
+  function leaveMeta(type) { for (var i = 0; i < LEAVE_TYPE_META.length; i++) if (LEAVE_TYPE_META[i][0] === type) return LEAVE_TYPE_META[i]; return null; }
+  function addDaysYmd(ymd, n) {
+    var p = parseYmd(ymd), d = new Date(Date.UTC(p.y, p.m - 1, p.d + n));
+    return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate());
+  }
+  function leaveRangeText(start, end, period) {
+    return (start === end ? thDate(start, 'long') : thDate(start, 'dow') + ' – ' + thDate(end, 'dow')) +
+      (period && period !== 'FULL' ? ' (' + LEAVE_PERIOD_LABEL[period] + ')' : '');
+  }
+  function segSelect(container, btn) { $$('button', container).forEach(function (x) { x.classList.toggle('active', x === btn); }); }
+
   function bindLeaveForm() {
-    var f = $('#leaveForm');
-    ['#leaveStart', '#leaveEnd'].forEach(function (s) {
-      $(s).addEventListener('change', function () {
-        if (s === '#leaveStart' && (!$('#leaveEnd').value || $('#leaveEnd').value < $('#leaveStart').value)) $('#leaveEnd').value = $('#leaveStart').value;
-        setThaiHint($('#leaveStart')); setThaiHint($('#leaveEnd')); syncPeriod();
+    $('#leaveTypeGrid').innerHTML = LEAVE_TYPE_META.map(function (m) {
+      return '<button type="button" class="leave-type-btn" data-type="' + m[0] + '"><span class="lt-icon">' + icon(m[2]) + '</span><span>' + esc(m[1]) + '</span></button>';
+    }).join('');
+    $$('#leaveTypeGrid [data-type]').forEach(function (b) { b.addEventListener('click', function () { openLeaveConfirm(b.getAttribute('data-type')); }); });
+    $$('#lvQuickDay button').forEach(function (b) {
+      b.addEventListener('click', function () { segSelect($('#lvQuickDay'), b); applyQuickDay(b.getAttribute('data-val')); });
+    });
+    // ลาวันเดียว (วันเริ่ม = วันสิ้นสุด) แล้วเปลี่ยนวันเริ่ม → วันสิ้นสุดเลื่อนตาม
+    $('#leaveStart').addEventListener('focus', function () { $('#leaveStart').dataset.prev = $('#leaveStart').value; });
+    ['#leaveStart', '#leaveEnd'].forEach(function (sel) {
+      $(sel).addEventListener('change', function () {
+        var st = $('#leaveStart'), en = $('#leaveEnd');
+        if (sel === '#leaveStart' && (!en.value || en.value < st.value || en.value === st.dataset.prev)) en.value = st.value;
+        if (sel === '#leaveStart') st.dataset.prev = st.value;
+        syncQuickDay(); setThaiHint(st); setThaiHint(en); syncPeriod();
       });
     });
     $$('#leavePeriod button').forEach(function (b) {
-      b.addEventListener('click', function () {
-        if (b.disabled) return;
-        $$('#leavePeriod button').forEach(function (x) { x.classList.toggle('active', x === b); });
-      });
+      b.addEventListener('click', function () { if (!b.disabled) segSelect($('#leavePeriod'), b); });
     });
-    bindFileLabel(f);
-    f.addEventListener('submit', submitLeave);
+  }
+  function applyQuickDay(v) {
+    $('#lvDateFields').hidden = v !== 'custom';
+    if (v === 'custom') { try { $('#leaveStart').focus(); } catch (e) { /* ignore */ } updateLeaveDateSummary(); return; }
+    var d = v === 'tomorrow' ? addDaysYmd(bkkToday(), 1) : bkkToday();
+    $('#leaveStart').value = d; $('#leaveEnd').value = d; $('#leaveStart').dataset.prev = d;
+    setThaiHint($('#leaveStart')); setThaiHint($('#leaveEnd')); syncPeriod(); updateLeaveDateSummary();
+  }
+  function syncQuickDay() {
+    var st = $('#leaveStart').value, en = $('#leaveEnd').value, today = bkkToday();
+    var v = st === en && st === today ? 'today' : (st === en && st === addDaysYmd(today, 1) ? 'tomorrow' : 'custom');
+    if (!$('#lvDateFields').hidden) v = 'custom';
+    segSelect($('#lvQuickDay'), $('#lvQuickDay [data-val="' + v + '"]'));
+    updateLeaveDateSummary();
+  }
+  /** แสดงวันที่ลาที่เลือกเป็นภาษาไทยบรรทัดเดียว (ช่องกรอกวันที่ซ่อนไว้จนกว่าจะเลือก "เลือกวันที่เอง") */
+  function updateLeaveDateSummary() {
+    var st = $('#leaveStart').value, en = $('#leaveEnd').value || st;
+    $('#lvDateSummary').innerHTML = st ? icon('event') + ' <b>' + esc(st === en ? thDate(st, 'long') : thDate(st, 'dow') + ' – ' + thDate(en, 'dow')) + '</b>' : '';
   }
   function syncPeriod() {
     var same = $('#leaveStart').value && $('#leaveStart').value === $('#leaveEnd').value;
@@ -1032,42 +1074,87 @@
     });
   }
   function initLeaveForm() {
-    if (!$('#leaveStart').value) { $('#leaveStart').value = bkkToday(); $('#leaveEnd').value = bkkToday(); }
-    setThaiHint($('#leaveStart')); setThaiHint($('#leaveEnd')); syncPeriod();
+    if (!$('#leaveStart').value) { segSelect($('#lvQuickDay'), $('#lvQuickDay [data-val="today"]')); applyQuickDay('today'); }
+    var needApproval = !S.dash || S.dash.settings.leaveRequiresApproval !== false;
+    $('#leaveApprovalNote').textContent = needApproval ? 'หลังกดยืนยัน ใบลาจะรอผู้บริหาร/ผู้ดูแลระบบอนุมัติ' : 'หลังกดยืนยัน การลาจะมีผลทันที';
   }
-  function submitLeave(e) {
-    e.preventDefault();
-    var f = e.target; clearFieldErrors(f);
-    var data = {
-      type: f.type.value, startDate: f.startDate.value, endDate: f.endDate.value,
-      period: $('#leavePeriod .active').getAttribute('data-val'), reason: f.reason.value.trim()
-    };
-    if (!data.type) return showFieldError(f, 'type', 'กรุณาเลือกประเภทการลา');
-    if (!data.startDate) return showFieldError(f, 'startDate', 'กรุณาเลือกวันที่เริ่มลา');
-    if (!data.endDate || data.endDate < data.startDate) return showFieldError(f, 'endDate', 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มลา');
-    if (data.reason.length < 3) return showFieldError(f, 'reason', 'กรุณาระบุเหตุผลการลา');
-    var btn = $('button[type=submit]', f);
-    setBtnLoading(btn, true);
-    fileToPayload(f.attachment.files[0]).then(function (att) {
-      data.attachment = att;
-      return api('leave.submit', data, { silent: true });
-    }).then(function (r) {
-      toast(r.message, 'success');
-      f.reset(); $('[data-file-label]', f).textContent = 'แนบไฟล์ PDF หรือรูปภาพ (ไม่เกิน 5 MB)';
-      $('#leaveStart').value = ''; initLeaveForm();
-      loadMyLeaves();
-    }).catch(function (err) { if (err.code !== 'AUTH') handleFormError(f, err); })
-      .then(function () { setBtnLoading(btn, false); });
+
+  /**
+   * กล่องยืนยันการลา (ใช้ร่วมกันทั้งบุคลากรและผู้ดูแลระบบ)
+   * o: {type, startDate, endDate, period, who (ชื่อผู้ลา ถ้าบันทึกให้ผู้อื่น), note, confirmText, submit(data) → Promise<result>}
+   */
+  function leaveConfirmDialog(o) {
+    var meta = leaveMeta(o.type);
+    var isOther = o.type === 'OTHER';
+    modal({
+      title: 'ยืนยันการลา', icon: meta[2],
+      body: '<div class="leave-summary">' + (o.who ? '<div class="small muted">ผู้ลา</div><div style="font-weight:700;margin-bottom:6px">' + esc(o.who) + '</div>' : '') +
+        '<div class="big">' + esc(isOther ? 'อื่น ๆ' : meta[1]) + '</div><div>' + esc(leaveRangeText(o.startDate, o.endDate, o.period)) + '</div>' +
+        '<div class="tiny muted">ระบบนับเฉพาะวันทำการ (ไม่นับวันหยุด)</div></div>' +
+        (isOther ? '<div class="field" data-field="typeDetail"><label for="lcDetail">ประเภทการลา (พิมพ์เอง)</label>' +
+          '<input id="lcDetail" type="text" maxlength="60" list="lcDetailList" placeholder="เช่น ลาอุปสมบท"><datalist id="lcDetailList">' +
+          LEAVE_OTHER_SUGGESTIONS.map(function (x) { return '<option value="' + esc(x) + '">'; }).join('') + '</datalist><span class="err"></span></div>' : '') +
+        '<div class="field" data-field="reason"><label for="lcReason">เหตุผล / หมายเหตุ <span class="muted">(ไม่บังคับ)</span></label>' +
+        '<textarea id="lcReason" maxlength="500" style="min-height:70px" placeholder="เช่น ไปพบแพทย์"></textarea><span class="err"></span></div>' +
+        '<div class="field" data-field="attachment"><span class="field-label">เอกสารประกอบ <span class="muted">(ไม่บังคับ)</span></span>' +
+        '<label class="file-drop">' + icon('attach_file') + '<span class="small" id="lcFileLabel">แนบไฟล์ PDF หรือรูปภาพ (ไม่เกิน 5 MB)</span>' +
+        '<input type="file" id="lcFile" accept="application/pdf,image/jpeg,image/png,image/webp"></label><span class="err"></span></div>' +
+        (o.note ? '<p class="small muted mb-0">' + esc(o.note) + '</p>' : ''),
+      onOpen: function (root) {
+        var f = $('#lcFile', root);
+        f.addEventListener('change', function () { $('#lcFileLabel', root).textContent = f.files[0] ? f.files[0].name : 'แนบไฟล์ PDF หรือรูปภาพ (ไม่เกิน 5 MB)'; });
+      },
+      actions: [{ label: 'ยกเลิก', cls: 'outline' }, {
+        label: o.confirmText || 'ยืนยันการลา', cls: 'success', icon: 'check_circle', onClick: function (close, btn, root) {
+          clearFieldErrors(root);
+          var data = { type: o.type, startDate: o.startDate, endDate: o.endDate, period: o.period, reason: $('#lcReason', root).value.trim() };
+          if (isOther) {
+            data.typeDetail = $('#lcDetail', root).value.trim();
+            if (data.typeDetail.length < 2) { showFieldError(root, 'typeDetail', 'กรุณาพิมพ์ประเภทการลา'); return false; }
+          }
+          setBtnLoading(btn, true);
+          fileToPayload($('#lcFile', root).files[0]).then(function (att) {
+            data.attachment = att;
+            return o.submit(data);
+          }).then(function (r) {
+            setBtnLoading(btn, false); close();
+            toast(r.message, 'success', 5000);
+          }).catch(function (err) {
+            setBtnLoading(btn, false);
+            if (err.code === 'AUTH') return;
+            if (!(err.data && err.data.field && showFieldError(root, err.data.field, err.message))) toast(err.message, 'error', 6000);
+          });
+          return false;
+        }
+      }]
+    });
+  }
+
+  function openLeaveConfirm(type) {
+    var f = $('#leaveTypeGrid').closest('.card');
+    clearFieldErrors(f);
+    var start = $('#leaveStart').value, end = $('#leaveEnd').value || start;
+    if (!start) { showFieldError(f, 'startDate', 'กรุณาเลือกวันที่ลา'); return; }
+    if (end < start) { showFieldError(f, 'endDate', 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มลา'); return; }
+    var needApproval = !S.dash || S.dash.settings.leaveRequiresApproval !== false;
+    leaveConfirmDialog({
+      type: type, startDate: start, endDate: end, period: $('#leavePeriod .active').getAttribute('data-val'),
+      note: needApproval ? 'เมื่อกดยืนยัน ใบลาจะส่งให้ผู้บริหาร/ผู้ดูแลระบบอนุมัติ' : 'เมื่อกดยืนยัน การลาจะมีผลทันที',
+      submit: function (data) {
+        return api('leave.submit', data, { silent: true }).then(function (r) { loadMyLeaves(); return r; });
+      }
+    });
   }
   function leaveCard(l, mine) {
     var range = thDate(l.startDate, 'short') + (l.endDate !== l.startDate ? ' – ' + thDate(l.endDate, 'short') : '') + (l.period !== 'FULL' ? ' (' + l.periodLabel + ')' : '');
     return '<div class="req-card"><div class="head"><div><div class="title">' + esc(l.typeLabel) + ' · ' + esc(l.days) + ' วัน</div>' +
       '<div class="meta">' + icon('date_range') + ' ' + esc(range) + '</div>' + (mine ? '' : '<div class="meta">' + icon('person') + ' ' + esc(l.fullName) + ' (' + esc(l.staffCode) + ')</div>') + '</div>' +
-      badge(l.status, l.statusLabel) + '</div><div class="reason">' + esc(l.reason) + '</div>' +
-      '<div class="meta">ยื่นเมื่อ ' + esc(l.requestedLabel) + (l.reviewedByName ? ' · พิจารณาโดย ' + esc(l.reviewedByName) + ' ' + esc(l.reviewedLabel) : '') + '</div>' +
+      badge(l.status, l.statusLabel) + '</div>' + (l.reason ? '<div class="reason">' + esc(l.reason) + '</div>' : '') +
+      '<div class="meta">' + (l.recordedBy ? 'บันทึกโดย ' + esc(l.recordedBy) + ' ' : 'ยื่นเมื่อ ') + esc(l.requestedLabel) +
+        (l.reviewedByName && l.reviewedByName !== l.recordedBy ? ' · พิจารณาโดย ' + esc(l.reviewedByName) + ' ' + esc(l.reviewedLabel) : '') + '</div>' +
       (l.reviewNote ? '<div class="meta">ความเห็น: ' + esc(l.reviewNote) + '</div>' : '') +
       '<div class="actions">' + (l.hasAttachment ? '<button type="button" class="btn outline sm" data-view-att="leave" data-id="' + esc(l.leaveId) + '">' + icon('attach_file') + 'เอกสารแนบ</button>' : '') +
-      (mine && l.status === 'PENDING' ? '<button type="button" class="btn ghost sm" data-cancel-leave="' + esc(l.leaveId) + '">' + icon('close') + 'ยกเลิกใบลา</button>' : '') + '</div></div>';
+      (mine && l.cancellable ? '<button type="button" class="btn ghost sm" data-cancel-leave="' + esc(l.leaveId) + '">' + icon('close') + 'ยกเลิกใบลา</button>' : '') + '</div></div>';
   }
   function loadMyLeaves() {
     api('leave.my', {}, { silent: true }).then(function (list) {
@@ -1174,7 +1261,8 @@
     downloadBase64: downloadBase64, viewAttachment: viewAttachment, loadChartJs: loadChartJs, acquirePosition: acquirePosition,
     leaveCard: leaveCard, corrCard: corrCard, bkkToday: bkkToday, bkkParts: bkkParts, serverNow: serverNow,
     fillMonthYear: fillMonthYear, TH_M: TH_M, TH_MS: TH_MS, backToUser: backToUser, doLogout: doLogout, showGeoHelp: showGeoHelp,
-    parseYmd: parseYmd
+    parseYmd: parseYmd, LEAVE_TYPE_META: LEAVE_TYPE_META, leaveConfirmDialog: leaveConfirmDialog, addDaysYmd: addDaysYmd,
+    segSelect: segSelect, setThaiHint: setThaiHint
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();

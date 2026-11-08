@@ -26,7 +26,7 @@ var APP = {
   SCHOOL_FULL: 'โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่',
   NAME_EN: 'Wat Sao Hin School Attendance System',
   SLOGAN: 'ระบบลงเวลาอัจฉริยะ สะดวก โปร่งใส ตรวจสอบได้',
-  VERSION: '1.1.0',
+  VERSION: '1.2.0',
   TZ: 'Asia/Bangkok'
 };
 
@@ -38,7 +38,7 @@ var EMP_STATUS_LABELS = { PENDING: 'รออนุมัติ', ACTIVE: 'ใ�
 
 var POSITIONS = ['ผู้อำนวยการ', 'ครู', 'บุคลากรทางการศึกษา', 'เจ้าหน้าที่อื่น ๆ'];
 
-var LEAVE_TYPES = { SICK: 'ลาป่วย', PERSONAL: 'ลากิจ', VACATION: 'ลาพักผ่อน', OFFICIAL: 'ไปราชการ', OTHER: 'อื่น ๆ' };
+var LEAVE_TYPES = { SICK: 'ลาป่วย', PERSONAL: 'ลากิจ', VACATION: 'ลาพักผ่อน', MATERNITY: 'ลาคลอดบุตร', OFFICIAL: 'ไปราชการ', OTHER: 'อื่น ๆ' };
 var LEAVE_PERIODS = { FULL: 'เต็มวัน', MORNING: 'ครึ่งวันเช้า', AFTERNOON: 'ครึ่งวันบ่าย' };
 var REQUEST_STATUS = { PENDING: 'PENDING', APPROVED: 'APPROVED', REJECTED: 'REJECTED', CANCELLED: 'CANCELLED' };
 var REQUEST_STATUS_LABELS = { PENDING: 'รออนุมัติ', APPROVED: 'อนุมัติแล้ว', REJECTED: 'ไม่อนุมัติ', CANCELLED: 'ยกเลิก' };
@@ -194,6 +194,7 @@ function getRoutes_() {
     'admin.overview': { fn: getAdminOverview_, roles: AE },
     'emp.basicList': { fn: listEmployeesBasic_, roles: AE },
     'leave.adminList': { fn: adminListLeaves_, roles: AE },
+    'leave.adminCreate': { fn: adminRecordLeave_, roles: AE },
     'leave.review': { fn: reviewLeave_, roles: AE },
     'corr.adminList': { fn: adminListCorrections_, roles: AE },
     'corr.review': { fn: reviewCorrection_, roles: AE },

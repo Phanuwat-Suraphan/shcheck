@@ -263,6 +263,26 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .switch input:checked + .track::after { transform: translateX(20px); }
 .switch input:focus-visible + .track { outline: 3px solid var(--sky-400); outline-offset: 2px; }
 
+/* ---------- ปุ่มประเภทการลา (แตะครั้งเดียว) ---------- */
+.leave-types { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 8px; }
+.leave-type-btn {
+  display: flex; align-items: center; gap: 10px; min-height: 64px; padding: 12px; border-radius: 16px; border: 1.5px solid var(--border-strong);
+  background: #fff; cursor: pointer; text-align: left; font-weight: 700; color: var(--navy-900); transition: border-color .15s, background .15s, transform .05s;
+  -webkit-tap-highlight-color: transparent;
+}
+.leave-type-btn:hover { border-color: var(--sky-400); background: var(--sky-50); }
+.leave-type-btn:active { transform: scale(.98); }
+.leave-type-btn .lt-icon { width: 40px; height: 40px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; background: var(--sky-100); color: var(--navy-700); flex-shrink: 0; }
+.leave-type-btn[data-type="SICK"] .lt-icon { background: var(--danger-bg); color: var(--danger); }
+.leave-type-btn[data-type="PERSONAL"] .lt-icon { background: var(--warning-bg); color: var(--warning); }
+.leave-type-btn[data-type="VACATION"] .lt-icon { background: var(--success-bg); color: var(--success); }
+.leave-type-btn[data-type="MATERNITY"] .lt-icon { background: #FCE7F3; color: #9D174D; }
+.leave-type-btn[data-type="OFFICIAL"] .lt-icon { background: var(--sky-100); color: var(--navy-700); }
+.leave-type-btn[data-type="OTHER"] .lt-icon { background: #EEF2F7; color: var(--text-2); }
+.leave-type-btn.selected { border-color: var(--sky-500); background: var(--sky-50); box-shadow: 0 0 0 3px rgba(46, 155, 224, .18); }
+.leave-summary { background: var(--sky-50); border: 1px solid var(--sky-100); border-radius: 14px; padding: 12px 14px; margin-bottom: 14px; }
+.leave-summary .big { font-family: var(--font-head); font-size: 1.15rem; font-weight: 600; color: var(--navy-900); }
+
 /* ---------- Badges / chips ---------- */
 .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px; font-size: .8rem; font-weight: 600; line-height: 1.5; white-space: nowrap; background: #EEF2F7; color: var(--text-2); }
 .badge .ms { font-size: 16px; }
@@ -455,6 +475,7 @@ table.table { width: 100%; border-collapse: collapse; font-size: .9rem; }
 @media (min-width: 560px) {
   .grid-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .att-actions { grid-template-columns: 1fr 1fr; }
+  .leave-types { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .form-grid.two { grid-template-columns: 1fr 1fr; }
   .modal-backdrop { align-items: center; padding: 20px; }
   .modal { border-radius: 22px; max-width: 560px; }

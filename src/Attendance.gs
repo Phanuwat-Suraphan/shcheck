@@ -247,7 +247,7 @@ function clientSettings_(s) {
     workStart: s.workStart, lateAfter: s.lateAfter, workEnd: s.workEnd, checkinEarliest: s.checkinEarliest,
     radiusM: s.radiusM, maxAccuracyM: s.maxAccuracyM, geofenceConfigured: s.geofenceConfigured,
     sessionTimeoutMin: s.sessionTimeoutMin, gpsRetentionDays: s.gpsRetentionDays,
-    correctionMaxDays: s.correctionMaxDays, workDays: s.workDays,
+    correctionMaxDays: s.correctionMaxDays, workDays: s.workDays, leaveRequiresApproval: s.leaveRequiresApproval,
     schoolMaps: s.geofenceConfigured ? mapLinks_(s.schoolLat, s.schoolLng) : null
   };
 }

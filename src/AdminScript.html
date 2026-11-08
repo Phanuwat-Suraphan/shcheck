@@ -19,7 +19,7 @@ window.Admin = (function () {
     ACCOUNT_UNLOCK: 'ปลดล็อกบัญชี', ACCESS_DENIED: 'พยายามเข้าถึงโดยไม่มีสิทธิ์', REGISTRATION_APPROVE: 'อนุมัติสมาชิก', REGISTRATION_REJECT: 'ไม่อนุมัติสมาชิก',
     EMPLOYEE_CREATE: 'เพิ่มบุคลากร', EMPLOYEE_UPDATE: 'แก้ไขข้อมูลบุคลากร', EMPLOYEE_ACTIVATE: 'เปิดใช้งานบัญชี', EMPLOYEE_DEACTIVATE: 'ปิดใช้งานบัญชี',
     EMPLOYEE_ROLE_CHANGE: 'เปลี่ยนประเภทผู้ใช้', EMPLOYEE_DELETE: 'ลบบัญชี', CHECKIN_REJECTED: 'ลงเวลาเข้าไม่ผ่าน (GPS)', CHECKOUT_REJECTED: 'ลงเวลาออกไม่ผ่าน (GPS)',
-    LEAVE_SUBMIT: 'ยื่นใบลา', LEAVE_CANCEL: 'ยกเลิกใบลา', LEAVE_APPROVE: 'อนุมัติใบลา', LEAVE_REJECT: 'ไม่อนุมัติใบลา', LEAVE_REVOKE: 'ยกเลิกการอนุมัติใบลา',
+    LEAVE_SUBMIT: 'ยื่นใบลา', LEAVE_RECORD_BY_ADMIN: 'บันทึกการลาให้บุคลากร', LEAVE_CANCEL: 'ยกเลิกใบลา', LEAVE_APPROVE: 'อนุมัติใบลา', LEAVE_REJECT: 'ไม่อนุมัติใบลา', LEAVE_REVOKE: 'ยกเลิกการอนุมัติใบลา',
     CORRECTION_SUBMIT: 'ยื่นคำร้องแก้ไขเวลา', CORRECTION_CANCEL: 'ยกเลิกคำร้อง', CORRECTION_APPROVE: 'อนุมัติคำร้องแก้ไขเวลา', CORRECTION_REJECT: 'ไม่อนุมัติคำร้อง',
     SETTINGS_UPDATE: 'แก้ไขการตั้งค่า', CALENDAR_ADD: 'เพิ่มวันในปฏิทิน', CALENDAR_REMOVE: 'ลบวันในปฏิทิน', CALENDAR_ADD_FIXED: 'เพิ่มวันหยุดราชการคงที่',
     REPORT_EXPORT: 'ส่งออกรายงาน', SUMMARY_REBUILD: 'คำนวณสรุปรายวันใหม่', MAINTENANCE: 'งานบำรุงรักษาข้อมูล',
@@ -243,6 +243,7 @@ window.Admin = (function () {
     var self = e.employeeId === st.user.employeeId;
     var btns = [];
     btns.push(['history', 'ดูประวัติการลงเวลา', 'outline', function (close) { close(); openIndividual(e.employeeId); }]);
+    if (e.status === 'ACTIVE') btns.push(['event_busy', 'บันทึกการลา', 'outline', function (close) { close(); recordLeaveDialog(e.employeeId); }]);
     if (e.status !== 'PENDING' && e.status !== 'REJECTED') btns.push(['edit', 'แก้ไขข้อมูล', 'outline', function (close) { close(); memberForm(e); }]);
     if (!self && e.status === 'PENDING') btns.push(['how_to_reg', 'อนุมัติ / ไม่อนุมัติ', 'outline', function (close) { close(); go('registrations'); }]);
     if (!self && e.status === 'ACTIVE') {
@@ -344,6 +345,7 @@ window.Admin = (function () {
     bindSeg('lvStatusSeg', function (v) { st.lvStatus = v; loadLeaves(); });
     bindSeg('crStatusSeg', function (v) { st.crStatus = v; loadCorrections(); });
     $('#lvSearch').addEventListener('input', debounce(loadLeaves, 400));
+    $('#lvRecordBtn').addEventListener('click', function () { recordLeaveDialog(null); });
     $('#crSearch').addEventListener('input', debounce(loadCorrections, 400));
   }
   function loadLeaves() {
@@ -359,6 +361,75 @@ window.Admin = (function () {
       }).join('') : A.emptyState('ไม่มีรายการ', 'event_available');
       bindAttachmentButtons(host);
       $$('[data-lv]', host).forEach(function (b) { b.addEventListener('click', function () { reviewLeave(b.getAttribute('data-id'), b.getAttribute('data-lv')); }); });
+    }).catch(err);
+  }
+  /** บันทึกการลาให้บุคลากร: เลือกคน + วันที่ → แตะประเภทการลา → ยืนยัน (อนุมัติทันที) */
+  function recordLeaveDialog(presetId) {
+    A.api('emp.basicList', {}, { loadingText: 'กำลังโหลดรายชื่อ...' }).then(function (list) {
+      var active = list.filter(function (e) { return e.status === 'ACTIVE'; });
+      var today = A.bkkToday();
+      A.modal({
+        title: 'บันทึกการลาให้บุคลากร', icon: 'event_busy', wide: true,
+        body: '<div class="field" data-field="employeeId"><label for="rlEmp">1. บุคลากร</label><select id="rlEmp"><option value="">— เลือกบุคลากร —</option>' +
+          active.map(function (e) { return '<option value="' + esc(e.employeeId) + '">' + esc(e.staffCode + ' · ' + e.fullName) + '</option>'; }).join('') + '</select><span class="err"></span></div>' +
+          '<div class="field"><span class="field-label">2. วันที่ลา</span><div class="seg" id="rlQuick"><button type="button" data-val="today" class="active">วันนี้</button><button type="button" data-val="tomorrow">พรุ่งนี้</button><button type="button" data-val="custom">เลือกวันที่เอง</button></div></div>' +
+          '<div class="form-grid two"><div class="field" data-field="startDate"><label for="rlStart">ตั้งแต่วันที่</label><input type="date" id="rlStart" value="' + today + '"><span class="hint" data-thai-for="rlStart"></span><span class="err"></span></div>' +
+          '<div class="field" data-field="endDate"><label for="rlEnd">ถึงวันที่</label><input type="date" id="rlEnd" value="' + today + '"><span class="hint" data-thai-for="rlEnd"></span><span class="err"></span></div></div>' +
+          '<div class="field"><span class="field-label">ช่วงเวลา</span><div class="seg" id="rlPeriod"><button type="button" data-val="FULL" class="active">เต็มวัน</button><button type="button" data-val="MORNING">ครึ่งวันเช้า</button><button type="button" data-val="AFTERNOON">ครึ่งวันบ่าย</button></div></div>' +
+          '<span class="field-label">3. แตะประเภทการลา</span><div class="leave-types" id="rlTypes">' +
+          A.LEAVE_TYPE_META.map(function (m) { return '<button type="button" class="leave-type-btn" data-type="' + m[0] + '"><span class="lt-icon">' + icon(m[2]) + '</span><span>' + esc(m[1]) + '</span></button>'; }).join('') + '</div>' +
+          '<p class="small muted" style="margin-top:10px">การลาที่ผู้บริหาร/ผู้ดูแลบันทึกให้ผู้อื่นจะอนุมัติทันที (ถ้าบันทึกให้ตนเอง จะรอผู้อื่นอนุมัติ) · บันทึกย้อนหลังหรือล่วงหน้าได้</p>',
+        onOpen: function (root, close) {
+          if (presetId) $('#rlEmp', root).value = presetId;
+          var hints = function () {
+            [$('#rlStart', root), $('#rlEnd', root)].forEach(function (inp) { var h = $('[data-thai-for="' + inp.id + '"]', root); if (h) h.textContent = inp.value ? A.thDate(inp.value, 'long') : ''; });
+            var same = $('#rlStart', root).value === $('#rlEnd', root).value;
+            $$('#rlPeriod button', root).forEach(function (b) {
+              if (b.getAttribute('data-val') !== 'FULL') { b.disabled = !same; if (!same && b.classList.contains('active')) A.segSelect($('#rlPeriod', root), $('#rlPeriod [data-val=FULL]', root)); }
+            });
+          };
+          $$('#rlQuick button', root).forEach(function (b) {
+            b.addEventListener('click', function () {
+              A.segSelect($('#rlQuick', root), b);
+              var v = b.getAttribute('data-val');
+              if (v === 'custom') { try { $('#rlStart', root).focus(); } catch (e) { /* ignore */ } return; }
+              var d = v === 'tomorrow' ? A.addDaysYmd(A.bkkToday(), 1) : A.bkkToday();
+              $('#rlStart', root).value = d; $('#rlEnd', root).value = d; prevStart = d; hints();
+            });
+          });
+          var prevStart = $('#rlStart', root).value;
+          $('#rlStart', root).addEventListener('change', function () {
+            var en = $('#rlEnd', root);
+            if (!en.value || en.value < $('#rlStart', root).value || en.value === prevStart) en.value = $('#rlStart', root).value;
+            prevStart = $('#rlStart', root).value;
+            A.segSelect($('#rlQuick', root), $('#rlQuick [data-val="custom"]', root)); hints();
+          });
+          $('#rlEnd', root).addEventListener('change', function () { A.segSelect($('#rlQuick', root), $('#rlQuick [data-val="custom"]', root)); hints(); });
+          $$('#rlPeriod button', root).forEach(function (b) { b.addEventListener('click', function () { if (!b.disabled) A.segSelect($('#rlPeriod', root), b); }); });
+          hints();
+          $$('#rlTypes [data-type]', root).forEach(function (b) {
+            b.addEventListener('click', function () {
+              A.clearFieldErrors(root);
+              var id = $('#rlEmp', root).value, start = $('#rlStart', root).value, end = $('#rlEnd', root).value || start;
+              if (!id) { A.showFieldError(root, 'employeeId', 'กรุณาเลือกบุคลากร'); return; }
+              if (!start) { A.showFieldError(root, 'startDate', 'กรุณาเลือกวันที่'); return; }
+              if (end < start) { A.showFieldError(root, 'endDate', 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มลา'); return; }
+              var emp = active.filter(function (e) { return e.employeeId === id; })[0];
+              var self = id === st.user.employeeId;
+              close();
+              A.leaveConfirmDialog({
+                type: b.getAttribute('data-type'), startDate: start, endDate: end, period: $('#rlPeriod .active', root).getAttribute('data-val'),
+                who: emp.fullName + ' (' + emp.staffCode + ')', confirmText: 'บันทึกการลา',
+                note: self ? 'เป็นใบลาของท่านเอง จะรอผู้บริหาร/ผู้ดูแลท่านอื่นอนุมัติ' : 'เมื่อกดบันทึก การลาจะมีผลทันที (อนุมัติโดยท่าน) และบันทึกใน Audit Log',
+                submit: function (data) {
+                  data.employeeId = id;
+                  return A.api('leave.adminCreate', data, { silent: true }).then(function (r) { if (st.sec === 'leaves') loadLeaves(); return r; });
+                }
+              });
+            });
+          });
+        }
+      });
     }).catch(err);
   }
   function bindAttachmentButtons(host) {
@@ -606,7 +677,12 @@ window.Admin = (function () {
       $('#setServerTime').textContent = 'เวลาเซิร์ฟเวอร์: ' + s.serverTime;
       ['SCHOOL_LAT', 'SCHOOL_LNG', 'GEOFENCE_RADIUS_M', 'MAX_GPS_ACCURACY_M', 'WORK_START_TIME', 'LATE_AFTER_TIME', 'WORK_END_TIME', 'CHECKIN_EARLIEST_TIME',
         'SESSION_TIMEOUT_MIN', 'MAX_LOGIN_ATTEMPTS', 'LOCKOUT_MIN', 'GPS_RETENTION_DAYS', 'CORRECTION_MAX_DAYS'].forEach(function (k) { if (f[k]) f[k].value = v[k] || ''; });
-      ['ALLOW_HOLIDAY_CHECKIN', 'ALLOW_REGISTRATION', 'SETTINGS_CONFIRMED'].forEach(function (k) { f[k].checked = String(v[k]).toUpperCase() === 'TRUE'; });
+      ['ALLOW_HOLIDAY_CHECKIN', 'ALLOW_REGISTRATION', 'SETTINGS_CONFIRMED', 'LEAVE_REQUIRES_APPROVAL'].forEach(function (k) { f[k].checked = String(v[k]).toUpperCase() === 'TRUE'; });
+      if (s.storage) {
+        $('#mtStorage').hidden = false;
+        $('#mtStorage').className = 'alert ' + (s.storage.percent >= 85 ? 'warning' : 'info');
+        $('#mtStorageText').textContent = 'พื้นที่ Google Drive ของบัญชีระบบ: ใช้ไป ' + s.storage.usedLabel + ' จาก ' + s.storage.limitLabel + ' (' + s.storage.percent + '%) — หากเต็ม ระบบจะบันทึกข้อมูลไม่ได้';
+      }
       var days = String(v.WORK_DAYS || '').split(',');
       $$('#sWorkDays input').forEach(function (c) { c.checked = days.indexOf(c.value) >= 0; });
       updateMapLink();
@@ -618,7 +694,7 @@ window.Admin = (function () {
     var values = {};
     ['SCHOOL_LAT', 'SCHOOL_LNG', 'GEOFENCE_RADIUS_M', 'MAX_GPS_ACCURACY_M', 'WORK_START_TIME', 'LATE_AFTER_TIME', 'WORK_END_TIME', 'CHECKIN_EARLIEST_TIME',
       'SESSION_TIMEOUT_MIN', 'MAX_LOGIN_ATTEMPTS', 'LOCKOUT_MIN', 'GPS_RETENTION_DAYS', 'CORRECTION_MAX_DAYS'].forEach(function (k) { values[k] = f[k].value.trim(); });
-    ['ALLOW_HOLIDAY_CHECKIN', 'ALLOW_REGISTRATION', 'SETTINGS_CONFIRMED'].forEach(function (k) { values[k] = f[k].checked; });
+    ['ALLOW_HOLIDAY_CHECKIN', 'ALLOW_REGISTRATION', 'SETTINGS_CONFIRMED', 'LEAVE_REQUIRES_APPROVAL'].forEach(function (k) { values[k] = f[k].checked; });
     values.WORK_DAYS = $$('#sWorkDays input:checked').map(function (c) { return c.value; }).join(',');
     var btn = $('button[type=submit]', f);
     A.setBtnLoading(btn, true);
