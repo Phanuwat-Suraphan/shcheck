@@ -1054,6 +1054,24 @@ test('F04', 'ระบบที่ติดตั้งแบบเดิม (Cr
   expectErr(sys.env.call('firstRunSetup', Object.assign({ setupCode: 'ABCD-EFGH-JKLM' }, ADMIN_FORM)), 'ALREADY_SETUP');
 });
 
+test('F05', 'อัปเดตโค้ดเวอร์ชันใหม่: เปิดเว็บแล้วระบบเพิ่มคอลัมน์ที่ขาดให้อัตโนมัติ โดยข้อมูลเดิมอยู่ครบ', () => {
+  const sys = newSystem();
+  const t = addTeacher(sys, 1);
+  assert.strictEqual(sys.env.state.props.INSTALLED_VERSION, sys.env.context.APP.VERSION);
+  // จำลองฐานข้อมูลจากเวอร์ชันเก่า: ไม่มีคอลัมน์ Corrected ใน DailySummary
+  sys.at('2026-11-09 07:50:00'); ok(sys.api(t.token, 'att.checkIn', INSIDE));
+  const sh = sheet(sys, 'DailySummary');
+  const ci = sh.rows[0].indexOf('Corrected');
+  sh.rows.forEach(r => r.splice(ci, 1));
+  sys.env.state.props.INSTALLED_VERSION = '0.9.0';
+  expectErr(sys.api(sys.admin, 'report.daily', { date: '2026-11-09' }), 'NOT_SETUP');
+  ok(sys.env.call('getPublicConfig')); // ผู้ใช้คนแรกเปิดหน้าเว็บหลังอัปเดต
+  assert.strictEqual(sys.env.state.props.INSTALLED_VERSION, sys.env.context.APP.VERSION);
+  assert.ok(sheet(sys, 'DailySummary').rows[0].includes('Corrected'));
+  const rep = ok(sys.api(sys.admin, 'report.daily', { date: '2026-11-09' }));
+  assert.strictEqual(rep.tables[0].rows.find(r => r.employeeId === t.id).checkIn, '07:50');
+});
+
 /* ================================================================== RUN */
 (function run() {
   const results = [];

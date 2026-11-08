@@ -1,5 +1,5 @@
 /*
- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.0.0
+ * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.1.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Code.gs (โค้ดฝั่ง Server ทั้งหมด)
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่
  */
@@ -34,7 +34,7 @@ var APP = {
   SCHOOL_FULL: 'โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่',
   NAME_EN: 'Wat Sao Hin School Attendance System',
   SLOGAN: 'ระบบลงเวลาอัจฉริยะ สะดวก โปร่งใส ตรวจสอบได้',
-  VERSION: '1.0.0',
+  VERSION: '1.1.0',
   TZ: 'Asia/Bangkok'
 };
 
@@ -111,6 +111,10 @@ function getPublicConfig() {
       try { setupCore_(); } catch (e) { console.error('auto setup failed: ' + (e && e.stack ? e.stack : e)); setupError = String(e && e.message || e); }
       resetMemo_();
       ready = isSystemReady_();
+    } else if (scriptProps_().INSTALLED_VERSION !== APP.VERSION) {
+      // อัปเดตโค้ดเป็นเวอร์ชันใหม่: ปรับโครงสร้างฐานข้อมูลอัตโนมัติ (เพิ่มชีต/คอลัมน์/ค่าตั้งต้นที่ขาด ไม่ลบข้อมูลเดิม)
+      try { setupCore_(); } catch (e) { console.error('auto upgrade failed: ' + (e && e.stack ? e.stack : e)); }
+      resetMemo_();
     }
     var needsFirstAdmin = false;
     if (ready && !hasActiveAdmin_()) {
@@ -1179,7 +1183,8 @@ function setupCore_() {
         ' (ดูได้ในชีต "' + SETUP_SHEET_ + '") เพื่อสร้างผู้ดูแลระบบคนแรก — หรือใช้ CreateFirstAdmin() แบบเดิม');
     }
     SpreadsheetApp.flush();
-    log.push('ติดตั้งระบบเสร็จสมบูรณ์ ✔');
+    props.setProperty('INSTALLED_VERSION', APP.VERSION);
+    log.push('ติดตั้งระบบเสร็จสมบูรณ์ ✔ (เวอร์ชัน ' + APP.VERSION + ')');
   } finally {
     lock.releaseLock();
   }

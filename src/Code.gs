@@ -26,7 +26,7 @@ var APP = {
   SCHOOL_FULL: 'โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่',
   NAME_EN: 'Wat Sao Hin School Attendance System',
   SLOGAN: 'ระบบลงเวลาอัจฉริยะ สะดวก โปร่งใส ตรวจสอบได้',
-  VERSION: '1.0.0',
+  VERSION: '1.1.0',
   TZ: 'Asia/Bangkok'
 };
 
@@ -103,6 +103,10 @@ function getPublicConfig() {
       try { setupCore_(); } catch (e) { console.error('auto setup failed: ' + (e && e.stack ? e.stack : e)); setupError = String(e && e.message || e); }
       resetMemo_();
       ready = isSystemReady_();
+    } else if (scriptProps_().INSTALLED_VERSION !== APP.VERSION) {
+      // อัปเดตโค้ดเป็นเวอร์ชันใหม่: ปรับโครงสร้างฐานข้อมูลอัตโนมัติ (เพิ่มชีต/คอลัมน์/ค่าตั้งต้นที่ขาด ไม่ลบข้อมูลเดิม)
+      try { setupCore_(); } catch (e) { console.error('auto upgrade failed: ' + (e && e.stack ? e.stack : e)); }
+      resetMemo_();
     }
     var needsFirstAdmin = false;
     if (ready && !hasActiveAdmin_()) {

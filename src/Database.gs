@@ -724,7 +724,8 @@ function setupCore_() {
         ' (ดูได้ในชีต "' + SETUP_SHEET_ + '") เพื่อสร้างผู้ดูแลระบบคนแรก — หรือใช้ CreateFirstAdmin() แบบเดิม');
     }
     SpreadsheetApp.flush();
-    log.push('ติดตั้งระบบเสร็จสมบูรณ์ ✔');
+    props.setProperty('INSTALLED_VERSION', APP.VERSION);
+    log.push('ติดตั้งระบบเสร็จสมบูรณ์ ✔ (เวอร์ชัน ' + APP.VERSION + ')');
   } finally {
     lock.releaseLock();
   }
