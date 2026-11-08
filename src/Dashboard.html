@@ -1,0 +1,355 @@
+<!-- ======================= หน้าบุคลากร (Dashboard) ======================= -->
+<section id="view-app" class="view" hidden>
+  <header class="appbar">
+    <div class="container">
+      <div class="brand">
+        <div class="brand-mark"><span class="ms fill">schedule</span></div>
+        <div class="brand-text">
+          <span class="brand-title">ระบบลงเวลาปฏิบัติงาน</span>
+          <span class="brand-sub" data-meta="school">โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่</span>
+        </div>
+      </div>
+      <div class="spacer"></div>
+      <button type="button" class="btn white sm" id="toAdminBtn" hidden><span class="ms">admin_panel_settings</span><span class="hide-xs">ผู้บริหาร/Admin</span></button>
+      <div class="user-chip"><span class="avatar" id="appAvatar">ค</span><span id="appUserName" class="small"></span></div>
+      <button type="button" class="icon-btn" id="logoutBtn" aria-label="ออกจากระบบ" title="ออกจากระบบ"><span class="ms">logout</span></button>
+    </div>
+  </header>
+
+  <nav class="tabnav" id="userTabs" aria-label="เมนูหลัก">
+    <button type="button" data-tab="home" class="active"><span class="ms">fingerprint</span>ลงเวลา</button>
+    <button type="button" data-tab="history"><span class="ms">calendar_month</span>ประวัติ</button>
+    <button type="button" data-tab="leave"><span class="ms">event_busy</span>การลา<span class="dot" id="leaveDot" hidden></span></button>
+    <button type="button" data-tab="correction"><span class="ms">edit_calendar</span>แก้ไขเวลา<span class="dot" id="corrDot" hidden></span></button>
+    <button type="button" data-tab="account"><span class="ms">account_circle</span>บัญชี</button>
+  </nav>
+
+  <main class="app-main">
+    <div class="container">
+
+      <!-- ===== แท็บ: ลงเวลา ===== -->
+      <div class="tab-panel" data-panel="home">
+        <div class="home-grid home-main">
+          <div class="stack">
+            <div class="card hello-card o-hello">
+              <div class="hello">
+                <span class="avatar lg" id="homeAvatar">ค</span>
+                <div style="min-width:0">
+                  <div class="muted small" id="greeting">สวัสดี</div>
+                  <div class="name" id="homeName">-</div>
+                  <div class="row small" style="gap:6px;margin-top:2px">
+                    <span class="badge navy" id="homePosition">-</span>
+                    <span class="badge muted" id="homeRole">-</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card clock-card o-clock" aria-live="off">
+              <div class="date" id="clockDate">-</div>
+              <div class="time" id="clockTime">--:--:--</div>
+              <div class="row" style="margin-top:6px">
+                <span class="chip" id="dayTypeChip"><span class="ms" style="font-size:18px">work</span><span>วันทำงาน</span></span>
+              </div>
+              <div class="work-hours" id="workHours">เวลาทำงาน -</div>
+              <div class="src">เวลาอ้างอิงจากเซิร์ฟเวอร์ (Asia/Bangkok)</div>
+            </div>
+
+            <div class="card o-today">
+              <div class="row-between" style="margin-bottom:10px">
+                <div class="card-title mb-0"><span class="ms">today</span>สถานะการลงเวลาวันนี้</div>
+                <span class="badge muted" id="todayStatus">-</span>
+              </div>
+              <div class="today-grid">
+                <div class="today-slot">
+                  <div class="lbl"><span class="ms" style="color:var(--success-500)">login</span>เวลาเข้างาน</div>
+                  <div class="val empty" id="todayIn">--:--</div>
+                  <div class="tiny muted" id="todayInMeta">&nbsp;</div>
+                </div>
+                <div class="today-slot">
+                  <div class="lbl"><span class="ms" style="color:var(--sky-500)">logout</span>เวลาออกงาน</div>
+                  <div class="val empty" id="todayOut">--:--</div>
+                  <div class="tiny muted" id="todayOutMeta">&nbsp;</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="stack">
+            <div class="card o-gps">
+              <div class="card-title"><span class="ms">my_location</span>สถานะ GPS</div>
+              <div class="gps-row">
+                <span class="gps-pulse" id="gpsIcon"><span class="ms">location_searching</span></span>
+                <div style="flex:1;min-width:0">
+                  <div style="font-weight:700" id="gpsStatusText">กำลังตรวจสอบสิทธิ์การเข้าถึงตำแหน่ง...</div>
+                  <div class="small muted" id="gpsStatusSub">ระบบจะขอตำแหน่งเฉพาะตอนกดปุ่มเท่านั้น</div>
+                </div>
+              </div>
+              <div id="zoneResult" class="zone-result" hidden></div>
+              <div class="row" style="margin-top:12px">
+                <button type="button" class="btn outline sm" id="checkLocBtn"><span class="ms">near_me</span>ตรวจสอบตำแหน่งของฉัน</button>
+                <a class="btn ghost sm" id="schoolMapLink" href="#" target="_blank" rel="noopener" hidden><span class="ms">map</span>แผนที่โรงเรียน</a>
+                <button type="button" class="btn ghost sm" id="gpsHelpBtn"><span class="ms">help</span>วิธีเปิด GPS</button>
+              </div>
+            </div>
+
+            <div class="att-actions o-actions">
+              <button type="button" class="att-btn in" id="checkInBtn">
+                <span class="att-icon"><span class="ms fill">login</span></span>
+                <span class="att-text"><span class="att-title">ลงเวลาเข้างาน</span><span class="att-sub" id="checkInSub">กดเพื่อบันทึกเวลาเข้า</span></span>
+              </button>
+              <button type="button" class="att-btn out" id="checkOutBtn">
+                <span class="att-icon"><span class="ms fill">logout</span></span>
+                <span class="att-text"><span class="att-title">ลงเวลาออกงาน</span><span class="att-sub" id="checkOutSub">กดเพื่อบันทึกเวลาออก</span></span>
+              </button>
+            </div>
+            <div id="geoNotSetAlert" class="alert warning o-geo" hidden><span class="ms">warning</span><div>ผู้ดูแลระบบยังไม่ได้ตั้งค่าพิกัดโรงเรียน จึงยังลงเวลาไม่ได้</div></div>
+          </div>
+        </div>
+
+        <div class="page-head" style="margin-top:22px">
+          <h2><span class="ms">insights</span>สรุปเดือน <span id="monthLabel">-</span></h2>
+        </div>
+        <div class="grid grid-stats five" id="monthStats"></div>
+
+        <div class="card" style="margin-top:16px">
+          <div class="row-between">
+            <div class="card-title"><span class="ms">history</span>ประวัติการลงเวลาล่าสุด</div>
+            <button type="button" class="btn ghost sm" data-tab-go="history">ดูทั้งหมด<span class="ms">chevron_right</span></button>
+          </div>
+          <div class="list" id="recentList"></div>
+        </div>
+      </div>
+
+      <!-- ===== แท็บ: ประวัติ ===== -->
+      <div class="tab-panel" data-panel="history" hidden>
+        <div class="page-head">
+          <h2><span class="ms">calendar_month</span>ประวัติการลงเวลารายเดือน</h2>
+        </div>
+        <div class="card">
+          <div class="form-grid two">
+            <div class="field"><label for="histMonth">เดือน</label><select id="histMonth"></select></div>
+            <div class="field"><label for="histYear">ปี (พ.ศ.)</label><select id="histYear"></select></div>
+          </div>
+          <div class="grid grid-stats five" id="histStats"></div>
+        </div>
+        <div class="card" style="margin-top:16px">
+          <div class="card-title"><span class="ms">list_alt</span><span id="histTitle">รายการ</span></div>
+          <div id="histTable"></div>
+        </div>
+      </div>
+
+      <!-- ===== แท็บ: การลา ===== -->
+      <div class="tab-panel" data-panel="leave" hidden>
+        <div class="page-head"><h2><span class="ms">event_busy</span>แจ้งการลา</h2></div>
+        <div class="home-grid">
+          <div class="card">
+            <div class="card-title"><span class="ms">edit_note</span>แบบฟอร์มขอลา</div>
+            <form id="leaveForm" novalidate>
+              <div class="field" data-field="type">
+                <label for="leaveType">ประเภทการลา</label>
+                <select id="leaveType" name="type" required>
+                  <option value="">— เลือกประเภท —</option>
+                  <option value="SICK">ลาป่วย</option>
+                  <option value="PERSONAL">ลากิจ</option>
+                  <option value="VACATION">ลาพักผ่อน</option>
+                  <option value="OFFICIAL">ไปราชการ</option>
+                  <option value="OTHER">อื่น ๆ</option>
+                </select>
+                <span class="err"></span>
+              </div>
+              <div class="form-grid two">
+                <div class="field" data-field="startDate">
+                  <label for="leaveStart">วันที่เริ่มลา</label>
+                  <input id="leaveStart" name="startDate" type="date" required>
+                  <span class="hint" data-thai-for="leaveStart"></span><span class="err"></span>
+                </div>
+                <div class="field" data-field="endDate">
+                  <label for="leaveEnd">วันที่สิ้นสุด</label>
+                  <input id="leaveEnd" name="endDate" type="date" required>
+                  <span class="hint" data-thai-for="leaveEnd"></span><span class="err"></span>
+                </div>
+              </div>
+              <div class="field" data-field="period">
+                <span class="field-label">ช่วงเวลา</span>
+                <div class="seg" id="leavePeriod" role="radiogroup">
+                  <button type="button" data-val="FULL" class="active">เต็มวัน</button>
+                  <button type="button" data-val="MORNING">ครึ่งวันเช้า</button>
+                  <button type="button" data-val="AFTERNOON">ครึ่งวันบ่าย</button>
+                </div>
+                <span class="hint">ลาครึ่งวันได้เฉพาะเมื่อวันที่เริ่มและสิ้นสุดเป็นวันเดียวกัน</span>
+                <span class="err"></span>
+              </div>
+              <div class="field" data-field="reason">
+                <label for="leaveReason">เหตุผล</label>
+                <textarea id="leaveReason" name="reason" maxlength="500" required placeholder="ระบุเหตุผลการลา"></textarea>
+                <span class="err"></span>
+              </div>
+              <div class="field" data-field="attachment">
+                <span class="field-label">เอกสารประกอบ (ถ้ามี)</span>
+                <label class="file-drop"><span class="ms" style="color:var(--sky-500)">attach_file</span>
+                  <span class="small" data-file-label>แนบไฟล์ PDF หรือรูปภาพ (ไม่เกิน 5 MB)</span>
+                  <input type="file" name="attachment" accept="application/pdf,image/jpeg,image/png,image/webp">
+                </label>
+                <span class="err"></span>
+              </div>
+              <button type="submit" class="btn lg block"><span class="ms">send</span>ส่งใบลา</button>
+            </form>
+          </div>
+          <div class="card">
+            <div class="card-title"><span class="ms">inventory</span>รายการลาของฉัน</div>
+            <div class="list" id="myLeaves"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== แท็บ: คำร้องแก้ไขเวลา ===== -->
+      <div class="tab-panel" data-panel="correction" hidden>
+        <div class="page-head"><h2><span class="ms">edit_calendar</span>คำร้องแก้ไขการลงเวลา</h2></div>
+        <div class="home-grid">
+          <div class="card">
+            <div class="card-title"><span class="ms">edit_note</span>แบบฟอร์มคำร้อง</div>
+            <p class="small muted">ใช้เมื่อลืมลงเวลา โทรศัพท์มีปัญหา หรือ GPS ใช้งานไม่ได้ เมื่อได้รับอนุมัติ ระบบจะบันทึกเวลาใหม่โดยเก็บประวัติเดิมไว้ทั้งหมด</p>
+            <form id="corrForm" novalidate>
+              <div class="form-grid two">
+                <div class="field" data-field="date">
+                  <label for="corrDate">วันที่ที่ต้องการแก้ไข</label>
+                  <input id="corrDate" name="date" type="date" required>
+                  <span class="hint" data-thai-for="corrDate"></span><span class="err"></span>
+                </div>
+                <div class="field" data-field="time">
+                  <label for="corrTime">เวลาที่ต้องการแจ้ง</label>
+                  <input id="corrTime" name="time" type="time" required>
+                  <span class="err"></span>
+                </div>
+              </div>
+              <div class="field" data-field="type">
+                <span class="field-label">ประเภทเวลา</span>
+                <div class="radio-cards">
+                  <label><input type="radio" name="type" value="IN" checked><span class="ms" style="color:var(--success-500)">login</span>เวลาเข้างาน</label>
+                  <label><input type="radio" name="type" value="OUT"><span class="ms" style="color:var(--sky-500)">logout</span>เวลาออกงาน</label>
+                </div>
+                <span class="err"></span>
+              </div>
+              <div class="field" data-field="reason">
+                <label for="corrReason">เหตุผล</label>
+                <textarea id="corrReason" name="reason" maxlength="500" required placeholder="อธิบายเหตุผล เช่น โทรศัพท์แบตเตอรี่หมด"></textarea>
+                <span class="err"></span>
+              </div>
+              <div class="field" data-field="attachment">
+                <span class="field-label">หลักฐานประกอบ (ถ้ามี)</span>
+                <label class="file-drop"><span class="ms" style="color:var(--sky-500)">attach_file</span>
+                  <span class="small" data-file-label>แนบไฟล์ PDF หรือรูปภาพ (ไม่เกิน 5 MB)</span>
+                  <input type="file" name="attachment" accept="application/pdf,image/jpeg,image/png,image/webp">
+                </label>
+                <span class="err"></span>
+              </div>
+              <button type="submit" class="btn lg block"><span class="ms">send</span>ส่งคำร้อง</button>
+            </form>
+          </div>
+          <div class="card">
+            <div class="card-title"><span class="ms">inventory</span>คำร้องของฉัน</div>
+            <div class="list" id="myCorrections"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== แท็บ: บัญชี ===== -->
+      <div class="tab-panel" data-panel="account" hidden>
+        <div class="page-head"><h2><span class="ms">account_circle</span>บัญชีของฉัน</h2></div>
+        <div class="home-grid">
+          <div class="stack">
+            <div class="card">
+              <div class="hello" style="margin-bottom:14px">
+                <span class="avatar lg" id="accAvatar">ค</span>
+                <div><div class="name" id="accName">-</div><div class="muted small" id="accRole">-</div></div>
+              </div>
+              <dl class="kv">
+                <dt>รหัสบุคลากร</dt><dd id="accCode">-</dd>
+                <dt>ตำแหน่ง</dt><dd id="accPosition">-</dd>
+                <dt>ชื่อผู้ใช้</dt><dd id="accUsername">-</dd>
+              </dl>
+              <p class="small muted" style="margin-top:12px">หากข้อมูลไม่ถูกต้อง กรุณาแจ้งผู้ดูแลระบบเพื่อแก้ไข</p>
+              <button type="button" class="btn danger block" id="logoutBtn2"><span class="ms">logout</span>ออกจากระบบ</button>
+            </div>
+            <div class="privacy-box">
+              <h4><span class="ms" style="color:var(--sky-500)">shield_person</span>นโยบายการใช้ข้อมูลตำแหน่ง</h4>
+              ระบบขอตำแหน่ง GPS เฉพาะตอนที่ท่านกดลงเวลาหรือกดตรวจสอบตำแหน่ง และเก็บพิกัดไว้ไม่เกิน <b data-retention>365</b> วัน
+              <button type="button" class="link-btn small" data-open-privacy>อ่านฉบับเต็ม</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title"><span class="ms">password</span>เปลี่ยนรหัสผ่าน</div>
+            <form id="pwForm" novalidate>
+              <div class="field" data-field="currentPassword">
+                <label for="pwCurrent">รหัสผ่านปัจจุบัน</label>
+                <div class="input-icon has-toggle"><span class="ms">lock</span>
+                  <input id="pwCurrent" name="currentPassword" type="password" autocomplete="current-password" required>
+                  <button type="button" class="toggle-pw" data-toggle-pw="pwCurrent" aria-label="แสดงรหัสผ่าน"><span class="ms">visibility</span></button>
+                </div><span class="err"></span>
+              </div>
+              <div class="field" data-field="newPassword">
+                <label for="pwNew">รหัสผ่านใหม่</label>
+                <div class="input-icon has-toggle"><span class="ms">key</span>
+                  <input id="pwNew" name="newPassword" type="password" autocomplete="new-password" required>
+                  <button type="button" class="toggle-pw" data-toggle-pw="pwNew" aria-label="แสดงรหัสผ่าน"><span class="ms">visibility</span></button>
+                </div>
+                <span class="hint">อย่างน้อย 8 ตัว มีตัวอักษรภาษาอังกฤษและตัวเลข</span><span class="err"></span>
+              </div>
+              <div class="field" data-field="confirmPassword">
+                <label for="pwConfirm">ยืนยันรหัสผ่านใหม่</label>
+                <div class="input-icon has-toggle"><span class="ms">lock_reset</span>
+                  <input id="pwConfirm" name="confirmPassword" type="password" autocomplete="new-password" required>
+                  <button type="button" class="toggle-pw" data-toggle-pw="pwConfirm" aria-label="แสดงรหัสผ่าน"><span class="ms">visibility</span></button>
+                </div><span class="err"></span>
+              </div>
+              <button type="submit" class="btn lg block"><span class="ms">save</span>บันทึกรหัสผ่านใหม่</button>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-note"><span data-meta="nameTh">ระบบลงเวลาปฏิบัติงานออนไลน์</span> · <span data-meta="school">โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่</span></div>
+    </div>
+  </main>
+</section>
+
+<!-- ======================= บังคับเปลี่ยนรหัสผ่าน ======================= -->
+<section id="view-force-password" class="view" hidden>
+  <header class="auth-hero" style="padding-bottom:88px">
+    <div class="brand-mark"><span class="ms fill">key</span></div>
+    <h1>ตั้งรหัสผ่านใหม่</h1>
+    <div class="school">เพื่อความปลอดภัย กรุณาเปลี่ยนรหัสผ่านก่อนเริ่มใช้งาน</div>
+  </header>
+  <div class="auth-wrap">
+    <div class="card auth-card">
+      <div class="alert info" style="margin-bottom:14px"><span class="ms">info</span><div>บัญชีของท่านใช้รหัสผ่านชั่วคราว (ตั้งโดยผู้ดูแลระบบ) จึงต้องตั้งรหัสผ่านใหม่ที่มีเพียงท่านเท่านั้นที่ทราบ</div></div>
+      <form id="forcePwForm" novalidate>
+        <div class="field" data-field="currentPassword">
+          <label for="fpCurrent">รหัสผ่านชั่วคราว/ปัจจุบัน</label>
+          <div class="input-icon has-toggle"><span class="ms">lock</span>
+            <input id="fpCurrent" name="currentPassword" type="password" autocomplete="current-password" required>
+            <button type="button" class="toggle-pw" data-toggle-pw="fpCurrent" aria-label="แสดงรหัสผ่าน"><span class="ms">visibility</span></button>
+          </div><span class="err"></span>
+        </div>
+        <div class="field" data-field="newPassword">
+          <label for="fpNew">รหัสผ่านใหม่</label>
+          <div class="input-icon has-toggle"><span class="ms">key</span>
+            <input id="fpNew" name="newPassword" type="password" autocomplete="new-password" required>
+            <button type="button" class="toggle-pw" data-toggle-pw="fpNew" aria-label="แสดงรหัสผ่าน"><span class="ms">visibility</span></button>
+          </div>
+          <span class="hint">อย่างน้อย 8 ตัว มีตัวอักษรภาษาอังกฤษและตัวเลข ไม่มีชื่อผู้ใช้อยู่ในรหัสผ่าน</span><span class="err"></span>
+        </div>
+        <div class="field" data-field="confirmPassword">
+          <label for="fpConfirm">ยืนยันรหัสผ่านใหม่</label>
+          <div class="input-icon has-toggle"><span class="ms">lock_reset</span>
+            <input id="fpConfirm" name="confirmPassword" type="password" autocomplete="new-password" required>
+            <button type="button" class="toggle-pw" data-toggle-pw="fpConfirm" aria-label="แสดงรหัสผ่าน"><span class="ms">visibility</span></button>
+          </div><span class="err"></span>
+        </div>
+        <button type="submit" class="btn lg block"><span class="ms">save</span>บันทึกและเริ่มใช้งาน</button>
+        <button type="button" class="btn ghost block" style="margin-top:8px" data-logout><span class="ms">logout</span>ออกจากระบบ</button>
+      </form>
+    </div>
+  </div>
+</section>

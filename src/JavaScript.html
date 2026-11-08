@@ -1,0 +1,1122 @@
+<script>
+/* ==========================================================================
+   JavaScript.html — Client หลัก (บุคลากร): Auth, ลงเวลา GPS, ประวัติ, การลา, คำร้อง
+   หมายเหตุความปลอดภัย: โค้ดฝั่ง Browser ไม่ใช่จุดตรวจสิทธิ์ — Server ตรวจ Session/Role
+   ทุกคำสั่งเสมอ การแก้ไข JavaScript ใน DevTools จึงไม่สามารถเพิ่มสิทธิ์ได้
+   ========================================================================== */
+(function () {
+  'use strict';
+
+  var META = window.APP_META || {};
+  var S = {
+    token: null, user: null, cfg: null, offsetMs: 0, timeoutMin: 30, lastApi: Date.now(), lastPing: 0,
+    dash: null, attBusy: false, adminLoaded: false, clockTimer: null, tab: 'home', loadedTabs: {}
+  };
+
+  /* ------------------------------------------------------------------ utils */
+  var $ = function (sel, root) { return (root || document).querySelector(sel); };
+  var $$ = function (sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); };
+  function esc(v) {
+    return String(v === null || v === undefined ? '' : v).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function icon(name, cls) { return '<span class="ms' + (cls ? ' ' + cls : '') + '" aria-hidden="true">' + esc(name) + '</span>'; }
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  var TH_M = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+  var TH_MS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+  var TH_D = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
+  function parseYmd(s) { var p = String(s || '').split('-'); return { y: +p[0], m: +p[1], d: +p[2] }; }
+  function dowOf(s) { var p = parseYmd(s); return new Date(Date.UTC(p.y, p.m - 1, p.d)).getUTCDay(); }
+  function thDate(s, style) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(s || ''))) return '';
+    var p = parseYmd(s);
+    if (style === 'short') return p.d + ' ' + TH_MS[p.m - 1] + ' ' + String(p.y + 543).slice(-2);
+    if (style === 'long') return 'วัน' + TH_D[dowOf(s)] + 'ที่ ' + p.d + ' ' + TH_M[p.m - 1] + ' พ.ศ. ' + (p.y + 543);
+    if (style === 'dow') return TH_D[dowOf(s)] + ' ' + p.d + ' ' + TH_MS[p.m - 1] + ' ' + (p.y + 543);
+    return p.d + ' ' + TH_M[p.m - 1] + ' ' + (p.y + 543);
+  }
+  function hm(t) { return t ? String(t).substr(0, 5) : ''; }
+  function initials(name) {
+    var n = String(name || '').replace(/^(นาย|นางสาว|นาง|น\.ส\.|ด\.ต\.|ว่าที่ร้อยตรี|ดร\.)\s*/, '').trim();
+    return n ? n.charAt(0) : 'ค';
+  }
+  /** เวลา Bangkok ตามนาฬิกา Server (ใช้แสดงผลเท่านั้น — Server เป็นผู้บันทึกเวลาจริง) */
+  function serverNow() { return Date.now() + S.offsetMs; }
+  function bkkParts(ms) {
+    var d = new Date(ms + 7 * 3600000);
+    return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1, d: d.getUTCDate(), hh: d.getUTCHours(), mi: d.getUTCMinutes(), ss: d.getUTCSeconds(), dow: d.getUTCDay() };
+  }
+  function bkkToday() { var p = bkkParts(serverNow()); return p.y + '-' + pad2(p.m) + '-' + pad2(p.d); }
+  function bkkTimeHM() { var p = bkkParts(serverNow()); return pad2(p.hh) + ':' + pad2(p.mi); }
+  function fmtDistance(m) { if (m === null || m === undefined || m === '') return '-'; m = Number(m); return m >= 1000 ? (m / 1000).toFixed(2) + ' กม.' : Math.round(m) + ' ม.'; }
+
+  /* ------------------------------------------------------------------ storage */
+  function safeStore(kind) {
+    var mem = {};
+    return {
+      get: function (k) { try { return window[kind].getItem(k); } catch (e) { return mem[k] || null; } },
+      set: function (k, v) { try { window[kind].setItem(k, v); } catch (e) { mem[k] = v; } },
+      del: function (k) { try { window[kind].removeItem(k); } catch (e) { delete mem[k]; } }
+    };
+  }
+  var session = safeStore('sessionStorage');
+  var local = safeStore('localStorage');
+
+  /* ------------------------------------------------------------------ RPC */
+  function run(fn, args) {
+    return new Promise(function (resolve, reject) {
+      if (!window.google || !google.script || !google.script.run) {
+        reject(appErr('ไม่สามารถเชื่อมต่อ Google Apps Script ได้ กรุณาเปิดผ่าน URL ของเว็บแอป', 'NO_GAS'));
+        return;
+      }
+      var r = google.script.run.withSuccessHandler(resolve).withFailureHandler(function (e) {
+        reject(appErr('เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่', 'NETWORK', null, e));
+      });
+      r[fn].apply(r, args || []);
+    });
+  }
+  function appErr(message, code, data, cause) {
+    var e = new Error(message); e.code = code || 'ERROR'; e.data = data || null; e.cause = cause; return e;
+  }
+  /** เรียกคำสั่งที่ต้องเข้าสู่ระบบ */
+  function api(action, params, opts) {
+    opts = opts || {};
+    if (!opts.silent) showLoading(opts.loadingText);
+    return run('api', [S.token, action, params || {}]).then(function (res) {
+      if (!opts.silent) hideLoading();
+      if (!res) throw appErr('ไม่ได้รับข้อมูลจากเซิร์ฟเวอร์', 'EMPTY');
+      if (!res.ok) {
+        if (res.code === 'AUTH') { forceLogout(res.error); }
+        else if (res.code === 'MUST_CHANGE_PASSWORD') { showView('force-password'); }
+        throw appErr(res.error, res.code, res.data);
+      }
+      S.lastApi = Date.now();
+      return res.data;
+    }, function (e) { if (!opts.silent) hideLoading(); throw e; });
+  }
+  function publicCall(fn, args, loadingText) {
+    showLoading(loadingText);
+    return run(fn, args).then(function (res) {
+      hideLoading();
+      if (!res) throw appErr('ไม่ได้รับข้อมูลจากเซิร์ฟเวอร์', 'EMPTY');
+      if (!res.ok) throw appErr(res.error, res.code, res.data);
+      return res.data;
+    }, function (e) { hideLoading(); throw e; });
+  }
+
+  /* ------------------------------------------------------------------ UI primitives */
+  var loadingCount = 0;
+  function showLoading(text) { loadingCount++; $('#loadingText').textContent = text || 'กำลังประมวลผล...'; $('#loadingOverlay').hidden = false; }
+  function hideLoading() { loadingCount = Math.max(0, loadingCount - 1); if (!loadingCount) $('#loadingOverlay').hidden = true; }
+
+  function toast(msg, type, ms) {
+    var icons = { success: 'check_circle', error: 'error', warning: 'warning', info: 'info' };
+    var el = document.createElement('div');
+    el.className = 'toast ' + (type || 'info');
+    el.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    el.innerHTML = icon(icons[type] || 'info') + '<div>' + esc(msg) + '</div>';
+    $('#toastHost').appendChild(el);
+    setTimeout(function () { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(function () { el.remove(); }, 320); }, ms || 3800);
+  }
+
+  /**
+   * modal({title, icon, body (HTML), actions: [{label, cls, icon, onClick(close), keepOpen}], wide, onClose})
+   */
+  function modal(o) {
+    var host = $('#modalHost');
+    var back = document.createElement('div');
+    back.className = 'modal-backdrop';
+    back.innerHTML = '<div class="modal' + (o.wide ? ' wide' : '') + '" role="dialog" aria-modal="true" aria-label="' + esc(o.title || '') + '">' +
+      '<div class="modal-head">' + (o.icon ? icon(o.icon) : '') + '<h3>' + esc(o.title || '') + '</h3>' +
+      (o.noClose ? '' : '<button type="button" class="icon-btn" data-close aria-label="ปิด">' + icon('close') + '</button>') + '</div>' +
+      '<div class="modal-body">' + (o.body || '') + '</div>' +
+      (o.actions && o.actions.length ? '<div class="modal-actions"></div>' : '') + '</div>';
+    var closed = false;
+    function close(v) {
+      if (closed) return; closed = true;
+      back.remove();
+      document.removeEventListener('keydown', onKey);
+      if (o.onClose) o.onClose(v);
+    }
+    function onKey(e) { if (e.key === 'Escape' && !o.noClose) close(); }
+    document.addEventListener('keydown', onKey);
+    if (!o.noClose) {
+      back.addEventListener('click', function (e) { if (e.target === back) close(); });
+      $('[data-close]', back).addEventListener('click', function () { close(); });
+    }
+    if (o.actions) {
+      var bar = $('.modal-actions', back);
+      o.actions.forEach(function (a) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'btn ' + (a.cls || '');
+        b.innerHTML = (a.icon ? icon(a.icon) : '') + esc(a.label);
+        b.addEventListener('click', function () {
+          if (a.onClick) {
+            var r = a.onClick(close, b, back);
+            if (r === false || a.keepOpen) return;
+          }
+          close(a.value);
+        });
+        bar.appendChild(b);
+      });
+    }
+    host.appendChild(back);
+    var focusEl = $('input, select, textarea', back) || $('.modal-actions .btn', back);
+    if (focusEl) setTimeout(function () { try { focusEl.focus(); } catch (e) { /* ignore */ } }, 50);
+    if (o.onOpen) o.onOpen(back, close);
+    return { close: close, root: back };
+  }
+
+  function confirmDialog(o) {
+    return new Promise(function (resolve) {
+      var answered = false;
+      modal({
+        title: o.title || 'ยืนยัน', icon: o.icon || (o.danger ? 'warning' : 'help'),
+        body: '<p>' + (o.html || esc(o.message || '')) + '</p>',
+        actions: [
+          { label: o.cancelText || 'ยกเลิก', cls: 'outline', onClick: function () { answered = true; resolve(false); } },
+          { label: o.confirmText || 'ยืนยัน', cls: o.danger ? 'danger' : '', icon: o.confirmIcon, onClick: function () { answered = true; resolve(true); } }
+        ],
+        onClose: function () { if (!answered) resolve(false); }
+      });
+    });
+  }
+
+  /** ขอข้อความจากผู้ใช้ (เช่น เหตุผลไม่อนุมัติ) → string หรือ null */
+  function promptDialog(o) {
+    return new Promise(function (resolve) {
+      var done = false;
+      modal({
+        title: o.title, icon: o.icon || 'edit_note',
+        body: (o.message ? '<p>' + esc(o.message) + '</p>' : '') +
+          '<div class="field"><label for="promptInput">' + esc(o.label || 'ข้อความ') + '</label>' +
+          '<textarea id="promptInput" maxlength="500" placeholder="' + esc(o.placeholder || '') + '"></textarea>' +
+          '<span class="err"></span></div>',
+        actions: [
+          { label: 'ยกเลิก', cls: 'outline', onClick: function () { done = true; resolve(null); } },
+          {
+            label: o.confirmText || 'ตกลง', cls: o.danger ? 'danger' : '', onClick: function (close, btn, root) {
+              var v = $('#promptInput', root).value.trim();
+              if (o.required && v.length < 2) {
+                var f = $('.field', root); f.classList.add('has-error'); $('.err', f).textContent = 'กรุณากรอก' + (o.label || 'ข้อความ');
+                return false;
+              }
+              done = true; resolve(v);
+            }
+          }
+        ],
+        onClose: function () { if (!done) resolve(null); }
+      });
+    });
+  }
+
+  function setBtnLoading(btn, on) {
+    if (!btn) return;
+    if (on) {
+      btn.dataset.html = btn.innerHTML; btn.disabled = true; btn.classList.add('is-loading');
+      btn.innerHTML = '<span class="spinner"></span>กำลังดำเนินการ...';
+    } else if (btn.dataset.html !== undefined) {
+      btn.innerHTML = btn.dataset.html; btn.disabled = false; btn.classList.remove('is-loading'); delete btn.dataset.html;
+    }
+  }
+
+  function clearFieldErrors(form) { $$('.field.has-error', form).forEach(function (f) { f.classList.remove('has-error'); }); }
+  function showFieldError(form, field, msg) {
+    var f = field ? $('.field[data-field="' + field + '"]', form) : null;
+    if (!f) return false;
+    f.classList.add('has-error');
+    var e = $('.err', f); if (e) e.textContent = msg;
+    var inp = $('input, select, textarea', f); if (inp && inp.focus) { try { inp.focus(); } catch (x) { /* ignore */ } }
+    return true;
+  }
+  function handleFormError(form, err) {
+    if (!(err.data && err.data.field && showFieldError(form, err.data.field, err.message))) toast(err.message, 'error', 5500);
+  }
+
+  var BADGE = {
+    PRESENT: ['success', 'check_circle'], LATE: ['warning', 'schedule'], LEAVE: ['info', 'event_busy'], ABSENT: ['danger', 'cancel'],
+    NOT_YET: ['muted', 'hourglass_empty'], HOLIDAY: ['muted', 'beach_access'], HOLIDAY_WORK: ['navy', 'work_history'],
+    ON_TIME: ['success', 'check_circle'], NORMAL: ['success', 'check_circle'], EARLY: ['warning', 'running_with_errors'],
+    PENDING: ['warning', 'pending'], APPROVED: ['success', 'verified'], REJECTED: ['danger', 'block'], CANCELLED: ['muted', 'do_not_disturb_on'],
+    ACTIVE: ['success', 'check_circle'], INACTIVE: ['muted', 'person_off']
+  };
+  function badge(code, label) {
+    var b = BADGE[code] || ['muted', 'info'];
+    return '<span class="badge ' + b[0] + '">' + icon(b[1]) + esc(label || code) + '</span>';
+  }
+  function emptyState(text, ic) { return '<div class="empty-state">' + icon(ic || 'inbox') + '<div>' + esc(text) + '</div></div>'; }
+
+  /** ไฟล์แนบ → {name, mimeType, data(base64)} พร้อมย่อรูปภาพให้เล็กลง */
+  function fileToPayload(file) {
+    return new Promise(function (resolve, reject) {
+      if (!file) { resolve(null); return; }
+      var okTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+      if (okTypes.indexOf(file.type) < 0) { reject(appErr('รองรับเฉพาะไฟล์ PDF, JPG, PNG, WEBP', 'VALIDATION', { field: 'attachment' })); return; }
+      var finish = function (blob, name, type) {
+        if (blob.size > 5 * 1024 * 1024) { reject(appErr('ไฟล์แนบต้องมีขนาดไม่เกิน 5 MB', 'VALIDATION', { field: 'attachment' })); return; }
+        var fr = new FileReader();
+        fr.onload = function () { resolve({ name: name, mimeType: type, data: String(fr.result).split(',')[1] }); };
+        fr.onerror = function () { reject(appErr('อ่านไฟล์ไม่สำเร็จ', 'VALIDATION', { field: 'attachment' })); };
+        fr.readAsDataURL(blob);
+      };
+      if (file.type.indexOf('image/') === 0 && file.size > 700 * 1024) {
+        var img = new Image(), url = URL.createObjectURL(file);
+        img.onload = function () {
+          var scale = Math.min(1, 1600 / Math.max(img.width, img.height));
+          var c = document.createElement('canvas');
+          c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          URL.revokeObjectURL(url);
+          c.toBlob(function (b) { finish(b || file, file.name.replace(/\.\w+$/, '') + '.jpg', b ? 'image/jpeg' : file.type); }, 'image/jpeg', 0.82);
+        };
+        img.onerror = function () { URL.revokeObjectURL(url); finish(file, file.name, file.type); };
+        img.src = url;
+      } else {
+        finish(file, file.name, file.type);
+      }
+    });
+  }
+
+  function base64ToBlob(b64, mime) {
+    var bin = atob(b64), bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+  }
+  function downloadBase64(b64, mime, name) {
+    var url = URL.createObjectURL(base64ToBlob(b64, mime));
+    var a = document.createElement('a');
+    // ต้องระบุ target เป็น _self: หน้าเว็บใช้ <base target="_top"> ซึ่งจะทำให้ลิงก์ดาวน์โหลดไปเปิดที่หน้าต่างแม่ (นอก iframe ของ Apps Script)
+    a.href = url; a.download = name; a.target = '_self'; a.rel = 'noopener';
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 5000);
+  }
+
+  /** ดูไฟล์แนบ (ตรวจสิทธิ์ที่ Server) */
+  function viewAttachment(kind, id) {
+    api('file.get', { kind: kind, id: id }, { loadingText: 'กำลังโหลดเอกสาร...' }).then(function (f) {
+      var url = URL.createObjectURL(base64ToBlob(f.base64, f.mimeType));
+      var isImg = f.mimeType.indexOf('image/') === 0;
+      modal({
+        title: f.name, icon: 'description', wide: true,
+        body: isImg ? '<img src="' + url + '" alt="' + esc(f.name) + '" style="max-width:100%;border-radius:12px">'
+          : '<div class="alert info">' + icon('picture_as_pdf') + '<div>เอกสาร PDF — กดปุ่มด้านล่างเพื่อดาวน์โหลดและเปิดดู</div></div>',
+        actions: [{ label: 'ดาวน์โหลด', icon: 'download', cls: 'outline', keepOpen: true, onClick: function () { downloadBase64(f.base64, f.mimeType, f.name); } },
+          { label: 'ปิด' }],
+        onClose: function () { setTimeout(function () { URL.revokeObjectURL(url); }, 1000); }
+      });
+    }).catch(function (e) { toast(e.message, 'error'); });
+  }
+
+  /** โหลด Chart.js เฉพาะเมื่อต้องใช้ (ประหยัดข้อมูลบนมือถือ) */
+  var chartPromise = null;
+  function loadChartJs() {
+    if (window.Chart) return Promise.resolve(window.Chart);
+    if (!chartPromise) {
+      chartPromise = new Promise(function (resolve, reject) {
+        var s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js';
+        s.onload = function () { if (window.Chart) { window.Chart.defaults.font.family = "'Sarabun', sans-serif"; resolve(window.Chart); } else reject(new Error('Chart.js')); };
+        s.onerror = function () { chartPromise = null; reject(new Error('โหลด Chart.js ไม่สำเร็จ')); };
+        document.head.appendChild(s);
+      });
+    }
+    return chartPromise;
+  }
+
+  /* ------------------------------------------------------------------ views */
+  function showView(name) {
+    ['login', 'register', 'app', 'admin', 'force-password'].forEach(function (v) {
+      var el = $('#view-' + v); if (el) el.hidden = v !== name;
+    });
+    $('#bootScreen').hidden = true;
+    window.scrollTo(0, 0);
+  }
+
+  function applyMeta(cfg) {
+    $$('[data-meta]').forEach(function (el) {
+      var k = el.getAttribute('data-meta');
+      var v = k === 'nameTh' ? (cfg.appName || META.nameTh) : (cfg[k] || META[k]);
+      if (v) el.textContent = v;
+    });
+    $$('[data-retention]').forEach(function (el) { el.textContent = cfg.gpsRetentionDays || 365; });
+  }
+
+  function privacyHtml() {
+    var days = (S.cfg && S.cfg.gpsRetentionDays) || (S.dash && S.dash.settings.gpsRetentionDays) || 365;
+    return '<div class="small" style="line-height:1.7">' +
+      '<h4>1. วัตถุประสงค์</h4><p>เพื่อบันทึกและยืนยันการมาปฏิบัติงานของบุคลากรภายในพื้นที่โรงเรียน สรุปสถิติ และใช้ประกอบการบริหารงานบุคคลของ' + esc(META.school || 'โรงเรียน') + '</p>' +
+      '<h4>2. ข้อมูลที่จัดเก็บ</h4><p>ชื่อ-นามสกุล รหัสบุคลากร ตำแหน่ง ชื่อผู้ใช้ รหัสผ่าน (จัดเก็บแบบเข้ารหัสทางเดียว ไม่มีผู้ใดทราบรหัสผ่านจริง) วันและเวลาลงเวลา พิกัด GPS ค่าความแม่นยำ ระยะห่างจากโรงเรียน ข้อมูลการลา คำร้องแก้ไขเวลา เอกสารแนบ และประวัติการใช้งานระบบ</p>' +
+      '<h4>3. การใช้ตำแหน่ง (GPS)</h4><p>ระบบขออ่านตำแหน่ง <b>เฉพาะขณะที่ท่านกดปุ่มลงเวลา หรือกดตรวจสอบตำแหน่งเท่านั้น</b> ไม่มีการติดตามตำแหน่งเบื้องหลังหรือตลอดวัน</p>' +
+      '<h4>4. ระยะเวลาเก็บรักษา</h4><p>พิกัด GPS เก็บไว้ไม่เกิน <b>' + esc(days) + ' วัน</b> หลังจากนั้นระบบจะลบพิกัดอัตโนมัติ คงไว้เฉพาะวันเวลาและระยะห่าง ข้อมูลการลงเวลาและการลาเก็บไว้ตามระเบียบงานบุคคลของโรงเรียน</p>' +
+      '<h4>5. ผู้มีสิทธิ์เข้าถึง</h4><p>ท่านเห็นข้อมูลของตนเอง ผู้บริหารและผู้ดูแลระบบเข้าถึงได้ตามหน้าที่ ข้อมูลจัดเก็บใน Google Sheets/Google Drive ของบัญชีโรงเรียน ไม่เปิดเป็นสาธารณะ</p>' +
+      '<h4>6. สิทธิของเจ้าของข้อมูล (พ.ร.บ.คุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562)</h4><p>ท่านสามารถขอเข้าถึง ขอแก้ไขข้อมูลที่ไม่ถูกต้อง หรือสอบถามการใช้ข้อมูลได้ที่ผู้ดูแลระบบของโรงเรียน</p>' +
+      '<h4>7. ข้อจำกัด</h4><p>การตรวจสอบ GPS ผ่านเว็บเบราว์เซอร์ไม่สามารถป้องกันการปลอมพิกัดได้ทั้งหมด การใช้แอปหรือวิธีใด ๆ ปลอมตำแหน่งถือเป็นการให้ข้อมูลอันเป็นเท็จต่อทางราชการ</p></div>';
+  }
+  function openPrivacy() { modal({ title: 'นโยบายการเก็บและใช้ข้อมูล', icon: 'shield_person', body: privacyHtml(), actions: [{ label: 'รับทราบ' }] }); }
+
+  /* ------------------------------------------------------------------ boot */
+  function boot() {
+    bindStatic();
+    $('#bootText').textContent = 'กำลังเชื่อมต่อเซิร์ฟเวอร์...';
+    run('getPublicConfig', []).then(function (res) {
+      if (!res || !res.ok) throw appErr(res ? res.error : 'โหลดข้อมูลไม่สำเร็จ');
+      S.cfg = res.data;
+      S.offsetMs = res.data.serverNow - Date.now();
+      applyMeta(S.cfg);
+      $('#setupNotice').hidden = !!S.cfg.setupComplete;
+      $('#registerArea').hidden = !S.cfg.allowRegistration;
+      var token = session.get('wsh_token');
+      if (token && S.cfg.setupComplete) {
+        S.token = token;
+        return api('auth.session', {}, { silent: true }).then(enterApp).catch(function () { clearSession(); showLogin(); });
+      }
+      showLogin();
+    }).catch(function (e) {
+      showLogin();
+      showLoginAlert(e.message || 'เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ');
+    });
+  }
+
+  function showLogin() {
+    var remembered = local.get('wsh_user');
+    if (remembered) { $('#loginUsername').value = remembered; $('#rememberUser').checked = true; }
+    showView('login');
+    setTimeout(function () { (remembered ? $('#loginPassword') : $('#loginUsername')).focus(); }, 60);
+  }
+  function showLoginAlert(msg) { $('#loginAlertText').textContent = msg; $('#loginAlert').hidden = !msg; }
+
+  function bindStatic() {
+    document.addEventListener('click', function (e) {
+      var t = e.target.closest('[data-toggle-pw]');
+      if (t) {
+        var inp = document.getElementById(t.getAttribute('data-toggle-pw'));
+        var show = inp.type === 'password';
+        inp.type = show ? 'text' : 'password';
+        $('.ms', t).textContent = show ? 'visibility_off' : 'visibility';
+        t.setAttribute('aria-label', show ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน');
+        return;
+      }
+      if (e.target.closest('[data-open-privacy]')) { openPrivacy(); return; }
+      var go = e.target.closest('[data-go]');
+      if (go) { if (go.getAttribute('data-go') === 'login') showLogin(); return; }
+      if (e.target.closest('[data-logout]')) { doLogout(); return; }
+      var tg = e.target.closest('[data-tab-go]');
+      if (tg) { switchTab(tg.getAttribute('data-tab-go')); }
+    });
+    $('#loginForm').addEventListener('submit', doLogin);
+    $('#goRegisterBtn').addEventListener('click', function () { resetRegister(); showView('register'); });
+    $('#forgotBtn').addEventListener('click', function () {
+      modal({
+        title: 'ลืมรหัสผ่าน', icon: 'lock_reset',
+        body: '<p>เพื่อความปลอดภัย ระบบไม่มีการส่งรหัสผ่านทางอีเมลหรือข้อความ</p><ol class="help-list">' +
+          '<li>ติดต่อ<b>ผู้ดูแลระบบของโรงเรียน</b> พร้อมแสดงตัวตน</li>' +
+          '<li>ผู้ดูแลระบบจะสั่ง “รีเซ็ตรหัสผ่าน” และแจ้งรหัสผ่านชั่วคราวแก่ท่านโดยตรง (ระบบแสดงรหัสชั่วคราวเพียงครั้งเดียว)</li>' +
+          '<li>เข้าสู่ระบบด้วยรหัสผ่านชั่วคราว ระบบจะบังคับให้ตั้งรหัสผ่านใหม่ทันที</li></ol>' +
+          '<p class="small muted">หากใส่รหัสผ่านผิดหลายครั้ง บัญชีจะถูกล็อกชั่วคราว ผู้ดูแลระบบสามารถปลดล็อกให้ได้</p>',
+        actions: [{ label: 'เข้าใจแล้ว' }]
+      });
+    });
+    $('#registerForm').addEventListener('submit', doRegister);
+    ['#regPassword', '#regConfirm', '#regUsername'].forEach(function (s) { $(s).addEventListener('input', updatePwRules); });
+    $('#forcePwForm').addEventListener('submit', function (e) { submitPasswordChange(e, true); });
+    $('#pwForm').addEventListener('submit', function (e) { submitPasswordChange(e, false); });
+    $('#logoutBtn').addEventListener('click', doLogout);
+    $('#logoutBtn2').addEventListener('click', doLogout);
+    $('#toAdminBtn').addEventListener('click', openAdmin);
+    $$('#userTabs [data-tab]').forEach(function (b) { b.addEventListener('click', function () { switchTab(b.getAttribute('data-tab')); }); });
+    $('#checkInBtn').addEventListener('click', function () { doAttendance('IN'); });
+    $('#checkOutBtn').addEventListener('click', function () { doAttendance('OUT'); });
+    $('#checkLocBtn').addEventListener('click', checkMyLocation);
+    $('#gpsHelpBtn').addEventListener('click', function () { showGeoHelp(null); });
+    $('#histMonth').addEventListener('change', loadHistory);
+    $('#histYear').addEventListener('change', loadHistory);
+    bindLeaveForm();
+    bindCorrectionForm();
+    ['click', 'keydown', 'touchstart'].forEach(function (ev) { document.addEventListener(ev, onUserActivity, { passive: true }); });
+    setInterval(checkIdle, 20000);
+  }
+
+  /* ------------------------------------------------------------------ auth */
+  function doLogin(e) {
+    e.preventDefault();
+    showLoginAlert('');
+    var u = $('#loginUsername').value.trim(), p = $('#loginPassword').value;
+    if (!u || !p) { showLoginAlert('กรุณากรอกชื่อผู้ใช้และรหัสผ่าน'); return; }
+    var btn = $('#loginBtn');
+    setBtnLoading(btn, true);
+    run('login', [u, p, { ua: navigator.userAgent.substr(0, 240) }]).then(function (res) {
+      setBtnLoading(btn, false);
+      if (!res || !res.ok) { showLoginAlert(res ? res.error : 'เข้าสู่ระบบไม่สำเร็จ'); $('#loginPassword').select(); return; }
+      if ($('#rememberUser').checked) local.set('wsh_user', u); else local.del('wsh_user');
+      $('#loginPassword').value = '';
+      S.token = res.data.token;
+      session.set('wsh_token', S.token);
+      enterApp(res.data);
+    }).catch(function (err) { setBtnLoading(btn, false); showLoginAlert(err.message); });
+  }
+
+  function enterApp(data) {
+    S.user = data.user;
+    S.timeoutMin = data.sessionTimeoutMin || 30;
+    S.lastApi = Date.now();
+    S.loadedTabs = {};
+    S.adminLoaded = false;
+    $('#adminRoot').innerHTML = '';
+    if (data.mustChangePassword || (data.user && data.user.mustChangePassword)) {
+      $('#forcePwForm').reset();
+      showView('force-password');
+      return;
+    }
+    renderUserChrome();
+    showView('app');
+    switchTab('home', true);
+  }
+
+  function renderUserChrome() {
+    var u = S.user;
+    var ini = initials(u.fullName);
+    ['#appAvatar', '#homeAvatar', '#accAvatar'].forEach(function (s) { $(s).textContent = ini; });
+    $('#appUserName').textContent = u.fullName;
+    $('#homeName').textContent = u.fullName;
+    $('#homePosition').textContent = u.position;
+    $('#homeRole').textContent = u.roleLabel;
+    $('#accName').textContent = u.fullName;
+    $('#accRole').textContent = u.roleLabel + ' · ' + u.position;
+    $('#accCode').textContent = u.staffCode;
+    $('#accPosition').textContent = u.position;
+    $('#accUsername').textContent = u.username;
+    $('#toAdminBtn').hidden = !(u.role === 'ADMIN' || u.role === 'EXECUTIVE');
+  }
+
+  function clearSession() {
+    S.token = null; S.user = null; S.dash = null; session.del('wsh_token');
+    if (S.clockTimer) { clearInterval(S.clockTimer); S.clockTimer = null; }
+    $('#modalHost').innerHTML = '';
+    $('#adminRoot').innerHTML = '';
+    S.adminLoaded = false;
+    if (window.Admin && window.Admin.destroy) { try { window.Admin.destroy(); } catch (e) { /* ignore */ } }
+  }
+
+  function forceLogout(msg) {
+    if (!S.token) return;
+    clearSession();
+    showLogin();
+    showLoginAlert(msg || 'หมดเวลาการใช้งาน กรุณาเข้าสู่ระบบใหม่');
+  }
+
+  function doLogout() {
+    confirmDialog({ title: 'ออกจากระบบ', message: 'ต้องการออกจากระบบใช่หรือไม่', confirmText: 'ออกจากระบบ', icon: 'logout' }).then(function (yes) {
+      if (!yes) return;
+      var t = S.token;
+      clearSession();
+      showLogin();
+      if (t) run('api', [t, 'auth.logout', {}]).catch(function () { /* ignore */ });
+      toast('ออกจากระบบเรียบร้อยแล้ว', 'success');
+    });
+  }
+
+  function onUserActivity() {
+    if (!S.token || !S.user) return;
+    var now = Date.now();
+    if (now - S.lastApi > 60000 && now - S.lastPing > 120000 && now - S.lastApi < S.timeoutMin * 60000) {
+      S.lastPing = now;
+      api('auth.ping', {}, { silent: true }).catch(function () { /* handled */ });
+    }
+  }
+  function checkIdle() {
+    if (S.token && Date.now() - S.lastApi > S.timeoutMin * 60000) forceLogout('ออกจากระบบอัตโนมัติ เนื่องจากไม่ได้ใช้งานเกิน ' + S.timeoutMin + ' นาที');
+  }
+
+  /* ---------- Register ---------- */
+  function resetRegister() {
+    $('#registerForm').reset();
+    clearFieldErrors($('#registerForm'));
+    $('#registerAlert').hidden = true;
+    $('#registerCard').hidden = false;
+    $('#registerDone').hidden = true;
+    updatePwRules();
+  }
+  function pwRuleState() {
+    var pw = $('#regPassword').value, cf = $('#regConfirm').value, u = $('#regUsername').value.trim().toLowerCase();
+    return {
+      len: pw.length >= 8,
+      mix: /[A-Za-z]/.test(pw) && /\d/.test(pw),
+      user: pw.length > 0 && !(u.length >= 4 && pw.toLowerCase().indexOf(u) >= 0),
+      match: pw.length > 0 && pw === cf
+    };
+  }
+  function updatePwRules() {
+    var st = pwRuleState();
+    $$('#regPwRules li').forEach(function (li) {
+      var ok = st[li.getAttribute('data-rule')];
+      li.classList.toggle('ok', ok);
+      $('.ms', li).textContent = ok ? 'check_circle' : 'radio_button_unchecked';
+    });
+    var pw = $('#regPassword').value;
+    var score = 0;
+    if (pw.length >= 8) score++;
+    if (pw.length >= 12) score++;
+    if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score++;
+    if (/\d/.test(pw)) score++;
+    if (/[^A-Za-z0-9]/.test(pw)) score++;
+    var colors = ['#DC2626', '#DC2626', '#F59E0B', '#F59E0B', '#16A34A', '#15803D'];
+    var m = $('#regPwMeter');
+    m.style.width = (pw ? Math.max(12, score * 20) : 0) + '%';
+    m.style.background = colors[score];
+  }
+  function doRegister(e) {
+    e.preventDefault();
+    var f = $('#registerForm');
+    clearFieldErrors(f);
+    $('#registerAlert').hidden = true;
+    var data = {
+      fullName: f.fullName.value.trim(), staffCode: f.staffCode.value.trim(), position: f.position.value,
+      username: f.username.value.trim().toLowerCase(), password: f.password.value, confirmPassword: f.confirmPassword.value,
+      acceptPrivacy: $('#regAccept').checked
+    };
+    var st = pwRuleState();
+    if (!data.fullName) return showFieldError(f, 'fullName', 'กรุณากรอกชื่อ-นามสกุล');
+    if (!data.staffCode) return showFieldError(f, 'staffCode', 'กรุณากรอกรหัสประจำตัวบุคลากร');
+    if (!data.position) return showFieldError(f, 'position', 'กรุณาเลือกตำแหน่ง');
+    if (!/^[a-z][a-z0-9._-]{3,29}$/.test(data.username)) return showFieldError(f, 'username', 'ชื่อผู้ใช้ไม่ถูกต้อง (4–30 ตัว ขึ้นต้นด้วย a-z)');
+    if (!st.len || !st.mix || !st.user) return showFieldError(f, 'password', 'รหัสผ่านยังไม่ผ่านเกณฑ์ด้านล่าง');
+    if (!st.match) return showFieldError(f, 'confirmPassword', 'การยืนยันรหัสผ่านไม่ตรงกัน');
+    if (!data.acceptPrivacy) return showFieldError(f, 'acceptPrivacy', 'กรุณายอมรับนโยบายการใช้ข้อมูล');
+    var btn = $('#registerBtn');
+    setBtnLoading(btn, true);
+    run('register', [data]).then(function (res) {
+      setBtnLoading(btn, false);
+      if (!res || !res.ok) {
+        var err = appErr(res ? res.error : 'สมัครสมาชิกไม่สำเร็จ', res && res.code, res && res.data);
+        if (!(err.data && err.data.field && showFieldError(f, err.data.field, err.message))) {
+          $('#registerAlertText').textContent = err.message; $('#registerAlert').hidden = false; window.scrollTo(0, 0);
+        }
+        return;
+      }
+      $('#registerCard').hidden = true;
+      $('#registerDone').hidden = false;
+      $('#registerDoneText').textContent = res.data.message;
+      $('#regDoneName').textContent = res.data.fullName;
+      $('#regDoneUser').textContent = res.data.username;
+      $('#regDoneRef').textContent = res.data.reference;
+      $('#loginUsername').value = res.data.username;
+      window.scrollTo(0, 0);
+    }).catch(function (err) { setBtnLoading(btn, false); $('#registerAlertText').textContent = err.message; $('#registerAlert').hidden = false; });
+  }
+
+  /* ---------- Change password ---------- */
+  function submitPasswordChange(e, forced) {
+    e.preventDefault();
+    var f = e.target;
+    clearFieldErrors(f);
+    var d = { currentPassword: f.currentPassword.value, newPassword: f.newPassword.value, confirmPassword: f.confirmPassword.value };
+    if (!d.currentPassword) return showFieldError(f, 'currentPassword', 'กรุณากรอกรหัสผ่านปัจจุบัน');
+    if (d.newPassword.length < 8 || !/[A-Za-z]/.test(d.newPassword) || !/\d/.test(d.newPassword)) return showFieldError(f, 'newPassword', 'รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัว และมีทั้งตัวอักษรและตัวเลข');
+    if (d.newPassword !== d.confirmPassword) return showFieldError(f, 'confirmPassword', 'การยืนยันรหัสผ่านไม่ตรงกัน');
+    var btn = $('button[type=submit]', f);
+    setBtnLoading(btn, true);
+    api('auth.changePassword', d, { silent: true }).then(function (r) {
+      setBtnLoading(btn, false);
+      f.reset();
+      S.token = r.token;
+      session.set('wsh_token', S.token);
+      toast(r.message + ' — ระบบได้ออกจากระบบบนอุปกรณ์อื่นทั้งหมดแล้ว', 'success', 5000);
+      if (forced) enterApp({ user: r.user, sessionTimeoutMin: S.timeoutMin, mustChangePassword: false });
+    }).catch(function (err) { setBtnLoading(btn, false); if (err.code !== 'AUTH') handleFormError(f, err); });
+  }
+
+  /* ------------------------------------------------------------------ tabs */
+  function switchTab(tab, force) {
+    S.tab = tab;
+    $$('#userTabs [data-tab]').forEach(function (b) { b.classList.toggle('active', b.getAttribute('data-tab') === tab); });
+    $$('#view-app .tab-panel').forEach(function (p) { p.hidden = p.getAttribute('data-panel') !== tab; });
+    window.scrollTo(0, 0);
+    if (tab === 'home') loadDashboard(!force);
+    if (tab === 'history') { initHistorySelectors(); loadHistory(); }
+    if (tab === 'leave') { initLeaveForm(); loadMyLeaves(); }
+    if (tab === 'correction') { initCorrectionForm(); loadMyCorrections(); }
+  }
+
+  /* ------------------------------------------------------------------ home / dashboard */
+  function loadDashboard(silent) {
+    return api('me.dashboard', {}, { silent: !!silent && !!S.dash, loadingText: 'กำลังโหลดข้อมูล...' }).then(function (d) {
+      S.dash = d;
+      S.offsetMs = d.serverNow - Date.now();
+      renderDashboard();
+    }).catch(function (e) { if (e.code !== 'AUTH' && e.code !== 'MUST_CHANGE_PASSWORD') toast(e.message, 'error'); });
+  }
+
+  function renderDashboard() {
+    var d = S.dash, s = d.settings, row = d.today.row;
+    var hh = bkkParts(serverNow()).hh;
+    $('#greeting').textContent = hh < 12 ? 'สวัสดีตอนเช้า' : (hh < 17 ? 'สวัสดีตอนบ่าย' : 'สวัสดีตอนเย็น');
+    $('#workHours').textContent = 'เวลาทำงาน ' + s.workStart + '–' + s.workEnd + ' น. · ถือว่าสายเมื่อลงเวลาหลัง ' + s.lateAfter + ' น.';
+    var chip = $('#dayTypeChip');
+    chip.innerHTML = d.today.isWorkday ? icon('work') + '<span>วันทำงาน</span>' : icon('beach_access') + '<span>' + esc(d.today.holidayName || 'วันหยุด') + '</span>';
+    // วันนี้
+    var inEl = $('#todayIn'), outEl = $('#todayOut');
+    inEl.textContent = row && row.checkIn ? hm(row.checkIn) : '--:--';
+    inEl.classList.toggle('empty', !(row && row.checkIn));
+    outEl.textContent = row && row.checkOut ? hm(row.checkOut) : '--:--';
+    outEl.classList.toggle('empty', !(row && row.checkOut));
+    $('#todayInMeta').innerHTML = row && row.checkIn ? (row.isLate ? '<span style="color:var(--warning)">สาย ' + row.lateMinutes + ' นาที</span>' : 'ตรงเวลา') +
+      (row.inDistanceM !== null && row.inDistanceM !== undefined ? ' · ห่าง ' + fmtDistance(row.inDistanceM) : '') : '&nbsp;';
+    $('#todayOutMeta').innerHTML = row && row.checkOut ? (row.earlyLeave ? '<span style="color:var(--warning)">ออกก่อนเวลา</span>' : 'ปกติ') +
+      (row.outDistanceM !== null && row.outDistanceM !== undefined ? ' · ห่าง ' + fmtDistance(row.outDistanceM) : '') : '&nbsp;';
+    var st = $('#todayStatus');
+    if (row) st.outerHTML = '<span id="todayStatus">' + badge(row.inProgress ? 'PRESENT' : row.status, row.inProgress ? (row.isLate ? 'มาสาย · ยังไม่ลงเวลาออก' : 'กำลังปฏิบัติงาน') : row.statusLabel) + '</span>';
+    else st.outerHTML = '<span id="todayStatus">' + badge(d.today.isWorkday ? 'NOT_YET' : 'HOLIDAY', d.today.isWorkday ? 'ยังไม่ลงเวลา' : 'วันหยุด') + '</span>';
+    // ปุ่ม
+    updateAttendanceButtons();
+    $('#geoNotSetAlert').hidden = !!s.geofenceConfigured;
+    var mapA = $('#schoolMapLink');
+    if (s.schoolMaps) { mapA.href = s.schoolMaps.google; mapA.hidden = false; } else mapA.hidden = true;
+    // สถิติเดือน
+    $('#monthLabel').textContent = d.month.label;
+    $('#monthStats').innerHTML = statCards(d.month.totals);
+    // ล่าสุด
+    $('#recentList').innerHTML = d.recent.length ? d.recent.map(dayListItem).join('') : emptyState('ยังไม่มีประวัติการลงเวลา', 'history');
+    $('#leaveDot').hidden = !d.pending.leaves; $('#leaveDot').textContent = d.pending.leaves;
+    $('#corrDot').hidden = !d.pending.corrections; $('#corrDot').textContent = d.pending.corrections;
+    startClock();
+    updateGpsPermission();
+  }
+
+  function statCards(t) {
+    var cards = [
+      ['success', 'how_to_reg', t.present, 'วัน', 'มาปฏิบัติงาน'],
+      ['warning', 'schedule', t.late, 'ครั้ง', 'มาสาย' + (t.lateMinutes ? ' (' + t.lateMinutes + ' นาที)' : '')],
+      ['sky', 'event_busy', t.leaveDays, 'วัน', 'ลา'],
+      ['warning', 'rule', t.incomplete, 'ครั้ง', 'ลงเวลาไม่ครบ'],
+      ['danger', 'person_cancel', t.absent, 'วัน', 'ขาดงาน']
+    ];
+    return cards.map(function (c) {
+      return '<div class="stat-card tone-' + c[0] + '"><span class="stat-icon">' + icon(c[1]) + '</span>' +
+        '<div class="stat-value">' + esc(c[2]) + '<span class="stat-unit">' + c[3] + '</span></div><div class="stat-label">' + esc(c[4]) + '</div></div>';
+    }).join('');
+  }
+
+  function dayListItem(d) {
+    var p = parseYmd(d.date);
+    return '<div class="list-item"><div class="date-box"><div class="d">' + p.d + '</div><div class="m">' + TH_MS[p.m - 1] + '</div></div>' +
+      '<div class="body"><div class="row-between"><span class="small muted">วัน' + esc(d.dayName) + '</span>' +
+      badge(d.status, d.statusLabel) + '</div>' +
+      '<div class="times"><span>' + icon('login') + (d.checkIn ? hm(d.checkIn) : '--:--') + '</span><span>' + icon('logout') + (d.checkOut ? hm(d.checkOut) : '--:--') + '</span>' +
+      (d.lateMinutes ? '<span class="small" style="color:var(--warning)">สาย ' + d.lateMinutes + ' นาที</span>' : '') + '</div>' +
+      (d.note ? '<div class="tiny muted">' + esc(d.note) + '</div>' : '') + '</div></div>';
+  }
+
+  function startClock() {
+    if (S.clockTimer) return;
+    var tick = function () {
+      var p = bkkParts(serverNow());
+      $('#clockTime').textContent = pad2(p.hh) + ':' + pad2(p.mi) + ':' + pad2(p.ss);
+      var ymd = p.y + '-' + pad2(p.m) + '-' + pad2(p.d);
+      $('#clockDate').textContent = thDate(ymd, 'long');
+      if (S.dash && S.dash.today.date !== ymd && S.tab === 'home' && $('#view-app').hidden === false) {
+        S.dash.today.date = ymd; loadDashboard(true); // เปลี่ยนวันแล้ว
+      }
+    };
+    tick();
+    S.clockTimer = setInterval(tick, 1000);
+  }
+
+  function updateAttendanceButtons() {
+    var d = S.dash; if (!d) return;
+    var row = d.today.row, s = d.settings;
+    var inBtn = $('#checkInBtn'), outBtn = $('#checkOutBtn');
+    var hasIn = !!(row && row.checkIn), hasOut = !!(row && row.checkOut);
+    inBtn.disabled = S.attBusy || !s.geofenceConfigured || hasIn;
+    outBtn.disabled = S.attBusy || !s.geofenceConfigured || !hasIn || hasOut;
+    $('#checkInSub').textContent = hasIn ? 'ลงเวลาเข้าแล้ว ' + hm(row.checkIn) + ' น.' : 'กดเพื่อบันทึกเวลาเข้า (ใช้ GPS)';
+    $('#checkOutSub').textContent = hasOut ? 'ลงเวลาออกแล้ว ' + hm(row.checkOut) + ' น.' : (hasIn ? 'กดเพื่อบันทึกเวลาออก (ใช้ GPS)' : 'ต้องลงเวลาเข้างานก่อน');
+  }
+
+  /* ---------- GPS ---------- */
+  function inAppBrowser() { return /Line\/|FBAN|FBAV|Instagram|KAKAOTALK|MicroMessenger/i.test(navigator.userAgent); }
+
+  function updateGpsPermission() {
+    var setStatus = function (cls, ic, text, sub) {
+      var i = $('#gpsIcon'); i.className = 'gps-pulse ' + cls; i.innerHTML = icon(ic);
+      $('#gpsStatusText').textContent = text; $('#gpsStatusSub').textContent = sub;
+    };
+    if (!('geolocation' in navigator)) { setStatus('bad', 'location_disabled', 'อุปกรณ์/เบราว์เซอร์นี้ไม่รองรับ GPS', 'กรุณาใช้ Chrome หรือ Safari บนโทรศัพท์มือถือ'); return; }
+    if (inAppBrowser()) { setStatus('wait', 'open_in_browser', 'กำลังเปิดผ่านแอปแชท (เช่น LINE)', 'แนะนำให้เปิดลิงก์ด้วย Chrome หรือ Safari เพื่อให้ GPS ทำงานได้ถูกต้อง'); return; }
+    if (!navigator.permissions || !navigator.permissions.query) { setStatus('wait', 'location_searching', 'พร้อมขอตำแหน่งเมื่อกดลงเวลา', 'เบราว์เซอร์จะถามสิทธิ์ตำแหน่ง กรุณากด “อนุญาต”'); return; }
+    navigator.permissions.query({ name: 'geolocation' }).then(function (p) {
+      var apply = function () {
+        if (p.state === 'granted') setStatus('ok', 'location_on', 'อนุญาตการเข้าถึงตำแหน่งแล้ว', 'ระบบจะอ่านตำแหน่งเฉพาะตอนกดปุ่มเท่านั้น');
+        else if (p.state === 'denied') setStatus('bad', 'location_off', 'ตำแหน่งถูกปิดกั้น', 'กด “วิธีเปิด GPS” เพื่อดูวิธีอนุญาตตำแหน่ง');
+        else setStatus('wait', 'location_searching', 'ยังไม่ได้อนุญาตตำแหน่ง', 'เมื่อกดลงเวลา เบราว์เซอร์จะถามสิทธิ์ กรุณากด “อนุญาต”');
+      };
+      apply();
+      p.onchange = apply;
+    }).catch(function () { setStatus('wait', 'location_searching', 'พร้อมขอตำแหน่งเมื่อกดลงเวลา', 'เบราว์เซอร์จะถามสิทธิ์ตำแหน่ง กรุณากด “อนุญาต”'); });
+  }
+
+  /**
+   * อ่านตำแหน่งครั้งเดียวตอนกดปุ่ม: เฝ้ารอค่าความแม่นยำที่ดีขึ้นสูงสุด ~15 วินาที แล้วหยุดอ่านทันที
+   * (ไม่มีการติดตามตำแหน่งต่อเนื่อง)
+   */
+  function acquirePosition(maxAcc, onProgress) {
+    return new Promise(function (resolve, reject) {
+      if (!('geolocation' in navigator)) { reject({ code: 'UNSUPPORTED' }); return; }
+      var best = null, done = false, watchId = null, t1, t2;
+      function finish(ok, v) {
+        if (done) return; done = true;
+        clearTimeout(t1); clearTimeout(t2);
+        if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+        if (ok) resolve(v); else reject(v);
+      }
+      t1 = setTimeout(function () { if (best) finish(true, best); }, 15000);
+      t2 = setTimeout(function () { if (best) finish(true, best); else finish(false, { code: 3 }); }, 30000);
+      watchId = navigator.geolocation.watchPosition(function (pos) {
+        var p = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
+        if (!best || p.accuracy < best.accuracy) best = p;
+        if (onProgress) onProgress(best);
+        if (best.accuracy <= maxAcc) finish(true, best);
+      }, function (err) {
+        if (err.code === 1) finish(false, err);
+        else if (err.code === 2 && !best) finish(false, err);
+      }, { enableHighAccuracy: true, maximumAge: 0, timeout: 25000 });
+    });
+  }
+
+  function showGeoHelp(err) {
+    var head = '';
+    if (err) {
+      var code = err.code;
+      head = code === 1 ? '<div class="alert danger">' + icon('location_off') + '<div><b>ไม่ได้รับอนุญาตให้เข้าถึงตำแหน่ง</b><br>ระบบต้องใช้ตำแหน่งเพื่อยืนยันว่าท่านอยู่ในพื้นที่โรงเรียน</div></div>'
+        : code === 2 ? '<div class="alert danger">' + icon('gps_off') + '<div><b>ไม่สามารถระบุตำแหน่งได้</b><br>GPS อาจปิดอยู่ หรือสัญญาณไม่เพียงพอ</div></div>'
+          : code === 3 ? '<div class="alert warning">' + icon('timer_off') + '<div><b>ค้นหาตำแหน่งนานเกินไป</b><br>กรุณาออกไปบริเวณที่โล่ง แล้วลองใหม่</div></div>'
+            : '<div class="alert danger">' + icon('error') + '<div>อุปกรณ์หรือเบราว์เซอร์นี้ไม่รองรับการระบุตำแหน่ง</div></div>';
+    }
+    modal({
+      title: 'วิธีเปิดใช้งานตำแหน่ง (GPS)', icon: 'location_on',
+      body: head +
+        (inAppBrowser() ? '<div class="alert warning" style="margin-top:10px">' + icon('open_in_browser') + '<div>ท่านเปิดผ่านแอปแชท (เช่น LINE) ซึ่งมักบล็อก GPS — กดเมนู ⋮ หรือ ⋯ แล้วเลือก <b>“เปิดในเบราว์เซอร์”</b> (Chrome/Safari)</div></div>' : '') +
+        '<h4 style="margin-top:14px">โทรศัพท์ Android (Chrome)</h4><ol class="help-list small">' +
+        '<li>ปัดหน้าจอลงจากด้านบน แล้วเปิด <b>ตำแหน่ง (Location)</b></li>' +
+        '<li>ใน Chrome แตะไอคอนด้านซ้ายของแถบที่อยู่ → <b>สิทธิ์</b> → <b>ตำแหน่ง</b> → <b>อนุญาต</b></li>' +
+        '<li>การตั้งค่าโทรศัพท์ → ตำแหน่ง → เปิด <b>ความแม่นยำของตำแหน่งใน Google</b></li></ol>' +
+        '<h4>iPhone / iPad (Safari)</h4><ol class="help-list small">' +
+        '<li>การตั้งค่า → ความเป็นส่วนตัวและความปลอดภัย → <b>บริการหาตำแหน่ง</b> → เปิด</li>' +
+        '<li>ในรายการเดียวกัน เลือก <b>เว็บไซต์ Safari</b> → <b>ขณะใช้แอป</b> และเปิด <b>ตำแหน่งที่แน่นอน</b></li>' +
+        '<li>ใน Safari แตะ <b>aA</b> → การตั้งค่าเว็บไซต์ → ตำแหน่ง → <b>อนุญาต</b></li></ol>' +
+        '<h4>เคล็ดลับให้ GPS แม่นยำ</h4><ul class="help-list small"><li>ยืนบริเวณที่โล่ง ห่างจากอาคารสูงหรือหลังคาโลหะ</li><li>เปิด Wi-Fi ไว้ช่วยระบุตำแหน่ง</li><li>รอสักครู่หลังเปิด GPS แล้วจึงกดลงเวลา</li></ul>',
+      actions: [{ label: 'ตกลง' }]
+    });
+  }
+
+  function zoneHtml(r) {
+    var ok = r.inZone && r.accuracyOk;
+    return '<span class="ms fill">' + (ok ? 'where_to_vote' : 'wrong_location') + '</span><div style="flex:1">' +
+      '<div class="big">' + (ok ? 'อยู่ในพื้นที่โรงเรียน' : (r.accuracyOk ? 'อยู่นอกพื้นที่โรงเรียน' : 'สัญญาณ GPS ไม่แม่นยำพอ')) + '</div>' +
+      '<div class="small">ห่างจากโรงเรียน <b>' + fmtDistance(r.distanceM) + '</b> (รัศมีที่อนุญาต ' + r.radiusM + ' ม.) · ความแม่นยำ ±' + r.accuracyM + ' ม. (เกณฑ์ ≤ ' + r.maxAccuracyM + ' ม.)</div>' +
+      (r.maps ? '<div class="row" style="margin-top:8px"><a class="btn outline sm" target="_blank" rel="noopener" href="' + esc(r.maps.osm) + '">' + icon('map') + 'OpenStreetMap</a>' +
+        '<a class="btn outline sm" target="_blank" rel="noopener" href="' + esc(r.maps.google) + '">' + icon('pin_drop') + 'Google Maps</a></div>' : '') +
+      '</div>';
+  }
+
+  function checkMyLocation() {
+    if (!S.dash) return;
+    var btn = $('#checkLocBtn');
+    setBtnLoading(btn, true);
+    acquirePosition(S.dash.settings.maxAccuracyM, null).then(function (pos) {
+      return api('att.preview', pos, { silent: true }).then(function (r) {
+        var z = $('#zoneResult');
+        z.className = 'zone-result ' + (r.inZone && r.accuracyOk ? 'in' : 'out');
+        z.innerHTML = zoneHtml(r);
+        z.hidden = false;
+      });
+    }, function (err) { showGeoHelp(err); }).catch(function (e) { toast(e.message, 'error'); })
+      .then(function () { setBtnLoading(btn, false); updateGpsPermission(); });
+  }
+
+  function progressModal(type) {
+    var steps = ['ขออนุญาตและอ่านพิกัด GPS', 'ตรวจสอบความแม่นยำของสัญญาณ', 'ส่งข้อมูลให้เซิร์ฟเวอร์ตรวจสอบระยะห่าง', 'บันทึกเวลาด้วยเวลาของเซิร์ฟเวอร์'];
+    var m = modal({
+      title: type === 'IN' ? 'กำลังลงเวลาเข้างาน' : 'กำลังลงเวลาออกงาน', icon: 'satellite_alt', noClose: true,
+      body: '<ul class="steps">' + steps.map(function (s, i) { return '<li data-step="' + i + '"><span class="st">' + (i + 1) + '</span><span>' + s + '</span></li>'; }).join('') + '</ul>' +
+        '<div class="small muted" id="gpsProgressNote" style="margin-top:12px">กรุณาอยู่ในบริเวณที่โล่งและรอสักครู่...</div>'
+    });
+    return {
+      set: function (i, state) {
+        var li = $('[data-step="' + i + '"]', m.root); if (!li) return;
+        li.className = state;
+        $('.st', li).innerHTML = state === 'done' ? icon('check') : state === 'fail' ? icon('close') : state === 'active' ? '<span class="spinner sm dark"></span>' : (i + 1);
+      },
+      note: function (t) { var n = $('#gpsProgressNote', m.root); if (n) n.textContent = t; },
+      close: m.close
+    };
+  }
+
+  function doAttendance(type) {
+    if (S.attBusy || !S.dash) return;
+    var s = S.dash.settings;
+    var pre = Promise.resolve(true);
+    if (type === 'OUT' && S.dash.today.isWorkday && bkkTimeHM() < s.workEnd) {
+      pre = confirmDialog({ title: 'ยังไม่ถึงเวลาเลิกงาน', icon: 'schedule', html: 'ขณะนี้เวลา <b>' + bkkTimeHM() + ' น.</b> ยังไม่ถึงเวลาเลิกงาน (' + esc(s.workEnd) + ' น.)<br>ระบบจะบันทึกสถานะ <b>“ออกก่อนเวลา”</b> ต้องการลงเวลาออกงานใช่หรือไม่', confirmText: 'ลงเวลาออก' });
+    }
+    pre.then(function (go) {
+      if (!go) return;
+      S.attBusy = true; updateAttendanceButtons();
+      var prog = progressModal(type);
+      prog.set(0, 'active');
+      acquirePosition(s.maxAccuracyM, function (best) {
+        prog.note('ความแม่นยำปัจจุบัน ±' + Math.round(best.accuracy) + ' ม. (เกณฑ์ ≤ ' + s.maxAccuracyM + ' ม.)');
+        prog.set(0, 'done'); prog.set(1, 'active');
+      }).then(function (pos) {
+        prog.set(0, 'done'); prog.set(1, pos.accuracy <= s.maxAccuracyM ? 'done' : 'fail'); prog.set(2, 'active');
+        return api(type === 'IN' ? 'att.checkIn' : 'att.checkOut', { lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy }, { silent: true })
+          .then(function (r) {
+            prog.set(2, 'done'); prog.set(3, 'done');
+            setTimeout(function () { prog.close(); showAttendanceSuccess(r); }, 350);
+            return loadDashboard(true);
+          }, function (e) {
+            prog.set(2, 'fail');
+            setTimeout(function () { prog.close(); showAttendanceFailure(e); }, 350);
+            if (e.code === 'DUPLICATE') loadDashboard(true);
+          });
+      }, function (geoErr) {
+        prog.set(0, 'fail');
+        prog.close();
+        showGeoHelp(geoErr);
+      }).then(function () { S.attBusy = false; updateAttendanceButtons(); updateGpsPermission(); });
+    });
+  }
+
+  function showAttendanceSuccess(r) {
+    var late = r.status === 'LATE', early = r.status === 'EARLY';
+    modal({
+      title: r.message, icon: 'task_alt',
+      body: '<div class="result-hero ok"><div class="ring"><span class="ms fill">check_circle</span></div>' +
+        '<div class="muted">' + esc(r.typeLabel) + ' · ' + esc(r.dateLabel) + '</div>' +
+        '<div class="big-time">' + hm(r.time) + ' น.</div>' +
+        '<div style="margin:6px 0 10px">' + badge(r.status, r.statusLabel + (late ? ' ' + r.lateMinutes + ' นาที' : '')) + '</div></div>' +
+        '<div class="zone-result in">' + zoneHtml({ inZone: true, accuracyOk: true, distanceM: r.distanceM, radiusM: r.radiusM, accuracyM: r.accuracyM, maxAccuracyM: S.dash.settings.maxAccuracyM, maps: r.maps }) + '</div>' +
+        (late ? '<p class="small muted" style="margin-top:10px">ระบบบันทึกเวลาตามนาฬิกาของเซิร์ฟเวอร์ หากมีเหตุจำเป็นสามารถแจ้งผู้บริหารหรือยื่นใบลาครึ่งวันได้</p>' : '') +
+        (early ? '<p class="small muted" style="margin-top:10px">บันทึกสถานะออกก่อนเวลาเลิกงานแล้ว</p>' : ''),
+      actions: [{ label: 'เรียบร้อย', icon: 'done' }]
+    });
+  }
+
+  function showAttendanceFailure(e) {
+    var d = e.data;
+    var zone = d && d.distanceM !== undefined ? '<div class="zone-result out">' + zoneHtml(d) + '</div>' : '';
+    var tips = e.code === 'GPS_ACCURACY' ? '<ul class="help-list small" style="margin-top:10px"><li>เปิด GPS แบบความแม่นยำสูง และเปิด Wi-Fi</li><li>ออกไปบริเวณที่โล่ง แล้วรอ 10–20 วินาที</li><li>กดลงเวลาใหม่อีกครั้ง</li></ul>'
+      : e.code === 'OUT_OF_ZONE' ? '<p class="small muted" style="margin-top:10px">กรุณาลงเวลาเมื่ออยู่ในบริเวณโรงเรียน หากอยู่ในโรงเรียนแล้วแต่ยังแสดงว่าอยู่นอกพื้นที่ ให้รอสัญญาณ GPS สักครู่ หรือยื่นคำร้องแก้ไขเวลา</p>'
+        : (e.code === 'NETWORK' ? '<p class="small muted">ตรวจสอบสัญญาณอินเทอร์เน็ตแล้วลองใหม่</p>' : '');
+    modal({
+      title: 'ลงเวลาไม่สำเร็จ', icon: 'error',
+      body: '<div class="result-hero bad"><div class="ring"><span class="ms fill">' + (e.code === 'OUT_OF_ZONE' ? 'wrong_location' : 'cancel') + '</span></div></div>' +
+        '<div class="alert danger">' + icon('error') + '<div>' + esc(e.message) + '</div></div>' + zone + tips,
+      actions: (e.code === 'OUT_OF_ZONE' || e.code === 'NO_CHECKIN') ? [{ label: 'ยื่นคำร้องแก้ไขเวลา', cls: 'outline', icon: 'edit_calendar', onClick: function () { switchTab('correction'); } }, { label: 'ปิด' }] : [{ label: 'ปิด' }]
+    });
+  }
+
+  /* ------------------------------------------------------------------ history */
+  function fillMonthYear(mSel, ySel, yearsBack) {
+    if (mSel.options.length) return;
+    var p = bkkParts(serverNow());
+    TH_M.forEach(function (m, i) { var o = document.createElement('option'); o.value = i + 1; o.textContent = m; mSel.appendChild(o); });
+    for (var y = p.y; y >= p.y - (yearsBack || 3); y--) { var o = document.createElement('option'); o.value = y; o.textContent = y + 543; ySel.appendChild(o); }
+    mSel.value = p.m; ySel.value = p.y;
+  }
+  function initHistorySelectors() { fillMonthYear($('#histMonth'), $('#histYear'), 3); }
+  function loadHistory() {
+    api('me.history', { year: +$('#histYear').value, month: +$('#histMonth').value }, { loadingText: 'กำลังโหลดประวัติ...' }).then(function (h) {
+      $('#histTitle').textContent = 'เดือน' + h.label;
+      $('#histStats').innerHTML = statCards(h.totals);
+      if (!h.days.length) { $('#histTable').innerHTML = emptyState('ไม่มีข้อมูลในเดือนนี้', 'event_note'); return; }
+      $('#histTable').innerHTML = '<div class="table-wrap"><table class="table stack-mobile"><thead><tr><th>วันที่</th><th>วัน</th><th class="c">เข้างาน</th><th class="c">ออกงาน</th><th class="c">สถานะ</th><th class="c">สาย (นาที)</th><th>หมายเหตุ</th></tr></thead><tbody>' +
+        h.days.map(function (d) {
+          return '<tr><td data-label="วันที่">' + esc(d.dateShort) + '</td><td data-label="วัน">' + esc(d.dayName) + '</td>' +
+            '<td data-label="เข้างาน" class="c">' + (d.checkIn ? hm(d.checkIn) : '-') + '</td><td data-label="ออกงาน" class="c">' + (d.checkOut ? hm(d.checkOut) : '-') + '</td>' +
+            '<td data-label="สถานะ" class="c">' + badge(d.status, d.statusLabel) + '</td><td data-label="สาย (นาที)" class="c">' + (d.lateMinutes || '-') + '</td>' +
+            '<td data-label="หมายเหตุ">' + esc(d.note || '-') + '</td></tr>';
+        }).join('') + '</tbody></table></div>';
+    }).catch(function (e) { if (e.code !== 'AUTH') toast(e.message, 'error'); });
+  }
+
+  /* ------------------------------------------------------------------ leave */
+  function setThaiHint(input) {
+    var h = $('[data-thai-for="' + input.id + '"]');
+    if (h) h.textContent = input.value ? thDate(input.value, 'long') : '';
+  }
+  function bindFileLabel(form) {
+    var inp = $('input[type=file]', form);
+    inp.addEventListener('change', function () {
+      var lab = $('[data-file-label]', form);
+      lab.textContent = inp.files[0] ? inp.files[0].name + ' (' + Math.round(inp.files[0].size / 1024) + ' KB)' : 'แนบไฟล์ PDF หรือรูปภาพ (ไม่เกิน 5 MB)';
+    });
+  }
+  function bindLeaveForm() {
+    var f = $('#leaveForm');
+    ['#leaveStart', '#leaveEnd'].forEach(function (s) {
+      $(s).addEventListener('change', function () {
+        if (s === '#leaveStart' && (!$('#leaveEnd').value || $('#leaveEnd').value < $('#leaveStart').value)) $('#leaveEnd').value = $('#leaveStart').value;
+        setThaiHint($('#leaveStart')); setThaiHint($('#leaveEnd')); syncPeriod();
+      });
+    });
+    $$('#leavePeriod button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        if (b.disabled) return;
+        $$('#leavePeriod button').forEach(function (x) { x.classList.toggle('active', x === b); });
+      });
+    });
+    bindFileLabel(f);
+    f.addEventListener('submit', submitLeave);
+  }
+  function syncPeriod() {
+    var same = $('#leaveStart').value && $('#leaveStart').value === $('#leaveEnd').value;
+    $$('#leavePeriod button').forEach(function (b) {
+      if (b.getAttribute('data-val') !== 'FULL') { b.disabled = !same; if (!same && b.classList.contains('active')) { b.classList.remove('active'); $('#leavePeriod [data-val=FULL]').classList.add('active'); } }
+    });
+  }
+  function initLeaveForm() {
+    if (!$('#leaveStart').value) { $('#leaveStart').value = bkkToday(); $('#leaveEnd').value = bkkToday(); }
+    setThaiHint($('#leaveStart')); setThaiHint($('#leaveEnd')); syncPeriod();
+  }
+  function submitLeave(e) {
+    e.preventDefault();
+    var f = e.target; clearFieldErrors(f);
+    var data = {
+      type: f.type.value, startDate: f.startDate.value, endDate: f.endDate.value,
+      period: $('#leavePeriod .active').getAttribute('data-val'), reason: f.reason.value.trim()
+    };
+    if (!data.type) return showFieldError(f, 'type', 'กรุณาเลือกประเภทการลา');
+    if (!data.startDate) return showFieldError(f, 'startDate', 'กรุณาเลือกวันที่เริ่มลา');
+    if (!data.endDate || data.endDate < data.startDate) return showFieldError(f, 'endDate', 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มลา');
+    if (data.reason.length < 3) return showFieldError(f, 'reason', 'กรุณาระบุเหตุผลการลา');
+    var btn = $('button[type=submit]', f);
+    setBtnLoading(btn, true);
+    fileToPayload(f.attachment.files[0]).then(function (att) {
+      data.attachment = att;
+      return api('leave.submit', data, { silent: true });
+    }).then(function (r) {
+      toast(r.message, 'success');
+      f.reset(); $('[data-file-label]', f).textContent = 'แนบไฟล์ PDF หรือรูปภาพ (ไม่เกิน 5 MB)';
+      $('#leaveStart').value = ''; initLeaveForm();
+      loadMyLeaves();
+    }).catch(function (err) { if (err.code !== 'AUTH') handleFormError(f, err); })
+      .then(function () { setBtnLoading(btn, false); });
+  }
+  function leaveCard(l, mine) {
+    var range = thDate(l.startDate, 'short') + (l.endDate !== l.startDate ? ' – ' + thDate(l.endDate, 'short') : '') + (l.period !== 'FULL' ? ' (' + l.periodLabel + ')' : '');
+    return '<div class="req-card"><div class="head"><div><div class="title">' + esc(l.typeLabel) + ' · ' + esc(l.days) + ' วัน</div>' +
+      '<div class="meta">' + icon('date_range') + ' ' + esc(range) + '</div>' + (mine ? '' : '<div class="meta">' + icon('person') + ' ' + esc(l.fullName) + ' (' + esc(l.staffCode) + ')</div>') + '</div>' +
+      badge(l.status, l.statusLabel) + '</div><div class="reason">' + esc(l.reason) + '</div>' +
+      '<div class="meta">ยื่นเมื่อ ' + esc(l.requestedLabel) + (l.reviewedByName ? ' · พิจารณาโดย ' + esc(l.reviewedByName) + ' ' + esc(l.reviewedLabel) : '') + '</div>' +
+      (l.reviewNote ? '<div class="meta">ความเห็น: ' + esc(l.reviewNote) + '</div>' : '') +
+      '<div class="actions">' + (l.hasAttachment ? '<button type="button" class="btn outline sm" data-view-att="leave" data-id="' + esc(l.leaveId) + '">' + icon('attach_file') + 'เอกสารแนบ</button>' : '') +
+      (mine && l.status === 'PENDING' ? '<button type="button" class="btn ghost sm" data-cancel-leave="' + esc(l.leaveId) + '">' + icon('close') + 'ยกเลิกใบลา</button>' : '') + '</div></div>';
+  }
+  function loadMyLeaves() {
+    api('leave.my', {}, { silent: true }).then(function (list) {
+      var host = $('#myLeaves');
+      host.innerHTML = list.length ? list.map(function (l) { return leaveCard(l, true); }).join('') : emptyState('ยังไม่มีรายการลา', 'event_available');
+      bindRequestButtons(host, loadMyLeaves);
+    }).catch(function (e) { if (e.code !== 'AUTH') toast(e.message, 'error'); });
+  }
+  function bindRequestButtons(host, reload) {
+    $$('[data-view-att]', host).forEach(function (b) { b.addEventListener('click', function () { viewAttachment(b.getAttribute('data-view-att'), b.getAttribute('data-id')); }); });
+    $$('[data-cancel-leave]', host).forEach(function (b) {
+      b.addEventListener('click', function () {
+        confirmDialog({ title: 'ยกเลิกใบลา', message: 'ต้องการยกเลิกใบลานี้ใช่หรือไม่', confirmText: 'ยกเลิกใบลา', danger: true }).then(function (y) {
+          if (y) api('leave.cancel', { leaveId: b.getAttribute('data-cancel-leave') }).then(function (r) { toast(r.message, 'success'); reload(); }).catch(function (e) { toast(e.message, 'error'); });
+        });
+      });
+    });
+    $$('[data-cancel-corr]', host).forEach(function (b) {
+      b.addEventListener('click', function () {
+        confirmDialog({ title: 'ยกเลิกคำร้อง', message: 'ต้องการยกเลิกคำร้องนี้ใช่หรือไม่', confirmText: 'ยกเลิกคำร้อง', danger: true }).then(function (y) {
+          if (y) api('corr.cancel', { requestId: b.getAttribute('data-cancel-corr') }).then(function (r) { toast(r.message, 'success'); reload(); }).catch(function (e) { toast(e.message, 'error'); });
+        });
+      });
+    });
+  }
+
+  /* ------------------------------------------------------------------ correction */
+  function bindCorrectionForm() {
+    var f = $('#corrForm');
+    $('#corrDate').addEventListener('change', function () { setThaiHint($('#corrDate')); });
+    bindFileLabel(f);
+    f.addEventListener('submit', submitCorrection);
+  }
+  function initCorrectionForm() {
+    var today = bkkToday();
+    $('#corrDate').max = today;
+    if (!$('#corrDate').value) $('#corrDate').value = today;
+    setThaiHint($('#corrDate'));
+  }
+  function submitCorrection(e) {
+    e.preventDefault();
+    var f = e.target; clearFieldErrors(f);
+    var data = { date: f.date.value, time: f.time.value, type: ($('input[name=type]:checked', f) || {}).value, reason: f.reason.value.trim() };
+    if (!data.date) return showFieldError(f, 'date', 'กรุณาเลือกวันที่');
+    if (data.date > bkkToday()) return showFieldError(f, 'date', 'ไม่สามารถเลือกวันในอนาคต');
+    if (!/^\d{2}:\d{2}$/.test(data.time)) return showFieldError(f, 'time', 'กรุณาระบุเวลา');
+    if (data.reason.length < 5) return showFieldError(f, 'reason', 'กรุณาระบุเหตุผลอย่างน้อย 5 ตัวอักษร');
+    var btn = $('button[type=submit]', f);
+    setBtnLoading(btn, true);
+    fileToPayload(f.attachment.files[0]).then(function (att) {
+      data.attachment = att;
+      return api('corr.submit', data, { silent: true });
+    }).then(function (r) {
+      toast(r.message, 'success');
+      f.reset(); $('[data-file-label]', f).textContent = 'แนบไฟล์ PDF หรือรูปภาพ (ไม่เกิน 5 MB)';
+      initCorrectionForm(); loadMyCorrections();
+    }).catch(function (err) { if (err.code !== 'AUTH') handleFormError(f, err); })
+      .then(function () { setBtnLoading(btn, false); });
+  }
+  function corrCard(c, mine) {
+    return '<div class="req-card"><div class="head"><div><div class="title">แก้ไข' + esc(c.typeLabel) + ' เป็น ' + esc(c.time) + ' น.</div>' +
+      '<div class="meta">' + icon('event') + ' ' + esc(c.dateLabel) + '</div>' + (mine ? '' : '<div class="meta">' + icon('person') + ' ' + esc(c.fullName) + ' (' + esc(c.staffCode) + ')</div>') +
+      (!mine ? '<div class="meta">เวลาปัจจุบันในระบบ: เข้า ' + esc(c.currentIn || '-') + ' / ออก ' + esc(c.currentOut || '-') + '</div>' : '') + '</div>' +
+      badge(c.status, c.statusLabel) + '</div><div class="reason">' + esc(c.reason) + '</div>' +
+      '<div class="meta">ยื่นเมื่อ ' + esc(c.requestedLabel) + (c.reviewedByName ? ' · พิจารณาโดย ' + esc(c.reviewedByName) + ' ' + esc(c.reviewedLabel) : '') + '</div>' +
+      (c.reviewNote ? '<div class="meta">ความเห็น: ' + esc(c.reviewNote) + '</div>' : '') +
+      '<div class="actions">' + (c.hasAttachment ? '<button type="button" class="btn outline sm" data-view-att="correction" data-id="' + esc(c.requestId) + '">' + icon('attach_file') + 'หลักฐาน</button>' : '') +
+      (mine && c.status === 'PENDING' ? '<button type="button" class="btn ghost sm" data-cancel-corr="' + esc(c.requestId) + '">' + icon('close') + 'ยกเลิกคำร้อง</button>' : '') + '</div></div>';
+  }
+  function loadMyCorrections() {
+    api('corr.my', {}, { silent: true }).then(function (list) {
+      var host = $('#myCorrections');
+      host.innerHTML = list.length ? list.map(function (c) { return corrCard(c, true); }).join('') : emptyState('ยังไม่มีคำร้อง', 'fact_check');
+      bindRequestButtons(host, loadMyCorrections);
+    }).catch(function (e) { if (e.code !== 'AUTH') toast(e.message, 'error'); });
+  }
+
+  /* ------------------------------------------------------------------ admin (lazy load) */
+  function openAdmin() {
+    if (S.adminLoaded && window.Admin) { showView('admin'); window.Admin.show(); return; }
+    api('admin.view', {}, { loadingText: 'กำลังโหลดหน้าผู้ดูแลระบบ...' }).then(function (v) {
+      $('#adminRoot').innerHTML = v.html;
+      var code = String(v.script).replace(/^\s*<script>/, '').replace(/<\/script>\s*$/, '');
+      var s = document.createElement('script');
+      s.text = code;
+      document.body.appendChild(s);
+      S.adminLoaded = true;
+      showView('admin');
+      window.Admin.init({ role: v.role, roleLabel: v.roleLabel, user: S.user });
+    }).catch(function (e) { if (e.code !== 'AUTH') toast(e.message, 'error'); });
+  }
+  function backToUser() { showView('app'); switchTab('home'); }
+
+  /* ------------------------------------------------------------------ export to Admin script */
+  window.App = {
+    S: S, api: api, toast: toast, modal: modal, confirmDialog: confirmDialog, promptDialog: promptDialog,
+    esc: esc, icon: icon, badge: badge, emptyState: emptyState, thDate: thDate, hm: hm, fmtDistance: fmtDistance,
+    setBtnLoading: setBtnLoading, clearFieldErrors: clearFieldErrors, showFieldError: showFieldError, handleFormError: handleFormError,
+    downloadBase64: downloadBase64, viewAttachment: viewAttachment, loadChartJs: loadChartJs, acquirePosition: acquirePosition,
+    leaveCard: leaveCard, corrCard: corrCard, bkkToday: bkkToday, bkkParts: bkkParts, serverNow: serverNow,
+    fillMonthYear: fillMonthYear, TH_M: TH_M, TH_MS: TH_MS, backToUser: backToUser, doLogout: doLogout, showGeoHelp: showGeoHelp,
+    parseYmd: parseYmd
+  };
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+})();
+</script>

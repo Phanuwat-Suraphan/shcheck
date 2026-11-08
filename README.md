@@ -1,0 +1,88 @@
+# ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่
+
+**Wat Sao Hin School Attendance System** — *ระบบลงเวลาอัจฉริยะ สะดวก โปร่งใส ตรวจสอบได้*
+
+เว็บแอปลงเวลาเข้า-ออกงานด้วย GPS สำหรับครูและบุคลากร พร้อมระบบสมาชิก การลา คำร้องแก้ไขเวลา Dashboard ผู้บริหาร และรายงานรายวัน/รายเดือน/รายปี/รายบุคคล (Export Excel, PDF, พิมพ์)
+พัฒนาด้วย **Google Apps Script + Google Sheets + Google Drive** — **ไม่มีค่าใช้จ่ายรายเดือน** ไม่ต้องเช่า Hosting หรือซื้อโดเมน เปิดใช้งานผ่าน URL ของ Apps Script ได้ทันที
+
+| มือถือ: ลงเวลา | มือถือ: ลงเวลาสำเร็จ | ผู้ดูแล: ภาพรวม |
+|---|---|---|
+| <img src="docs/screenshots/03-home-mobile.png" width="230"> | <img src="docs/screenshots/04-checkin-success-mobile.png" width="230"> | <img src="docs/screenshots/07-admin-overview-desktop.png" width="380"> |
+
+<sub>ภาพจากการทดสอบอัตโนมัติใน sandbox ที่ไม่มีอินเทอร์เน็ต — ไอคอนจึงแสดงเป็นจุด และใช้ฟอนต์ไทยของระบบแทน Sarabun</sub>
+
+## ความสามารถหลัก
+
+- **ลงเวลาเข้า/ออกด้วย GPS** — Server ตรวจระยะห่างจากโรงเรียน (สูตร Haversine) และค่าความแม่นยำ ใช้ **เวลาของ Server (Asia/Bangkok)** เท่านั้น, 1 วัน เข้า 1 ครั้ง ออก 1 ครั้ง, ออกก่อนเข้าไม่ได้, กันกดซ้ำด้วย LockService, แสดงระยะห่าง (เขียว/แดง) และลิงก์แผนที่ OpenStreetMap/Google Maps, ใช้ GPS เฉพาะตอนกดปุ่ม
+- **สมาชิก** — สมัครเอง → รออนุมัติ, ตรวจ Username/รหัสบุคลากรซ้ำ, เกณฑ์รหัสผ่าน, Admin เพิ่ม/แก้ไข/ปิดใช้งาน/ลบ/เปลี่ยนสิทธิ์/รีเซ็ตรหัสผ่าน (รหัสชั่วคราวสุ่ม + บังคับเปลี่ยน)
+- **ความปลอดภัย** — PBKDF2-HMAC-SHA256 + Salt + Pepper, Session หมดอายุ, ล็อกเมื่อใส่รหัสผิดซ้ำ, ตรวจสิทธิ์ที่ Server ทุกคำสั่ง (3 บทบาท: บุคลากร/ผู้บริหาร/ผู้ดูแลระบบ), Audit Log, ไม่ลบประวัติการลงเวลา, ไม่มีรหัสผ่านเริ่มต้นในโค้ด
+- **การลา** (ป่วย/กิจ/พักผ่อน/ไปราชการ/อื่น ๆ, ครึ่งวัน, เอกสารแนบ) และ **คำร้องแก้ไขเวลา** พร้อมการอนุมัติ
+- **ตั้งค่าได้ทั้งหมดจากหน้า Admin** — พิกัด/รัศมี/ความแม่นยำ GPS, เวลาเริ่มงาน/สาย/เลิกงาน, วันทำงาน, ปฏิทินวันหยุด, ระยะเวลาเก็บพิกัด ฯลฯ
+- **Dashboard ผู้บริหาร** (การ์ดสถิติ + Chart.js) และ **รายงาน** หัวกระดาษทางการ
+- **Mobile First**, ภาษาไทย, วันที่ พ.ศ.
+
+## เริ่มต้นอย่างรวดเร็ว
+
+1. สร้าง Google Sheet → **ส่วนขยาย → Apps Script** → สร้างไฟล์และคัดลอกโค้ดจาก [`src/`](src/) ให้ครบ (8 ไฟล์ `.gs`, 8 ไฟล์ `.html`, `appsscript.json`)
+2. รัน **`SetupSystem()`** → สร้าง 9 ชีต + ค่าเริ่มต้น + กุญแจเข้ารหัส + Trigger อัตโนมัติ
+3. ตั้ง Script Properties `BOOTSTRAP_ADMIN_USERNAME / _PASSWORD / _FULLNAME / _STAFFCODE` → รัน **`CreateFirstAdmin()`**
+4. **Deploy → Web app** (Execute as: **Me**, Who has access: **Anyone**) → ได้ URL
+5. เข้าสู่ระบบด้วย Admin → เปลี่ยนรหัสผ่าน → **ตั้งค่าระบบ** (พิกัดโรงเรียน, เวลาทำงาน) → **ปฏิทินวันหยุด** → แจก URL ให้ครู
+
+รายละเอียดทุกขั้นตอน: [คู่มือติดตั้ง](docs/03-installation.md)
+
+## เอกสาร
+
+| # | เอกสาร | เนื้อหา |
+|---|---|---|
+| 1 | [วิเคราะห์ระบบ สถาปัตยกรรม ผังการทำงาน UI/UX](docs/01-architecture.md) | บทบาท/สิทธิ์, สถาปัตยกรรม, ผังงาน (Mermaid), นิยามสถานะ, โครงสร้างไฟล์, การออกแบบหน้าจอ |
+| 2 | [โครงสร้าง Google Sheets](docs/02-database.md) | 9 ชีต ทุกคอลัมน์ + ชนิดข้อมูล, ค่าเริ่มต้น, Script Properties |
+| 3 | [ติดตั้ง / สร้าง Admin คนแรก / Deploy / ตั้งค่า GPS](docs/03-installation.md) | ทีละขั้นตอน + แก้ปัญหา + สำรองข้อมูล |
+| 4 | [คู่มือครูและบุคลากร](docs/04-user-guide.md) | สมัคร, เข้าสู่ระบบ, ลงเวลา, เปิด GPS, ลา, คำร้อง |
+| 5 | [คู่มือผู้ดูแลระบบและผู้บริหาร](docs/05-admin-guide.md) | อนุมัติสมาชิก, จัดการสมาชิก, ลา/คำร้อง, รายงาน, ปฏิทิน, ตั้งค่า, Audit Log |
+| 6 | [ความปลอดภัยและ PDPA](docs/06-security.md) | มาตรการ, ข้อจำกัดการ Hash รหัสผ่านใน Apps Script, ข้อจำกัด GPS, Checklist |
+| 7 | [รายการทดสอบและผลการทดสอบ](docs/07-testing.md) | Backend 66 รายการ + End-to-End 20 รายการ + UAT บนระบบจริง |
+| 8 | [ข้อจำกัดของบริการฟรีและข้อควรระวัง](docs/08-limitations.md) | โควตา Apps Script/Sheets/Drive, GPS, ข้อควรระวัง |
+
+## โครงสร้างโปรเจกต์
+
+```
+src/                    ← โค้ดที่นำไปวางใน Google Apps Script
+  Code.gs               doGet, API router + ตารางสิทธิ์, ค่าคงที่, วันที่ พ.ศ.
+  Auth.gs               สมัคร/เข้าสู่ระบบ/Session/เปลี่ยนรหัสผ่าน/CreateFirstAdmin
+  Crypto.gs             SHA-256 / HMAC / PBKDF2 + Salt + Pepper
+  Attendance.gs         GPS Geofencing (Haversine), ลงเวลา, Dashboard บุคลากร
+  Leave.gs              การลา, คำร้องแก้ไขเวลา, ไฟล์แนบ
+  Admin.gs              ภาพรวม, สมาชิก, ตั้งค่า, ปฏิทิน, Audit Log
+  Reports.gs            คำนวณสถานะ, รายงาน, Export Excel/PDF
+  Database.gs           Schema, SetupSystem(), CRUD, แคช, งานบำรุงรักษา
+  Index.html Login.html Register.html Dashboard.html
+  AdminDashboard.html AdminScript.html   ← ส่งให้เฉพาะผู้มีสิทธิ์
+  Styles.html JavaScript.html appsscript.json
+docs/                   ← เอกสารทั้งหมด + ภาพหน้าจอ
+tests/                  ← ตัวจำลอง Apps Script + ชุดทดสอบ Backend/E2E + ผลการทดสอบ
+tools/gen-db-doc.js     ← สร้างเอกสารโครงสร้างฐานข้อมูลจากโค้ด
+```
+
+## สำหรับนักพัฒนา
+
+```bash
+node tests/backend.test.js
+```
+
+```bash
+node tests/e2e.test.js
+```
+
+```bash
+node tests/e2e-server.js
+```
+
+คำสั่งสุดท้ายเปิดพรีวิวหน้าเว็บบนเครื่องที่ <http://localhost:8787> (ใช้ตัวจำลอง Apps Script + ข้อมูลตัวอย่าง; Admin: `admin.saohin` / `Adm1nStrong2026`) — ต้องมี Node.js 18+ และ Playwright สำหรับ E2E (`npm i -D playwright && npx playwright install chromium`)
+ผู้ใช้ [clasp](https://github.com/google/clasp) คัดลอก `.clasp.json.example` เป็น `.clasp.json` แล้ว `clasp push`
+
+## ข้อจำกัดสำคัญ (โปรดอ่าน)
+
+- การตรวจ GPS ผ่านเว็บ **ไม่สามารถป้องกันการปลอมพิกัดได้ทั้งหมด** ควรใช้ร่วมกับการกำกับดูแลของผู้บริหาร
+- ค่าเวลาทำงาน/รัศมีเริ่มต้นเป็น **ค่าตัวอย่าง** ต้องปรับตามระเบียบของโรงเรียนก่อนใช้งานจริง
+- โควตาของบริการฟรี Google และข้อควรระวังอื่น: [docs/08-limitations.md](docs/08-limitations.md)

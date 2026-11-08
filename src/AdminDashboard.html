@@ -1,0 +1,292 @@
+<!-- =====================================================================
+     AdminDashboard.html — หน้าผู้บริหาร/ผู้ดูแลระบบ
+     ไฟล์นี้ไม่ถูกฝังในหน้าเว็บของผู้ใช้ทั่วไป: Server ส่งให้ผ่าน api('admin.view')
+     หลังตรวจสอบสิทธิ์ (ADMIN/EXECUTIVE) แล้วเท่านั้น
+     ===================================================================== -->
+<style>
+  .admin-layout { display: block; padding-top: 12px; padding-bottom: 40px; }
+  .admin-nav { display: flex; gap: 6px; overflow-x: auto; padding: 4px 0 10px; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
+  .admin-nav button {
+    flex-shrink: 0; display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--border); background: #fff; color: var(--text-2);
+    padding: 9px 14px; border-radius: 12px; font-weight: 600; cursor: pointer; min-height: 44px; position: relative;
+  }
+  .admin-nav button .ms { color: var(--sky-500); }
+  .admin-nav button.active { background: var(--navy-800); color: #fff; border-color: var(--navy-800); }
+  .admin-nav button.active .ms { color: var(--sky-200); }
+  .admin-nav .count { min-width: 20px; height: 20px; border-radius: 10px; background: var(--danger-500); color: #fff; font-size: .72rem; display: inline-flex; align-items: center; justify-content: center; padding: 0 6px; }
+  .admin-main { min-width: 0; }
+  .admin-grid-2 { display: grid; grid-template-columns: 1fr; gap: 16px; margin-top: 16px; align-items: start; }
+  .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 14px; }
+  .toolbar .field { margin-bottom: 0; flex: 1 1 160px; }
+  .toolbar .field.grow { flex: 2 1 240px; }
+  .report-doc { background: #fff; border-radius: var(--radius-lg); border: 1px solid var(--border); padding: 18px; box-shadow: var(--shadow-sm); }
+  .report-head { text-align: center; border-bottom: 2px solid var(--navy-800); padding-bottom: 12px; margin-bottom: 14px; }
+  .report-head .r-school { font-family: var(--font-head); font-weight: 600; font-size: 1.15rem; color: var(--navy-900); }
+  .report-head .r-title { font-family: var(--font-head); font-weight: 600; font-size: 1.05rem; color: var(--navy-800); }
+  .report-head .r-meta { font-size: .86rem; color: var(--muted); }
+  .export-bar { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0; }
+  .set-group { border-top: 1px solid var(--border); padding-top: 14px; margin-top: 14px; }
+  .set-group:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
+  .set-group h3 { display: flex; align-items: center; gap: 8px; font-size: 1rem; }
+  .set-group h3 .ms { color: var(--sky-500); }
+  .days-check { display: flex; flex-wrap: wrap; gap: 8px; }
+  .days-check label { border: 1.5px solid var(--border-strong); border-radius: 10px; padding: 8px 12px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 600; }
+  .days-check input { accent-color: var(--navy-700); width: 18px; height: 18px; }
+  .days-check label:has(input:checked) { border-color: var(--sky-500); background: var(--sky-50); }
+  .audit-details { font-family: 'Courier New', monospace; font-size: .78rem; white-space: pre-wrap; word-break: break-all; color: var(--text-2); max-width: 520px; }
+  .reg-card { border: 1px solid var(--border); border-radius: 16px; padding: 14px; background: #fff; display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+  .reg-card .info { flex: 1 1 240px; min-width: 0; }
+  .reg-card .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .mini-link { display: inline-flex; align-items: center; gap: 2px; font-size: .8rem; color: var(--navy-700); text-decoration: none; }
+  .mini-link .ms { font-size: 16px; }
+  @media (min-width: 1024px) {
+    .admin-layout { display: grid; grid-template-columns: 236px minmax(0, 1fr); gap: 20px; align-items: start; }
+    .admin-nav { flex-direction: column; position: sticky; top: 76px; overflow: visible; }
+    .admin-nav button { justify-content: flex-start; width: 100%; }
+    .admin-nav .count { margin-left: auto; }
+    .admin-grid-2 { grid-template-columns: 1fr 1.4fr; }
+  }
+</style>
+
+<header class="appbar">
+  <div class="container">
+    <div class="brand">
+      <div class="brand-mark"><span class="ms fill">admin_panel_settings</span></div>
+      <div class="brand-text">
+        <span class="brand-title">ระบบผู้บริหาร / ผู้ดูแลระบบ</span>
+        <span class="brand-sub" id="admRoleText">โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่</span>
+      </div>
+    </div>
+    <div class="spacer"></div>
+    <button type="button" class="btn white sm" id="admBackBtn"><span class="ms">fingerprint</span><span class="hide-xs">หน้าลงเวลา</span></button>
+    <button type="button" class="icon-btn" id="admLogoutBtn" aria-label="ออกจากระบบ" title="ออกจากระบบ"><span class="ms">logout</span></button>
+  </div>
+</header>
+
+<div class="container admin-layout">
+  <nav class="admin-nav" id="adminNav" aria-label="เมนูผู้ดูแลระบบ">
+    <button type="button" data-sec="overview" class="active"><span class="ms">dashboard</span>ภาพรวม</button>
+    <button type="button" data-sec="registrations" data-admin-only><span class="ms">how_to_reg</span>อนุมัติสมาชิก<span class="count" data-count="registrations" hidden></span></button>
+    <button type="button" data-sec="members" data-admin-only><span class="ms">groups</span>จัดการสมาชิก</button>
+    <button type="button" data-sec="leaves"><span class="ms">event_busy</span>อนุมัติการลา<span class="count" data-count="leaves" hidden></span></button>
+    <button type="button" data-sec="corrections"><span class="ms">edit_calendar</span>คำร้องแก้ไขเวลา<span class="count" data-count="corrections" hidden></span></button>
+    <button type="button" data-sec="reports"><span class="ms">analytics</span>รายงานและสถิติ</button>
+    <button type="button" data-sec="calendar"><span class="ms">calendar_month</span>ปฏิทินวันหยุด</button>
+    <button type="button" data-sec="settings" data-admin-only><span class="ms">settings</span>ตั้งค่าระบบ</button>
+    <button type="button" data-sec="audit" data-admin-only><span class="ms">policy</span>ประวัติการใช้งาน</button>
+  </nav>
+
+  <main class="admin-main">
+    <!-- ================= ภาพรวม ================= -->
+    <section data-panel-sec="overview">
+      <div class="page-head">
+        <h2><span class="ms">dashboard</span>ภาพรวมวันนี้</h2>
+        <div class="row"><span class="badge navy" id="ovDate">-</span><button type="button" class="btn outline sm" id="ovRefresh"><span class="ms">refresh</span>รีเฟรช</button></div>
+      </div>
+      <div id="ovWarnings" class="stack" style="margin-bottom:14px"></div>
+      <div class="grid grid-stats" id="ovStats"></div>
+      <div class="admin-grid-2">
+        <div class="card">
+          <div class="card-title"><span class="ms">donut_large</span>สัดส่วนสถานะบุคลากรวันนี้</div>
+          <div id="ovSegbar"></div>
+        </div>
+        <div class="card">
+          <div class="card-title"><span class="ms">bar_chart</span>การมาปฏิบัติงาน 7 วันทำงานล่าสุด</div>
+          <div class="chart-box"><canvas id="ovTrend" aria-label="กราฟแท่งการมาปฏิบัติงาน 7 วันทำงานล่าสุด" role="img"></canvas></div>
+          <div class="legend" id="ovTrendLegend"></div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <div class="row-between">
+          <div class="card-title"><span class="ms">fact_check</span>การลงเวลาวันนี้รายบุคคล</div>
+          <div class="field" style="margin:0;min-width:200px"><input type="search" id="ovSearch" placeholder="ค้นหาชื่อ/รหัส" aria-label="ค้นหา"></div>
+        </div>
+        <div id="ovTable"></div>
+      </div>
+    </section>
+
+    <!-- ================= อนุมัติสมาชิก ================= -->
+    <section data-panel-sec="registrations" hidden>
+      <div class="page-head"><h2><span class="ms">how_to_reg</span>ผู้สมัครสมาชิกที่รออนุมัติ</h2>
+        <button type="button" class="btn outline sm" data-reload="registrations"><span class="ms">refresh</span>รีเฟรช</button></div>
+      <div class="alert info" style="margin-bottom:14px"><span class="ms">info</span><div>ตรวจสอบชื่อ รหัสบุคลากร และตำแหน่งให้ถูกต้องก่อนอนุมัติ ผู้ที่ได้รับอนุมัติจะเริ่มนับสถิติตั้งแต่วันที่อนุมัติ</div></div>
+      <div class="list" id="regList"></div>
+    </section>
+
+    <!-- ================= จัดการสมาชิก ================= -->
+    <section data-panel-sec="members" hidden>
+      <div class="page-head"><h2><span class="ms">groups</span>จัดการสมาชิก</h2>
+        <button type="button" class="btn" id="memAddBtn"><span class="ms">person_add</span>เพิ่มบุคลากร</button></div>
+      <div class="card">
+        <div class="toolbar">
+          <div class="field grow"><label for="memSearch">ค้นหา</label><input type="search" id="memSearch" placeholder="ชื่อ / รหัสบุคลากร / ชื่อผู้ใช้"></div>
+          <div class="field"><label for="memStatus">สถานะ</label><select id="memStatus"><option value="ALL">ทั้งหมด</option><option value="ACTIVE">ใช้งาน</option><option value="PENDING">รออนุมัติ</option><option value="INACTIVE">ปิดใช้งาน</option><option value="REJECTED">ไม่อนุมัติ</option></select></div>
+          <div class="field"><label for="memRole">ประเภทผู้ใช้</label><select id="memRole"><option value="ALL">ทั้งหมด</option><option value="USER">บุคลากร</option><option value="EXECUTIVE">ผู้บริหาร</option><option value="ADMIN">ผู้ดูแลระบบ</option></select></div>
+        </div>
+        <div id="memTable"></div>
+      </div>
+    </section>
+
+    <!-- ================= อนุมัติการลา ================= -->
+    <section data-panel-sec="leaves" hidden>
+      <div class="page-head"><h2><span class="ms">event_busy</span>การลาของบุคลากร</h2></div>
+      <div class="toolbar">
+        <div class="seg" id="lvStatusSeg"><button type="button" data-val="PENDING" class="active">รออนุมัติ</button><button type="button" data-val="APPROVED">อนุมัติแล้ว</button><button type="button" data-val="REJECTED">ไม่อนุมัติ</button><button type="button" data-val="ALL">ทั้งหมด</button></div>
+        <div class="field grow"><input type="search" id="lvSearch" placeholder="ค้นหาชื่อ / รหัส" aria-label="ค้นหา"></div>
+      </div>
+      <div class="list" id="lvList"></div>
+    </section>
+
+    <!-- ================= คำร้องแก้ไขเวลา ================= -->
+    <section data-panel-sec="corrections" hidden>
+      <div class="page-head"><h2><span class="ms">edit_calendar</span>คำร้องแก้ไขการลงเวลา</h2></div>
+      <div class="alert info" style="margin-bottom:12px"><span class="ms">history_edu</span><div>เมื่ออนุมัติ ระบบจะสร้างรายการเวลาใหม่และเก็บรายการเดิมไว้เป็นประวัติ (ไม่ลบ) พร้อมบันทึกผู้อนุมัติใน Audit Log</div></div>
+      <div class="toolbar">
+        <div class="seg" id="crStatusSeg"><button type="button" data-val="PENDING" class="active">รออนุมัติ</button><button type="button" data-val="APPROVED">อนุมัติแล้ว</button><button type="button" data-val="REJECTED">ไม่อนุมัติ</button><button type="button" data-val="ALL">ทั้งหมด</button></div>
+        <div class="field grow"><input type="search" id="crSearch" placeholder="ค้นหาชื่อ / รหัส" aria-label="ค้นหา"></div>
+      </div>
+      <div class="list" id="crList"></div>
+    </section>
+
+    <!-- ================= รายงาน ================= -->
+    <section data-panel-sec="reports" hidden>
+      <div class="page-head"><h2><span class="ms">analytics</span>รายงานและสถิติ</h2></div>
+      <div class="card">
+        <div class="seg" id="repTypeSeg" style="margin-bottom:14px">
+          <button type="button" data-val="daily" class="active">รายวัน</button><button type="button" data-val="monthly">รายเดือน</button>
+          <button type="button" data-val="yearly">รายปี</button><button type="button" data-val="individual">รายบุคคล</button>
+        </div>
+        <div class="toolbar">
+          <div class="field" data-rep="daily"><label for="repDate">วันที่</label><input type="date" id="repDate"></div>
+          <div class="field" data-rep="monthly" hidden><label for="repMonth">เดือน</label><select id="repMonth"></select></div>
+          <div class="field" data-rep="monthly yearly" hidden><label for="repYear">ปี (พ.ศ.)</label><select id="repYear"></select></div>
+          <div class="field grow" data-rep="individual" hidden><label for="repEmp">บุคลากร</label><select id="repEmp"></select></div>
+          <div class="field" data-rep="individual" hidden><label for="repFrom">ตั้งแต่วันที่</label><input type="date" id="repFrom"></div>
+          <div class="field" data-rep="individual" hidden><label for="repTo">ถึงวันที่</label><input type="date" id="repTo"></div>
+          <button type="button" class="btn" id="repRunBtn"><span class="ms">search</span>แสดงรายงาน</button>
+        </div>
+      </div>
+      <div class="export-bar" id="repExportBar" hidden>
+        <button type="button" class="btn success" data-export="xlsx"><span class="ms">table_view</span>Export Excel (.xlsx)</button>
+        <button type="button" class="btn danger" data-export="pdf"><span class="ms">picture_as_pdf</span>Export PDF</button>
+        <button type="button" class="btn outline" id="repPrintBtn"><span class="ms">print</span>พิมพ์รายงาน</button>
+      </div>
+      <div id="repResult"></div>
+    </section>
+
+    <!-- ================= ปฏิทิน ================= -->
+    <section data-panel-sec="calendar" hidden>
+      <div class="page-head"><h2><span class="ms">calendar_month</span>ปฏิทินวันทำงานและวันหยุด</h2>
+        <div class="field" style="margin:0"><select id="calYear" aria-label="ปี"></select></div></div>
+      <div class="alert info" style="margin-bottom:14px"><span class="ms">event_repeat</span><div id="calWorkdaysInfo">วันทำงานประจำสัปดาห์: -</div></div>
+      <div class="admin-grid-2" style="margin-top:0">
+        <div class="card" id="calFormCard">
+          <div class="card-title"><span class="ms">add_circle</span>เพิ่มวันหยุด / วันทำงานพิเศษ</div>
+          <form id="calForm" novalidate>
+            <div class="form-grid two">
+              <div class="field"><label for="calStart">ตั้งแต่วันที่</label><input type="date" id="calStart" required></div>
+              <div class="field"><label for="calEnd">ถึงวันที่</label><input type="date" id="calEnd" required></div>
+            </div>
+            <div class="field"><label for="calType">ประเภท</label>
+              <select id="calType"><option value="OFFICIAL_HOLIDAY">วันหยุดราชการ</option><option value="SPECIAL_HOLIDAY">วันหยุดพิเศษ (เช่น ปิดภาคเรียน/กิจกรรม)</option><option value="SPECIAL_WORKDAY">วันทำงานพิเศษ (เช่น ทำงานวันเสาร์ชดเชย)</option></select></div>
+            <div class="field"><label for="calTitle">ชื่อ/รายละเอียด</label><input type="text" id="calTitle" maxlength="150" placeholder="เช่น วันมาฆบูชา"></div>
+            <button type="submit" class="btn block"><span class="ms">save</span>บันทึก</button>
+          </form>
+          <div class="divider">หรือ</div>
+          <button type="button" class="btn outline block" id="calFixedBtn"><span class="ms">auto_awesome</span>เพิ่มวันหยุดราชการที่มีวันที่คงที่ของปีนี้</button>
+          <p class="tiny muted" style="margin-top:8px">วันหยุดทางพุทธศาสนา (มาฆบูชา วิสาขบูชา อาสาฬหบูชา เข้าพรรษา) วันหยุดชดเชย และวันหยุดพิเศษตามมติ ครม. เปลี่ยนแปลงทุกปี กรุณาเพิ่มเองตามประกาศของทางราชการ</p>
+        </div>
+        <div class="card">
+          <div class="card-title"><span class="ms">list</span>รายการในปีที่เลือก</div>
+          <div id="calList"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= ตั้งค่า ================= -->
+    <section data-panel-sec="settings" hidden>
+      <div class="page-head"><h2><span class="ms">settings</span>ตั้งค่าระบบ</h2><span class="badge muted" id="setServerTime">-</span></div>
+      <form id="setForm" class="card" novalidate>
+        <div class="set-group">
+          <h3><span class="ms">location_on</span>พื้นที่ลงเวลา (Geofencing)</h3>
+          <div class="form-grid two">
+            <div class="field" data-field="SCHOOL_LAT"><label for="sLat">ละติจูด (Latitude)</label><input type="text" inputmode="decimal" id="sLat" name="SCHOOL_LAT" placeholder="เช่น 18.788300"><span class="err"></span></div>
+            <div class="field" data-field="SCHOOL_LNG"><label for="sLng">ลองจิจูด (Longitude)</label><input type="text" inputmode="decimal" id="sLng" name="SCHOOL_LNG" placeholder="เช่น 98.985300"><span class="err"></span></div>
+          </div>
+          <div class="row" style="margin-bottom:14px">
+            <button type="button" class="btn outline sm" id="sUseMyLoc"><span class="ms">my_location</span>ใช้ตำแหน่งปัจจุบันของฉัน</button>
+            <a class="btn ghost sm" id="sMapLink" target="_blank" rel="noopener" href="#" hidden><span class="ms">map</span>ดูบนแผนที่</a>
+            <span class="small muted" id="sLocNote"></span>
+          </div>
+          <div class="form-grid two">
+            <div class="field" data-field="GEOFENCE_RADIUS_M"><label for="sRadius">รัศมีที่อนุญาต (เมตร)</label><input type="number" id="sRadius" name="GEOFENCE_RADIUS_M" min="10" max="5000" step="1"><span class="hint">ค่าทดลอง 150 เมตร</span><span class="err"></span></div>
+            <div class="field" data-field="MAX_GPS_ACCURACY_M"><label for="sAcc">ค่าความคลาดเคลื่อน GPS สูงสุด (เมตร)</label><input type="number" id="sAcc" name="MAX_GPS_ACCURACY_M" min="5" max="500" step="1"><span class="hint">ค่าทดลอง 50 เมตร</span><span class="err"></span></div>
+          </div>
+          <div class="alert warning"><span class="ms">gpp_maybe</span><div>ข้อจำกัด: การตรวจ GPS ผ่านเว็บไม่สามารถป้องกันแอปปลอมพิกัด (Fake GPS) ได้ทั้งหมด ควรใช้ร่วมกับการกำกับดูแลของผู้บริหาร</div></div>
+        </div>
+        <div class="set-group">
+          <h3><span class="ms">schedule</span>เวลาปฏิบัติงาน</h3>
+          <div class="form-grid two">
+            <div class="field" data-field="WORK_START_TIME"><label for="sStart">เวลาเริ่มปฏิบัติงาน</label><input type="time" id="sStart" name="WORK_START_TIME"><span class="err"></span></div>
+            <div class="field" data-field="LATE_AFTER_TIME"><label for="sLate">ถือว่ามาสายเมื่อลงเวลาหลัง</label><input type="time" id="sLate" name="LATE_AFTER_TIME"><span class="err"></span></div>
+            <div class="field" data-field="WORK_END_TIME"><label for="sEnd">เวลาเลิกงาน</label><input type="time" id="sEnd" name="WORK_END_TIME"><span class="err"></span></div>
+            <div class="field" data-field="CHECKIN_EARLIEST_TIME"><label for="sEarliest">เปิดให้ลงเวลาเข้าตั้งแต่</label><input type="time" id="sEarliest" name="CHECKIN_EARLIEST_TIME"><span class="err"></span></div>
+          </div>
+          <div class="field" data-field="WORK_DAYS"><span class="field-label">วันทำงานประจำสัปดาห์</span>
+            <div class="days-check" id="sWorkDays">
+              <label><input type="checkbox" value="1">จันทร์</label><label><input type="checkbox" value="2">อังคาร</label><label><input type="checkbox" value="3">พุธ</label>
+              <label><input type="checkbox" value="4">พฤหัสบดี</label><label><input type="checkbox" value="5">ศุกร์</label><label><input type="checkbox" value="6">เสาร์</label><label><input type="checkbox" value="0">อาทิตย์</label>
+            </div><span class="err"></span>
+          </div>
+          <label class="switch"><input type="checkbox" name="ALLOW_HOLIDAY_CHECKIN"><span class="track"></span>อนุญาตให้ลงเวลาในวันหยุด (ปฏิบัติงานวันหยุด)</label>
+        </div>
+        <div class="set-group">
+          <h3><span class="ms">lock</span>ความปลอดภัย</h3>
+          <div class="form-grid two">
+            <div class="field" data-field="SESSION_TIMEOUT_MIN"><label for="sTimeout">ออกจากระบบอัตโนมัติเมื่อไม่ใช้งาน (นาที)</label><input type="number" id="sTimeout" name="SESSION_TIMEOUT_MIN" min="5" max="360"><span class="err"></span></div>
+            <div class="field" data-field="MAX_LOGIN_ATTEMPTS"><label for="sAttempts">ใส่รหัสผ่านผิดได้ (ครั้ง)</label><input type="number" id="sAttempts" name="MAX_LOGIN_ATTEMPTS" min="3" max="20"><span class="err"></span></div>
+            <div class="field" data-field="LOCKOUT_MIN"><label for="sLockout">ระยะเวลาล็อกบัญชี (นาที)</label><input type="number" id="sLockout" name="LOCKOUT_MIN" min="1" max="1440"><span class="err"></span></div>
+          </div>
+          <label class="switch"><input type="checkbox" name="ALLOW_REGISTRATION"><span class="track"></span>เปิดให้บุคลากรสมัครสมาชิกด้วยตนเอง</label>
+        </div>
+        <div class="set-group">
+          <h3><span class="ms">database</span>ข้อมูลและความเป็นส่วนตัว</h3>
+          <div class="form-grid two">
+            <div class="field" data-field="GPS_RETENTION_DAYS"><label for="sRetention">ระยะเวลาเก็บพิกัด GPS (วัน)</label><input type="number" id="sRetention" name="GPS_RETENTION_DAYS" min="30" max="3650"><span class="hint">พ้นกำหนดระบบจะลบพิกัดอัตโนมัติทุกคืน</span><span class="err"></span></div>
+            <div class="field" data-field="CORRECTION_MAX_DAYS"><label for="sCorrDays">ยื่นคำร้องแก้ไขเวลาย้อนหลังได้ (วัน)</label><input type="number" id="sCorrDays" name="CORRECTION_MAX_DAYS" min="1" max="365"><span class="err"></span></div>
+          </div>
+        </div>
+        <div class="set-group">
+          <div class="alert warning" style="margin-bottom:12px"><span class="ms">rule</span><div>ค่าเริ่มต้นเป็น<b>ค่าตัวอย่าง</b> กรุณาตรวจสอบให้ตรงกับระเบียบ/คำสั่งของโรงเรียนก่อนใช้งานจริง</div></div>
+          <div class="field" data-field="SETTINGS_CONFIRMED" style="margin-bottom:12px">
+            <label class="switch"><input type="checkbox" name="SETTINGS_CONFIRMED"><span class="track"></span>ยืนยันว่าได้ตรวจสอบการตั้งค่าตามระเบียบของโรงเรียนแล้ว</label><span class="err"></span>
+          </div>
+          <button type="submit" class="btn lg block"><span class="ms">save</span>บันทึกการตั้งค่า</button>
+        </div>
+      </form>
+      <div class="card" style="margin-top:16px">
+        <div class="card-title"><span class="ms">build</span>งานบำรุงรักษาข้อมูล</div>
+        <div class="toolbar">
+          <div class="field"><label for="mtMonth">เดือน</label><select id="mtMonth"></select></div>
+          <div class="field"><label for="mtYear">ปี (พ.ศ.)</label><select id="mtYear"></select></div>
+          <button type="button" class="btn outline" id="mtRebuildBtn"><span class="ms">sync</span>คำนวณสรุปรายวันใหม่</button>
+        </div>
+        <p class="small muted">ใช้เมื่อมีการแก้ไขข้อมูลในชีตโดยตรง หรือเปลี่ยนเวลาทำงาน/ปฏิทินย้อนหลัง (ไม่แก้ไขรายการลงเวลาต้นฉบับ)</p>
+        <button type="button" class="btn ghost" id="mtRunBtn"><span class="ms">cleaning_services</span>ลบพิกัด GPS ที่เกินระยะเวลาเก็บรักษาทันที</button>
+      </div>
+    </section>
+
+    <!-- ================= Audit Log ================= -->
+    <section data-panel-sec="audit" hidden>
+      <div class="page-head"><h2><span class="ms">policy</span>ประวัติการใช้งานระบบ (Audit Log)</h2></div>
+      <div class="card">
+        <div class="toolbar">
+          <div class="field grow"><label for="auSearch">ค้นหา</label><input type="search" id="auSearch" placeholder="ชื่อ / การกระทำ / รหัส"></div>
+          <div class="field"><label for="auAction">การกระทำ</label><select id="auAction"></select></div>
+          <button type="button" class="btn" id="auRunBtn"><span class="ms">search</span>ค้นหา</button>
+        </div>
+        <div id="auTable"></div>
+      </div>
+    </section>
+  </main>
+</div>

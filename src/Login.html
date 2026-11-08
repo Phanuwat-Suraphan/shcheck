@@ -1,0 +1,60 @@
+<!-- ======================= หน้าเข้าสู่ระบบ (Login) ======================= -->
+<section id="view-login" class="view" hidden aria-labelledby="loginTitle">
+  <header class="auth-hero">
+    <div class="brand-mark"><span class="ms fill">schedule</span></div>
+    <h1 data-meta="nameTh">ระบบลงเวลาปฏิบัติงานออนไลน์</h1>
+    <div class="school" data-meta="school">โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่</div>
+    <div class="en" data-meta="nameEn">Wat Sao Hin School Attendance System</div>
+    <div class="slogan"><span class="ms" style="font-size:18px">verified</span><span data-meta="slogan">ระบบลงเวลาอัจฉริยะ สะดวก โปร่งใส ตรวจสอบได้</span></div>
+  </header>
+
+  <div class="auth-wrap">
+    <div class="card auth-card">
+      <h2 id="loginTitle"><span class="ms" style="color:var(--sky-500)">login</span>เข้าสู่ระบบ</h2>
+      <p class="muted small">สำหรับครูและบุคลากรโรงเรียนวัดเสาหิน</p>
+
+      <div id="setupNotice" class="alert warning" hidden>
+        <span class="ms">construction</span>
+        <div>ระบบยังไม่ได้ติดตั้งฐานข้อมูล กรุณาแจ้งผู้ดูแลระบบให้รันฟังก์ชัน <b>SetupSystem()</b> ตามคู่มือการติดตั้ง</div>
+      </div>
+      <div id="loginAlert" class="alert danger" hidden role="alert"><span class="ms">error</span><div id="loginAlertText"></div></div>
+
+      <form id="loginForm" novalidate autocomplete="on">
+        <div class="field">
+          <label for="loginUsername">ชื่อผู้ใช้ (Username)</label>
+          <div class="input-icon">
+            <span class="ms">person</span>
+            <input id="loginUsername" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required maxlength="60" placeholder="เช่น somchai.j">
+          </div>
+        </div>
+        <div class="field">
+          <label for="loginPassword">รหัสผ่าน</label>
+          <div class="input-icon has-toggle">
+            <span class="ms">lock</span>
+            <input id="loginPassword" name="password" type="password" autocomplete="current-password" required maxlength="128" placeholder="รหัสผ่าน">
+            <button type="button" class="toggle-pw" data-toggle-pw="loginPassword" aria-label="แสดงรหัสผ่าน"><span class="ms">visibility</span></button>
+          </div>
+        </div>
+        <div class="row-between" style="margin-bottom:16px">
+          <label class="check"><input type="checkbox" id="rememberUser"> จดจำชื่อผู้ใช้</label>
+          <button type="button" class="link-btn" id="forgotBtn">ลืมรหัสผ่าน?</button>
+        </div>
+        <button type="submit" class="btn lg block" id="loginBtn"><span class="ms">login</span>เข้าสู่ระบบ</button>
+      </form>
+
+      <div id="registerArea">
+        <div class="divider">ยังไม่มีบัญชีผู้ใช้</div>
+        <button type="button" class="btn outline lg block" id="goRegisterBtn"><span class="ms">person_add</span>สมัครสมาชิก</button>
+      </div>
+    </div>
+
+    <div class="privacy-box" style="margin-top:16px">
+      <h4><span class="ms" style="color:var(--sky-500)">shield_person</span>การคุ้มครองข้อมูลส่วนบุคคล</h4>
+      ระบบใช้ตำแหน่ง GPS <b>เฉพาะตอนกดลงเวลา</b> เพื่อยืนยันว่าอยู่ในพื้นที่โรงเรียน ไม่มีการติดตามตำแหน่งตลอดวัน
+      <button type="button" class="link-btn small" data-open-privacy>อ่านนโยบายฉบับเต็ม</button>
+    </div>
+    <div class="auth-footer">
+      <span data-meta="school">โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่</span> · เวอร์ชัน <span data-meta="version">1.0.0</span>
+    </div>
+  </div>
+</section>

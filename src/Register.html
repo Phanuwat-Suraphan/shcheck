@@ -1,0 +1,112 @@
+<!-- ======================= หน้าสมัครสมาชิก (Register) ======================= -->
+<section id="view-register" class="view" hidden aria-labelledby="registerTitle">
+  <header class="auth-hero" style="padding-bottom:88px">
+    <div class="brand-mark"><span class="ms fill">person_add</span></div>
+    <h1 id="registerTitle">สมัครสมาชิก</h1>
+    <div class="school" data-meta="school">โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่</div>
+    <div class="en">บัญชีใหม่จะใช้งานได้หลังผู้ดูแลระบบอนุมัติ</div>
+  </header>
+
+  <div class="auth-wrap" style="max-width:620px">
+    <div class="card auth-card" id="registerCard">
+      <div class="row-between" style="margin-bottom:6px">
+        <h2 class="mb-0"><span class="ms" style="color:var(--sky-500)">badge</span>ข้อมูลบุคลากร</h2>
+        <button type="button" class="btn ghost sm" data-go="login"><span class="ms">arrow_back</span>กลับ</button>
+      </div>
+      <p class="muted small">กรอกข้อมูลให้ครบถ้วนและตรงกับข้อมูลจริง เพื่อให้ผู้ดูแลระบบตรวจสอบได้</p>
+      <div id="registerAlert" class="alert danger" hidden role="alert"><span class="ms">error</span><div id="registerAlertText"></div></div>
+
+      <form id="registerForm" novalidate autocomplete="off">
+        <div class="field" data-field="fullName">
+          <label for="regFullName">ชื่อ-นามสกุล <span class="muted">*</span></label>
+          <input id="regFullName" name="fullName" type="text" maxlength="100" required placeholder="เช่น นางสาวสมศรี ใจดี" autocomplete="name">
+          <span class="hint">รวมคำนำหน้า และเว้นวรรคระหว่างชื่อกับนามสกุล</span>
+          <span class="err"></span>
+        </div>
+        <div class="form-grid two">
+          <div class="field" data-field="staffCode">
+            <label for="regStaffCode">รหัสประจำตัวบุคลากร <span class="muted">*</span></label>
+            <input id="regStaffCode" name="staffCode" type="text" maxlength="20" required placeholder="เช่น 1001" autocapitalize="characters">
+            <span class="err"></span>
+          </div>
+          <div class="field" data-field="position">
+            <label for="regPosition">ตำแหน่ง <span class="muted">*</span></label>
+            <select id="regPosition" name="position" required>
+              <option value="">— เลือกตำแหน่ง —</option>
+              <option>ผู้อำนวยการ</option>
+              <option>ครู</option>
+              <option>บุคลากรทางการศึกษา</option>
+              <option>เจ้าหน้าที่อื่น ๆ</option>
+            </select>
+            <span class="err"></span>
+          </div>
+        </div>
+        <div class="field" data-field="username">
+          <label for="regUsername">ชื่อผู้ใช้ (Username) <span class="muted">*</span></label>
+          <div class="input-icon"><span class="ms">person</span>
+            <input id="regUsername" name="username" type="text" maxlength="30" required placeholder="ภาษาอังกฤษ เช่น somsri.j" autocapitalize="none" spellcheck="false" autocomplete="username">
+          </div>
+          <span class="hint">4–30 ตัว ขึ้นต้นด้วยตัวอักษร a-z ใช้ได้เฉพาะ a-z 0-9 . _ -</span>
+          <span class="err"></span>
+        </div>
+        <div class="form-grid two">
+          <div class="field" data-field="password">
+            <label for="regPassword">รหัสผ่าน <span class="muted">*</span></label>
+            <div class="input-icon has-toggle"><span class="ms">lock</span>
+              <input id="regPassword" name="password" type="password" maxlength="64" required autocomplete="new-password">
+              <button type="button" class="toggle-pw" data-toggle-pw="regPassword" aria-label="แสดงรหัสผ่าน"><span class="ms">visibility</span></button>
+            </div>
+            <div class="pw-meter" aria-hidden="true"><span id="regPwMeter"></span></div>
+            <span class="err"></span>
+          </div>
+          <div class="field" data-field="confirmPassword">
+            <label for="regConfirm">ยืนยันรหัสผ่าน <span class="muted">*</span></label>
+            <div class="input-icon has-toggle"><span class="ms">lock_reset</span>
+              <input id="regConfirm" name="confirmPassword" type="password" maxlength="64" required autocomplete="new-password">
+              <button type="button" class="toggle-pw" data-toggle-pw="regConfirm" aria-label="แสดงรหัสผ่าน"><span class="ms">visibility</span></button>
+            </div>
+            <span class="err"></span>
+          </div>
+        </div>
+        <ul class="pw-rules" id="regPwRules" aria-live="polite">
+          <li data-rule="len"><span class="ms">radio_button_unchecked</span>อย่างน้อย 8 ตัวอักษร</li>
+          <li data-rule="mix"><span class="ms">radio_button_unchecked</span>มีทั้งตัวอักษรภาษาอังกฤษและตัวเลข</li>
+          <li data-rule="user"><span class="ms">radio_button_unchecked</span>ไม่มีชื่อผู้ใช้อยู่ในรหัสผ่าน</li>
+          <li data-rule="match"><span class="ms">radio_button_unchecked</span>ยืนยันรหัสผ่านตรงกัน</li>
+        </ul>
+
+        <div class="privacy-box" style="margin:16px 0">
+          <h4><span class="ms" style="color:var(--sky-500)">location_on</span>การใช้ข้อมูลตำแหน่ง (GPS) และข้อมูลส่วนบุคคล</h4>
+          <ul class="help-list small" style="margin-bottom:6px">
+            <li>ใช้ GPS เฉพาะขณะกดลงเวลาหรือกดตรวจสอบตำแหน่ง ไม่ติดตามตำแหน่งตลอดวัน</li>
+            <li>เก็บพิกัดไว้ไม่เกิน <b data-retention>365</b> วัน แล้วลบอัตโนมัติ (คงไว้เฉพาะเวลาและระยะห่าง)</li>
+            <li>ข้อมูลเข้าถึงได้เฉพาะผู้บริหารและผู้ดูแลระบบ เพื่อการบริหารงานบุคคลของโรงเรียน</li>
+          </ul>
+          <button type="button" class="link-btn small" data-open-privacy>อ่านนโยบายฉบับเต็ม</button>
+        </div>
+        <div class="field" data-field="acceptPrivacy">
+          <label class="check"><input type="checkbox" id="regAccept" name="acceptPrivacy"> ข้าพเจ้าได้อ่านและยินยอมให้เก็บและใช้ข้อมูลตามนโยบายข้างต้น</label>
+          <span class="err"></span>
+        </div>
+        <button type="submit" class="btn lg block" id="registerBtn"><span class="ms">how_to_reg</span>ส่งข้อมูลสมัครสมาชิก</button>
+      </form>
+    </div>
+
+    <!-- สมัครสำเร็จ -->
+    <div class="card auth-card" id="registerDone" hidden>
+      <div class="result-hero ok">
+        <div class="ring"><span class="ms fill">task_alt</span></div>
+        <h2>สมัครสมาชิกสำเร็จ</h2>
+      </div>
+      <div class="alert info"><span class="ms">hourglass_top</span><div id="registerDoneText">บัญชีของท่านอยู่ระหว่างรอการอนุมัติ</div></div>
+      <dl class="kv" style="margin:16px 0">
+        <dt>ชื่อ-นามสกุล</dt><dd id="regDoneName">-</dd>
+        <dt>ชื่อผู้ใช้</dt><dd id="regDoneUser">-</dd>
+        <dt>เลขอ้างอิง</dt><dd id="regDoneRef">-</dd>
+        <dt>สถานะ</dt><dd><span class="badge warning"><span class="ms">schedule</span>รออนุมัติ</span></dd>
+      </dl>
+      <p class="small muted">เมื่อผู้ดูแลระบบอนุมัติแล้ว ท่านจะเข้าสู่ระบบและลงเวลาได้ทันที หากรอนานเกินไป กรุณาแจ้งผู้ดูแลระบบพร้อมเลขอ้างอิง</p>
+      <button type="button" class="btn lg block" data-go="login"><span class="ms">login</span>ไปหน้าเข้าสู่ระบบ</button>
+    </div>
+  </div>
+</section>
