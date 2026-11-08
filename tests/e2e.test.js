@@ -187,7 +187,8 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
     await shot(teacher, '03-home-mobile.png');
   });
 
-  await step('E09', 'ลงเวลาออกก่อนเวลาเลิกงาน → มีกล่องยืนยัน → บันทึกสถานะ "ออกก่อนเวลา"', async () => {
+  await step('E09', 'ลงเวลาออกไม่ต้องตรวจ GPS (อยู่นอกโรงเรียนก็ลงได้) + ออกก่อนเวลามีกล่องยืนยัน → สถานะ "ออกก่อนเวลา"', async () => {
+    await teacher.context().setGeolocation(OUTSIDE); // ครูออกจากโรงเรียนไปแล้ว
     // เลื่อนเวลา Server ไป 20 นาที (อยู่ในช่วงอายุ Session 30 นาที)
     await setClock('2026-11-09 08:10:00');
     await teacher.evaluate(() => { window.App.S.offsetMs += 20 * 60000; });
@@ -195,10 +196,14 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
     await teacher.locator('.modal', { hasText: 'ยังไม่ถึงเวลาเลิกงาน' }).waitFor();
     await modalAction(teacher, 'ลงเวลาออก');
     await teacher.waitForSelector('.modal .result-hero.ok', { timeout: 15000 });
-    assert.ok(/ออกก่อนเวลา/.test(await teacher.textContent('.modal')));
+    const body = await teacher.textContent('.modal');
+    assert.ok(/ออกก่อนเวลา/.test(body) && /ไม่ต้องตรวจตำแหน่ง/.test(body), body);
     await modalAction(teacher, 'เรียบร้อย');
     await teacher.waitForFunction(() => document.querySelector('#todayOut').textContent === '08:10');
     assert.ok(await teacher.isDisabled('#checkOutBtn'));
+    const log = app.env.SpreadsheetApp.openById(app.env.state.props.SPREADSHEET_ID).getSheetByName('AttendanceLogs')._records().find(l => l.Type === 'OUT');
+    assert.strictEqual(log.Source, 'NO_GPS');
+    await teacher.context().setGeolocation(INSIDE);
   });
 
   let outsider;

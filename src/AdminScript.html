@@ -677,7 +677,7 @@ window.Admin = (function () {
       $('#setServerTime').textContent = 'เวลาเซิร์ฟเวอร์: ' + s.serverTime;
       ['SCHOOL_LAT', 'SCHOOL_LNG', 'GEOFENCE_RADIUS_M', 'MAX_GPS_ACCURACY_M', 'WORK_START_TIME', 'LATE_AFTER_TIME', 'WORK_END_TIME', 'CHECKIN_EARLIEST_TIME',
         'SESSION_TIMEOUT_MIN', 'MAX_LOGIN_ATTEMPTS', 'LOCKOUT_MIN', 'GPS_RETENTION_DAYS', 'CORRECTION_MAX_DAYS'].forEach(function (k) { if (f[k]) f[k].value = v[k] || ''; });
-      ['ALLOW_HOLIDAY_CHECKIN', 'ALLOW_REGISTRATION', 'SETTINGS_CONFIRMED', 'LEAVE_REQUIRES_APPROVAL'].forEach(function (k) { f[k].checked = String(v[k]).toUpperCase() === 'TRUE'; });
+      ['ALLOW_HOLIDAY_CHECKIN', 'ALLOW_REGISTRATION', 'SETTINGS_CONFIRMED', 'LEAVE_REQUIRES_APPROVAL', 'CHECKOUT_REQUIRES_GPS'].forEach(function (k) { f[k].checked = String(v[k]).toUpperCase() === 'TRUE'; });
       if (s.storage) {
         $('#mtStorage').hidden = false;
         $('#mtStorage').className = 'alert ' + (s.storage.percent >= 85 ? 'warning' : 'info');
@@ -694,7 +694,7 @@ window.Admin = (function () {
     var values = {};
     ['SCHOOL_LAT', 'SCHOOL_LNG', 'GEOFENCE_RADIUS_M', 'MAX_GPS_ACCURACY_M', 'WORK_START_TIME', 'LATE_AFTER_TIME', 'WORK_END_TIME', 'CHECKIN_EARLIEST_TIME',
       'SESSION_TIMEOUT_MIN', 'MAX_LOGIN_ATTEMPTS', 'LOCKOUT_MIN', 'GPS_RETENTION_DAYS', 'CORRECTION_MAX_DAYS'].forEach(function (k) { values[k] = f[k].value.trim(); });
-    ['ALLOW_HOLIDAY_CHECKIN', 'ALLOW_REGISTRATION', 'SETTINGS_CONFIRMED', 'LEAVE_REQUIRES_APPROVAL'].forEach(function (k) { values[k] = f[k].checked; });
+    ['ALLOW_HOLIDAY_CHECKIN', 'ALLOW_REGISTRATION', 'SETTINGS_CONFIRMED', 'LEAVE_REQUIRES_APPROVAL', 'CHECKOUT_REQUIRES_GPS'].forEach(function (k) { values[k] = f[k].checked; });
     values.WORK_DAYS = $$('#sWorkDays input:checked').map(function (c) { return c.value; }).join(',');
     var btn = $('button[type=submit]', f);
     A.setBtnLoading(btn, true);

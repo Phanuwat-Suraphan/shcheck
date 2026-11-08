@@ -1,5 +1,5 @@
 /*
- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.2.0
+ * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.3.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Code.gs (โค้ดฝั่ง Server ทั้งหมด)
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่
  */
@@ -34,7 +34,7 @@ var APP = {
   SCHOOL_FULL: 'โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่',
   NAME_EN: 'Wat Sao Hin School Attendance System',
   SLOGAN: 'ระบบลงเวลาอัจฉริยะ สะดวก โปร่งใส ตรวจสอบได้',
-  VERSION: '1.2.0',
+  VERSION: '1.3.0',
   TZ: 'Asia/Bangkok'
 };
 
@@ -516,7 +516,7 @@ var SCHEMA_ = {
       ['Accuracy', 'num', 'ความแม่นยำ GPS (เมตร)'],
       ['DistanceM', 'num', 'ระยะห่างจากโรงเรียน (เมตร)'],
       ['Status', 'str', 'IN: ON_TIME/LATE/HOLIDAY, OUT: NORMAL/EARLY/HOLIDAY'],
-      ['Source', 'str', 'ที่มา: GPS=ลงเวลาปกติ, CORRECTION=อนุมัติคำร้องแก้ไข'],
+      ['Source', 'str', 'ที่มา: GPS=ตรวจตำแหน่งแล้ว, NO_GPS=ลงเวลาออกโดยไม่ตรวจตำแหน่ง, CORRECTION=อนุมัติคำร้องแก้ไข'],
       ['IsActive', 'bool', 'FALSE = ถูกแทนที่ด้วยรายการแก้ไข (เก็บไว้เป็นประวัติ)'],
       ['SupersededBy', 'str', 'รหัสรายการที่มาแทนที่'],
       ['RefID', 'str', 'รหัสคำร้องที่อ้างอิง'],
@@ -655,6 +655,7 @@ var DEFAULT_SETTINGS_ = [
   ['SCHOOL_LNG', '', 'ลองจิจูดจุดศูนย์กลางโรงเรียน (ต้องตั้งค่าก่อนเปิดใช้งาน)'],
   ['GEOFENCE_RADIUS_M', '150', 'รัศมีพื้นที่ที่อนุญาตให้ลงเวลา (เมตร) ค่าทดลอง 150'],
   ['MAX_GPS_ACCURACY_M', '50', 'ค่าความคลาดเคลื่อน GPS สูงสุดที่ยอมรับ (เมตร) ค่าทดลอง 50'],
+  ['CHECKOUT_REQUIRES_GPS', 'FALSE', 'ลงเวลาออกงานต้องอยู่ในพื้นที่โรงเรียน (ตรวจ GPS) — FALSE = ลงเวลาออกได้ทุกที่'],
   ['WORK_START_TIME', '08:00', 'เวลาเริ่มปฏิบัติงาน (ตัวอย่าง)'],
   ['LATE_AFTER_TIME', '08:30', 'ลงเวลาเข้าหลังเวลานี้ถือว่ามาสาย (ตัวอย่าง)'],
   ['WORK_END_TIME', '16:30', 'เวลาเลิกงาน (ตัวอย่าง)'],
@@ -1035,6 +1036,7 @@ function parseSettings_(raw) {
     checkinEarliest: time('CHECKIN_EARLIEST_TIME', '05:00'),
     workDays: workDays.length ? workDays : [1, 2, 3, 4, 5],
     allowHolidayCheckin: bool('ALLOW_HOLIDAY_CHECKIN'),
+    checkoutRequiresGps: bool('CHECKOUT_REQUIRES_GPS'),
     sessionTimeoutMin: Math.min(360, Math.max(5, num('SESSION_TIMEOUT_MIN', 30))),
     maxLoginAttempts: Math.min(20, Math.max(3, num('MAX_LOGIN_ATTEMPTS', 5))),
     lockoutMin: Math.min(1440, Math.max(1, num('LOCKOUT_MIN', 15))),
@@ -2419,12 +2421,20 @@ function upsertDailySummary_(date, emp, patch) {
 function recordAttendance_(ctx, type, p) {
   var s = ctx.settings;
   var emp = ctx.user;
-  var loc = parseLocationInput_(p);
-  var ev = evaluateLocation_(loc, s);
-  if (!ev.ok) {
-    writeAudit_(ctx, type === 'IN' ? 'CHECKIN_REJECTED' : 'CHECKOUT_REJECTED', 'Attendance', '',
-      { distanceM: ev.distanceM, accuracyM: ev.accuracyM, inZone: ev.inZone, accuracyOk: ev.accuracyOk });
-    throw appError_(ev.message, ev.accuracyOk ? 'OUT_OF_ZONE' : 'GPS_ACCURACY', ev);
+  // ลงเวลาเข้าต้องตรวจ GPS เสมอ; ลงเวลาออกตรวจเฉพาะเมื่อเปิดการตั้งค่า CHECKOUT_REQUIRES_GPS
+  var needGps = type === 'IN' || s.checkoutRequiresGps;
+  var loc = null, ev = null;
+  if (needGps) {
+    loc = parseLocationInput_(p);
+    ev = evaluateLocation_(loc, s);
+    if (!ev.ok) {
+      writeAudit_(ctx, type === 'IN' ? 'CHECKIN_REJECTED' : 'CHECKOUT_REJECTED', 'Attendance', '',
+        { distanceM: ev.distanceM, accuracyM: ev.accuracyM, inZone: ev.inZone, accuracyOk: ev.accuracyOk });
+      throw appError_(ev.message, ev.accuracyOk ? 'OUT_OF_ZONE' : 'GPS_ACCURACY', ev);
+    }
+  } else if (p && p.lat !== undefined && p.lat !== null && p.lat !== '') {
+    // ไม่บังคับตรวจ แต่ถ้าเบราว์เซอร์ส่งพิกัดมา (หน้าเว็บรุ่นเก่า) ให้บันทึกระยะไว้เป็นข้อมูลประกอบ
+    try { loc = parseLocationInput_(p); ev = s.geofenceConfigured ? evaluateLocation_(loc, s) : null; } catch (e) { loc = null; ev = null; }
   }
 
   var result = withLock_(function () {
@@ -2458,9 +2468,9 @@ function recordAttendance_(ctx, type, p) {
       AttendanceID: newId_(type === 'IN' ? 'IN' : 'OUT'),
       EmployeeID: emp.EmployeeID, StaffCode: emp.StaffCode, FullName: emp.FullName,
       Type: type, Date: date, Time: time, Timestamp: date + ' ' + time,
-      Latitude: round_(loc.lat, 7), Longitude: round_(loc.lng, 7), Accuracy: round_(loc.accuracy, 1),
-      DistanceM: ev.distanceM, Status: st.status, Source: 'GPS', IsActive: true,
-      SupersededBy: '', RefID: '', Note: ''
+      Latitude: loc ? round_(loc.lat, 7) : '', Longitude: loc ? round_(loc.lng, 7) : '', Accuracy: loc ? round_(loc.accuracy, 1) : '',
+      DistanceM: ev ? ev.distanceM : '', Status: st.status, Source: loc ? 'GPS' : 'NO_GPS', IsActive: true,
+      SupersededBy: '', RefID: '', Note: needGps ? '' : 'ลงเวลาออกโดยไม่บังคับตรวจตำแหน่ง'
     };
     appendRecord_('AttendanceLogs', log);
     var patch = { DayType: dayInfo.isWorkday ? 'WORKDAY' : 'HOLIDAY' };
@@ -2468,7 +2478,7 @@ function recordAttendance_(ctx, type, p) {
       patch.CheckInTime = time; patch.CheckInLogID = log.AttendanceID; patch.InDistanceM = ev.distanceM;
       patch.IsLate = st.isLate; patch.LateMinutes = st.lateMinutes;
     } else {
-      patch.CheckOutTime = time; patch.CheckOutLogID = log.AttendanceID; patch.OutDistanceM = ev.distanceM;
+      patch.CheckOutTime = time; patch.CheckOutLogID = log.AttendanceID; patch.OutDistanceM = ev ? ev.distanceM : null;
       patch.EarlyLeave = st.early;
     }
     upsertDailySummary_(date, emp, patch);
@@ -2486,11 +2496,12 @@ function recordAttendance_(ctx, type, p) {
     status: log.Status,
     statusLabel: ATT_STATUS_LABELS[log.Status],
     lateMinutes: result.status.lateMinutes,
-    distanceM: ev.distanceM,
-    accuracyM: ev.accuracyM,
+    gpsChecked: needGps,
+    distanceM: ev ? ev.distanceM : null,
+    accuracyM: ev ? ev.accuracyM : null,
     radiusM: s.radiusM,
-    inZone: true,
-    maps: ev.maps,
+    inZone: ev ? ev.inZone : null,
+    maps: ev ? ev.maps : null,
     message: (type === 'IN' ? 'ลงเวลาเข้างานสำเร็จ' : 'ลงเวลาออกงานสำเร็จ') + ' เวลา ' + log.Time.substr(0, 5) + ' น.'
   };
 }
@@ -2545,6 +2556,7 @@ function clientSettings_(s) {
     radiusM: s.radiusM, maxAccuracyM: s.maxAccuracyM, geofenceConfigured: s.geofenceConfigured,
     sessionTimeoutMin: s.sessionTimeoutMin, gpsRetentionDays: s.gpsRetentionDays,
     correctionMaxDays: s.correctionMaxDays, workDays: s.workDays, leaveRequiresApproval: s.leaveRequiresApproval,
+    checkoutRequiresGps: s.checkoutRequiresGps,
     schoolMaps: s.geofenceConfigured ? mapLinks_(s.schoolLat, s.schoolLng) : null
   };
 }
@@ -3383,6 +3395,7 @@ var SETTING_RULES_ = {
   SCHOOL_LNG: { type: 'coord', min: -180, max: 180, label: 'ลองจิจูด' },
   GEOFENCE_RADIUS_M: { type: 'int', min: 10, max: 5000, label: 'รัศมีที่อนุญาต' },
   MAX_GPS_ACCURACY_M: { type: 'int', min: 5, max: 500, label: 'ค่าความแม่นยำ GPS สูงสุด' },
+  CHECKOUT_REQUIRES_GPS: { type: 'bool', label: 'ลงเวลาออกงานต้องตรวจ GPS' },
   WORK_START_TIME: { type: 'time', label: 'เวลาเริ่มปฏิบัติงาน' },
   LATE_AFTER_TIME: { type: 'time', label: 'เวลาที่ถือว่ามาสาย' },
   WORK_END_TIME: { type: 'time', label: 'เวลาเลิกงาน' },

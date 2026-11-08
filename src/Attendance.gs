@@ -122,12 +122,20 @@ function upsertDailySummary_(date, emp, patch) {
 function recordAttendance_(ctx, type, p) {
   var s = ctx.settings;
   var emp = ctx.user;
-  var loc = parseLocationInput_(p);
-  var ev = evaluateLocation_(loc, s);
-  if (!ev.ok) {
-    writeAudit_(ctx, type === 'IN' ? 'CHECKIN_REJECTED' : 'CHECKOUT_REJECTED', 'Attendance', '',
-      { distanceM: ev.distanceM, accuracyM: ev.accuracyM, inZone: ev.inZone, accuracyOk: ev.accuracyOk });
-    throw appError_(ev.message, ev.accuracyOk ? 'OUT_OF_ZONE' : 'GPS_ACCURACY', ev);
+  // ลงเวลาเข้าต้องตรวจ GPS เสมอ; ลงเวลาออกตรวจเฉพาะเมื่อเปิดการตั้งค่า CHECKOUT_REQUIRES_GPS
+  var needGps = type === 'IN' || s.checkoutRequiresGps;
+  var loc = null, ev = null;
+  if (needGps) {
+    loc = parseLocationInput_(p);
+    ev = evaluateLocation_(loc, s);
+    if (!ev.ok) {
+      writeAudit_(ctx, type === 'IN' ? 'CHECKIN_REJECTED' : 'CHECKOUT_REJECTED', 'Attendance', '',
+        { distanceM: ev.distanceM, accuracyM: ev.accuracyM, inZone: ev.inZone, accuracyOk: ev.accuracyOk });
+      throw appError_(ev.message, ev.accuracyOk ? 'OUT_OF_ZONE' : 'GPS_ACCURACY', ev);
+    }
+  } else if (p && p.lat !== undefined && p.lat !== null && p.lat !== '') {
+    // ไม่บังคับตรวจ แต่ถ้าเบราว์เซอร์ส่งพิกัดมา (หน้าเว็บรุ่นเก่า) ให้บันทึกระยะไว้เป็นข้อมูลประกอบ
+    try { loc = parseLocationInput_(p); ev = s.geofenceConfigured ? evaluateLocation_(loc, s) : null; } catch (e) { loc = null; ev = null; }
   }
 
   var result = withLock_(function () {
@@ -161,9 +169,9 @@ function recordAttendance_(ctx, type, p) {
       AttendanceID: newId_(type === 'IN' ? 'IN' : 'OUT'),
       EmployeeID: emp.EmployeeID, StaffCode: emp.StaffCode, FullName: emp.FullName,
       Type: type, Date: date, Time: time, Timestamp: date + ' ' + time,
-      Latitude: round_(loc.lat, 7), Longitude: round_(loc.lng, 7), Accuracy: round_(loc.accuracy, 1),
-      DistanceM: ev.distanceM, Status: st.status, Source: 'GPS', IsActive: true,
-      SupersededBy: '', RefID: '', Note: ''
+      Latitude: loc ? round_(loc.lat, 7) : '', Longitude: loc ? round_(loc.lng, 7) : '', Accuracy: loc ? round_(loc.accuracy, 1) : '',
+      DistanceM: ev ? ev.distanceM : '', Status: st.status, Source: loc ? 'GPS' : 'NO_GPS', IsActive: true,
+      SupersededBy: '', RefID: '', Note: needGps ? '' : 'ลงเวลาออกโดยไม่บังคับตรวจตำแหน่ง'
     };
     appendRecord_('AttendanceLogs', log);
     var patch = { DayType: dayInfo.isWorkday ? 'WORKDAY' : 'HOLIDAY' };
@@ -171,7 +179,7 @@ function recordAttendance_(ctx, type, p) {
       patch.CheckInTime = time; patch.CheckInLogID = log.AttendanceID; patch.InDistanceM = ev.distanceM;
       patch.IsLate = st.isLate; patch.LateMinutes = st.lateMinutes;
     } else {
-      patch.CheckOutTime = time; patch.CheckOutLogID = log.AttendanceID; patch.OutDistanceM = ev.distanceM;
+      patch.CheckOutTime = time; patch.CheckOutLogID = log.AttendanceID; patch.OutDistanceM = ev ? ev.distanceM : null;
       patch.EarlyLeave = st.early;
     }
     upsertDailySummary_(date, emp, patch);
@@ -189,11 +197,12 @@ function recordAttendance_(ctx, type, p) {
     status: log.Status,
     statusLabel: ATT_STATUS_LABELS[log.Status],
     lateMinutes: result.status.lateMinutes,
-    distanceM: ev.distanceM,
-    accuracyM: ev.accuracyM,
+    gpsChecked: needGps,
+    distanceM: ev ? ev.distanceM : null,
+    accuracyM: ev ? ev.accuracyM : null,
     radiusM: s.radiusM,
-    inZone: true,
-    maps: ev.maps,
+    inZone: ev ? ev.inZone : null,
+    maps: ev ? ev.maps : null,
     message: (type === 'IN' ? 'ลงเวลาเข้างานสำเร็จ' : 'ลงเวลาออกงานสำเร็จ') + ' เวลา ' + log.Time.substr(0, 5) + ' น.'
   };
 }
@@ -248,6 +257,7 @@ function clientSettings_(s) {
     radiusM: s.radiusM, maxAccuracyM: s.maxAccuracyM, geofenceConfigured: s.geofenceConfigured,
     sessionTimeoutMin: s.sessionTimeoutMin, gpsRetentionDays: s.gpsRetentionDays,
     correctionMaxDays: s.correctionMaxDays, workDays: s.workDays, leaveRequiresApproval: s.leaveRequiresApproval,
+    checkoutRequiresGps: s.checkoutRequiresGps,
     schoolMaps: s.geofenceConfigured ? mapLinks_(s.schoolLat, s.schoolLng) : null
   };
 }

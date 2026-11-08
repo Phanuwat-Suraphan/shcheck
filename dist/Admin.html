@@ -1,4 +1,4 @@
-<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.2.0
+<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.3.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Admin.html (หน้าผู้บริหาร/ผู้ดูแลระบบ)
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่ -->
 <!-- =====================================================================
@@ -226,6 +226,7 @@
             <div class="field" data-field="GEOFENCE_RADIUS_M"><label for="sRadius">รัศมีที่อนุญาต (เมตร)</label><input type="number" id="sRadius" name="GEOFENCE_RADIUS_M" min="10" max="5000" step="1"><span class="hint">ค่าทดลอง 150 เมตร</span><span class="err"></span></div>
             <div class="field" data-field="MAX_GPS_ACCURACY_M"><label for="sAcc">ค่าความคลาดเคลื่อน GPS สูงสุด (เมตร)</label><input type="number" id="sAcc" name="MAX_GPS_ACCURACY_M" min="5" max="500" step="1"><span class="hint">ค่าทดลอง 50 เมตร</span><span class="err"></span></div>
           </div>
+          <label class="switch" style="margin-bottom:14px"><input type="checkbox" name="CHECKOUT_REQUIRES_GPS"><span class="track"></span>ลงเวลาออกงานต้องอยู่ในพื้นที่โรงเรียน (ตรวจ GPS) — ปิด = ลงเวลาออกได้ทุกที่ (ลงเวลาเข้ายังตรวจ GPS เสมอ)</label>
           <div class="alert warning"><span class="ms">gpp_maybe</span><div>ข้อจำกัด: การตรวจ GPS ผ่านเว็บไม่สามารถป้องกันแอปปลอมพิกัด (Fake GPS) ได้ทั้งหมด ควรใช้ร่วมกับการกำกับดูแลของผู้บริหาร</div></div>
         </div>
         <div class="set-group">
@@ -975,7 +976,7 @@ window.Admin = (function () {
       $('#setServerTime').textContent = 'เวลาเซิร์ฟเวอร์: ' + s.serverTime;
       ['SCHOOL_LAT', 'SCHOOL_LNG', 'GEOFENCE_RADIUS_M', 'MAX_GPS_ACCURACY_M', 'WORK_START_TIME', 'LATE_AFTER_TIME', 'WORK_END_TIME', 'CHECKIN_EARLIEST_TIME',
         'SESSION_TIMEOUT_MIN', 'MAX_LOGIN_ATTEMPTS', 'LOCKOUT_MIN', 'GPS_RETENTION_DAYS', 'CORRECTION_MAX_DAYS'].forEach(function (k) { if (f[k]) f[k].value = v[k] || ''; });
-      ['ALLOW_HOLIDAY_CHECKIN', 'ALLOW_REGISTRATION', 'SETTINGS_CONFIRMED', 'LEAVE_REQUIRES_APPROVAL'].forEach(function (k) { f[k].checked = String(v[k]).toUpperCase() === 'TRUE'; });
+      ['ALLOW_HOLIDAY_CHECKIN', 'ALLOW_REGISTRATION', 'SETTINGS_CONFIRMED', 'LEAVE_REQUIRES_APPROVAL', 'CHECKOUT_REQUIRES_GPS'].forEach(function (k) { f[k].checked = String(v[k]).toUpperCase() === 'TRUE'; });
       if (s.storage) {
         $('#mtStorage').hidden = false;
         $('#mtStorage').className = 'alert ' + (s.storage.percent >= 85 ? 'warning' : 'info');
@@ -992,7 +993,7 @@ window.Admin = (function () {
     var values = {};
     ['SCHOOL_LAT', 'SCHOOL_LNG', 'GEOFENCE_RADIUS_M', 'MAX_GPS_ACCURACY_M', 'WORK_START_TIME', 'LATE_AFTER_TIME', 'WORK_END_TIME', 'CHECKIN_EARLIEST_TIME',
       'SESSION_TIMEOUT_MIN', 'MAX_LOGIN_ATTEMPTS', 'LOCKOUT_MIN', 'GPS_RETENTION_DAYS', 'CORRECTION_MAX_DAYS'].forEach(function (k) { values[k] = f[k].value.trim(); });
-    ['ALLOW_HOLIDAY_CHECKIN', 'ALLOW_REGISTRATION', 'SETTINGS_CONFIRMED', 'LEAVE_REQUIRES_APPROVAL'].forEach(function (k) { values[k] = f[k].checked; });
+    ['ALLOW_HOLIDAY_CHECKIN', 'ALLOW_REGISTRATION', 'SETTINGS_CONFIRMED', 'LEAVE_REQUIRES_APPROVAL', 'CHECKOUT_REQUIRES_GPS'].forEach(function (k) { values[k] = f[k].checked; });
     values.WORK_DAYS = $$('#sWorkDays input:checked').map(function (c) { return c.value; }).join(',');
     var btn = $('button[type=submit]', f);
     A.setBtnLoading(btn, true);

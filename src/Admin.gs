@@ -368,6 +368,7 @@ var SETTING_RULES_ = {
   SCHOOL_LNG: { type: 'coord', min: -180, max: 180, label: 'ลองจิจูด' },
   GEOFENCE_RADIUS_M: { type: 'int', min: 10, max: 5000, label: 'รัศมีที่อนุญาต' },
   MAX_GPS_ACCURACY_M: { type: 'int', min: 5, max: 500, label: 'ค่าความแม่นยำ GPS สูงสุด' },
+  CHECKOUT_REQUIRES_GPS: { type: 'bool', label: 'ลงเวลาออกงานต้องตรวจ GPS' },
   WORK_START_TIME: { type: 'time', label: 'เวลาเริ่มปฏิบัติงาน' },
   LATE_AFTER_TIME: { type: 'time', label: 'เวลาที่ถือว่ามาสาย' },
   WORK_END_TIME: { type: 'time', label: 'เวลาเลิกงาน' },

@@ -503,8 +503,9 @@ test('T05', 'อยู่นอกรัศมี → ไม่บันทึ�
   assert.ok(aud && !/18\.79/.test(aud.Details));
 });
 
-test('T05b', 'ลงเวลาออกงานก็ตรวจ GPS: นอกรัศมีหรือสัญญาณไม่แม่นยำ → ไม่บันทึก', () => {
+test('T05b', 'เปิดตั้งค่า "ลงเวลาออกต้องตรวจ GPS": นอกรัศมีหรือสัญญาณไม่แม่นยำ → ไม่บันทึก', () => {
   const sys = newSystem();
+  ok(sys.api(sys.admin, 'settings.save', { values: { CHECKOUT_REQUIRES_GPS: true } }));
   const t = addTeacher(sys, 1);
   sys.at('2026-11-09 07:45:00'); ok(sys.api(t.token, 'att.checkIn', INSIDE));
   sys.at('2026-11-09 16:40:00');
@@ -516,6 +517,26 @@ test('T05b', 'ลงเวลาออกงานก็ตรวจ GPS: นอ
   assert.ok(records(sys, 'AuditLogs').some(l => l.Action === 'CHECKOUT_REJECTED'));
   const out = ok(sys.api(t.token, 'att.checkOut', INSIDE));
   assert.strictEqual(out.type, 'OUT'); assert.ok(out.distanceM >= 43 && out.distanceM <= 46);
+});
+
+test('T05c', 'ค่าเริ่มต้น: ลงเวลาออกไม่ต้องตรวจ GPS (ไม่ส่งพิกัด/อยู่นอกพื้นที่ก็ลงได้) แต่ลงเวลาเข้ายังตรวจ GPS', () => {
+  const sys = newSystem();
+  const t = addTeacher(sys, 1), u = addTeacher(sys, 2);
+  assert.strictEqual(ok(sys.api(t.token, 'me.dashboard', {})).settings.checkoutRequiresGps, false);
+  sys.at('2026-11-09 07:45:00');
+  expectErr(sys.api(t.token, 'att.checkIn', OUTSIDE), 'OUT_OF_ZONE');
+  expectErr(sys.api(t.token, 'att.checkIn', {}), 'GPS_INVALID');
+  ok(sys.api(t.token, 'att.checkIn', INSIDE)); ok(sys.api(u.token, 'att.checkIn', INSIDE));
+  sys.at('2026-11-09 16:45:00');
+  const out = ok(sys.api(t.token, 'att.checkOut', {}));
+  assert.strictEqual(out.status, 'NORMAL'); assert.strictEqual(out.gpsChecked, false); assert.strictEqual(out.distanceM, null);
+  const log = records(sys, 'AttendanceLogs').find(l => l.Type === 'OUT' && l.EmployeeID === t.id);
+  assert.strictEqual(log.Source, 'NO_GPS'); assert.strictEqual(log.Latitude, ''); assert.strictEqual(log.Time, '16:45:00');
+  const out2 = ok(sys.api(u.token, 'att.checkOut', OUTSIDE)); // หน้าเว็บรุ่นเก่าส่งพิกัดมา: บันทึกระยะไว้ แต่ไม่ปฏิเสธ
+  assert.ok(out2.distanceM > 250 && out2.inZone === false);
+  expectErr(sys.api(t.token, 'att.checkOut', {}), 'DUPLICATE');
+  const rep = ok(sys.api(sys.admin, 'report.daily', { date: '2026-11-09' }));
+  assert.strictEqual(rep.tables[0].rows.find(r => r.employeeId === t.id).checkOut, '16:45');
 });
 
 test('T06', 'ค่าความแม่นยำ GPS เกินเกณฑ์ (50 ม.) → ไม่บันทึก', () => {

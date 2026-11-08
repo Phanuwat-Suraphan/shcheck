@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.2.0
+<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.3.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Index.html
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่ -->
 <html lang="th">
@@ -1932,9 +1932,10 @@ table.table { width: 100%; border-collapse: collapse; font-size: .9rem; }
     var inBtn = $('#checkInBtn'), outBtn = $('#checkOutBtn');
     var hasIn = !!(row && row.checkIn), hasOut = !!(row && row.checkOut);
     inBtn.disabled = S.attBusy || !s.geofenceConfigured || hasIn;
-    outBtn.disabled = S.attBusy || !s.geofenceConfigured || !hasIn || hasOut;
+    outBtn.disabled = S.attBusy || (s.checkoutRequiresGps && !s.geofenceConfigured) || !hasIn || hasOut;
     $('#checkInSub').textContent = hasIn ? 'ลงเวลาเข้าแล้ว ' + hm(row.checkIn) + ' น.' : 'กดเพื่อบันทึกเวลาเข้า (ใช้ GPS)';
-    $('#checkOutSub').textContent = hasOut ? 'ลงเวลาออกแล้ว ' + hm(row.checkOut) + ' น.' : (hasIn ? 'กดเพื่อบันทึกเวลาออก (ใช้ GPS)' : 'ต้องลงเวลาเข้างานก่อน');
+    $('#checkOutSub').textContent = hasOut ? 'ลงเวลาออกแล้ว ' + hm(row.checkOut) + ' น.' :
+      (hasIn ? (s.checkoutRequiresGps ? 'กดเพื่อบันทึกเวลาออก (ใช้ GPS)' : 'กดเพื่อบันทึกเวลาออก') : 'ต้องลงเวลาเข้างานก่อน');
   }
 
   /* ---------- GPS ---------- */
@@ -2056,9 +2057,33 @@ table.table { width: 100%; border-collapse: collapse; font-size: .9rem; }
     };
   }
 
+  /** ลงเวลาออกแบบไม่ตรวจ GPS: ยืนยัน 1 ครั้ง แล้วบันทึกด้วยเวลา Server */
+  function doCheckoutNoGps() {
+    var s = S.dash.settings, now = bkkTimeHM();
+    var early = S.dash.today.isWorkday && now < s.workEnd;
+    confirmDialog(early ? {
+      title: 'ยังไม่ถึงเวลาเลิกงาน', icon: 'schedule', confirmText: 'ลงเวลาออก',
+      html: 'ขณะนี้เวลา <b>' + now + ' น.</b> ยังไม่ถึงเวลาเลิกงาน (' + esc(s.workEnd) + ' น.)<br>ระบบจะบันทึกสถานะ <b>“ออกก่อนเวลา”</b> ต้องการลงเวลาออกงานใช่หรือไม่'
+    } : {
+      title: 'ยืนยันลงเวลาออกงาน', icon: 'logout', confirmText: 'ลงเวลาออก',
+      html: 'ลงเวลาออกงานเวลา <b>' + now + ' น.</b> ใช่หรือไม่<br><span class="small muted">ระบบบันทึกตามเวลาของเซิร์ฟเวอร์</span>'
+    }).then(function (go) {
+      if (!go) return;
+      S.attBusy = true; updateAttendanceButtons();
+      api('att.checkOut', {}, { loadingText: 'กำลังบันทึกเวลาออกงาน...' }).then(function (r) {
+        showAttendanceSuccess(r);
+        return loadDashboard(true);
+      }, function (e) {
+        showAttendanceFailure(e);
+        if (e.code === 'DUPLICATE') loadDashboard(true);
+      }).then(function () { S.attBusy = false; updateAttendanceButtons(); });
+    });
+  }
+
   function doAttendance(type) {
     if (S.attBusy || !S.dash) return;
     var s = S.dash.settings;
+    if (type === 'OUT' && !s.checkoutRequiresGps) { doCheckoutNoGps(); return; }
     var pre = Promise.resolve(true);
     if (type === 'OUT' && S.dash.today.isWorkday && bkkTimeHM() < s.workEnd) {
       pre = confirmDialog({ title: 'ยังไม่ถึงเวลาเลิกงาน', icon: 'schedule', html: 'ขณะนี้เวลา <b>' + bkkTimeHM() + ' น.</b> ยังไม่ถึงเวลาเลิกงาน (' + esc(s.workEnd) + ' น.)<br>ระบบจะบันทึกสถานะ <b>“ออกก่อนเวลา”</b> ต้องการลงเวลาออกงานใช่หรือไม่', confirmText: 'ลงเวลาออก' });
@@ -2099,7 +2124,9 @@ table.table { width: 100%; border-collapse: collapse; font-size: .9rem; }
         '<div class="muted">' + esc(r.typeLabel) + ' · ' + esc(r.dateLabel) + '</div>' +
         '<div class="big-time">' + hm(r.time) + ' น.</div>' +
         '<div style="margin:6px 0 10px">' + badge(r.status, r.statusLabel + (late ? ' ' + r.lateMinutes + ' นาที' : '')) + '</div></div>' +
-        '<div class="zone-result in">' + zoneHtml({ inZone: true, accuracyOk: true, distanceM: r.distanceM, radiusM: r.radiusM, accuracyM: r.accuracyM, maxAccuracyM: S.dash.settings.maxAccuracyM, maps: r.maps }) + '</div>' +
+        (r.distanceM !== null && r.distanceM !== undefined ?
+          '<div class="zone-result ' + (r.inZone === false ? 'out' : 'in') + '">' + zoneHtml({ inZone: r.inZone !== false, accuracyOk: true, distanceM: r.distanceM, radiusM: r.radiusM, accuracyM: r.accuracyM, maxAccuracyM: S.dash.settings.maxAccuracyM, maps: r.maps }) + '</div>'
+          : '<p class="small muted center">การลงเวลาออกไม่ต้องตรวจตำแหน่ง (ตามการตั้งค่าของโรงเรียน)</p>') +
         (late ? '<p class="small muted" style="margin-top:10px">ระบบบันทึกเวลาตามนาฬิกาของเซิร์ฟเวอร์ หากมีเหตุจำเป็นสามารถแจ้งผู้บริหารหรือยื่นใบลาครึ่งวันได้</p>' : '') +
         (early ? '<p class="small muted" style="margin-top:10px">บันทึกสถานะออกก่อนเวลาเลิกงานแล้ว</p>' : ''),
       actions: [{ label: 'เรียบร้อย', icon: 'done' }]
