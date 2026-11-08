@@ -2,6 +2,8 @@
  * e2e-server.js — เซิร์ฟเวอร์จำลอง Web App ของ Apps Script สำหรับทดสอบ/พรีวิว UI บนเครื่อง
  *
  *   node tests/e2e-server.js            → เปิด http://localhost:8787 (ข้อมูลตัวอย่าง)
+ *   FRESH=1 node tests/e2e-server.js    → จำลองการเปิดเว็บครั้งแรกหลัง Deploy (หน้าติดตั้ง)
+ *   GAS_SRC=dist node tests/e2e-server.js → ใช้ชุดติดตั้งแบบง่าย 3 ไฟล์
  *
  * - เรนเดอร์ Index.html ผ่าน HtmlService จำลอง (ประมวลผล <?= ?> / include())
  * - ฉีด google.script.run shim ที่ส่งคำขอไปยัง /rpc → เรียกฟังก์ชันใน .gs จริง
@@ -38,10 +40,16 @@ const DEFAULTS = {
 function createApp(opts = {}) {
   const o = Object.assign({}, DEFAULTS, opts);
   const env = createGasEnv({ printErrors: true });
-  const ss = env.SpreadsheetApp.create('DB');
-  env.state.activeSpreadsheetId = ss.getId();
   env.state.props.PBKDF2_ITERATIONS = String(o.iterations || 20000);
   env.clock.setBkk(o.now === 'real' ? '2026-01-01 00:00:00' : o.now);
+  if (o.fresh) {
+    // ติดตั้งแบบง่าย: เพิ่งวางโค้ดและ Deploy — ยังไม่ได้รันอะไรเลย
+    if (o.now === 'real') env.clock.fixed = null;
+    env.state.activeEmail = '';
+    return attachServer(env, o);
+  }
+  const ss = env.SpreadsheetApp.create('DB');
+  env.state.activeSpreadsheetId = ss.getId();
   // เจ้าของโปรเจกต์ติดตั้งระบบจาก Editor
   env.call('SetupSystem');
   Object.assign(env.state.props, {
@@ -61,7 +69,10 @@ function createApp(opts = {}) {
   if (o.now === 'real') env.clock.fixed = null; // ใช้เวลาจริงของเครื่อง
   // จากนี้ไปคือ "ผู้ใช้ทั่วไปเปิดเว็บแอป" — ไม่ใช่เจ้าของโปรเจกต์
   env.state.activeEmail = '';
+  return attachServer(env, o);
+}
 
+function attachServer(env, o) {
   const server = http.createServer((req, res) => {
     try {
       if (req.method === 'GET' && (req.url === '/' || req.url.startsWith('/?'))) {
@@ -103,7 +114,7 @@ module.exports = { createApp, DEFAULTS };
 
 if (require.main === module) {
   const port = +(process.env.PORT || 8787);
-  const app = createApp({ now: process.env.NOW || DEFAULTS.now });
+  const app = createApp({ now: process.env.NOW || DEFAULTS.now, fresh: process.env.FRESH === '1' });
   app.server.listen(port, () => {
     console.log('Preview server: http://localhost:' + port);
     console.log('Admin: ' + DEFAULTS.adminUser + ' / ' + DEFAULTS.adminPass + ' (ระบบจะบังคับเปลี่ยนรหัสผ่าน)');

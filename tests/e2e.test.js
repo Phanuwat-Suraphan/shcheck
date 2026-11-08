@@ -43,8 +43,8 @@ async function newPage(o = {}) {
   page.setDefaultTimeout(+(process.env.PW_TIMEOUT || 10000));
   page.on('pageerror', e => pageErrors.push(e.message));
   page.on('dialog', d => d.dismiss());
-  await page.goto(base);
-  await page.waitForSelector('#view-login:not([hidden]), #view-app:not([hidden])', { timeout: 15000 });
+  await page.goto(o.base || base);
+  await page.waitForSelector('#view-login:not([hidden]), #view-app:not([hidden]), #view-setup:not([hidden])', { timeout: 15000 });
   return page;
 }
 async function login(page, u, p) {
@@ -388,6 +388,44 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
     await shot(desk, '09-settings-desktop.png');
   });
 
+  await step('E21', 'ติดตั้งแบบง่าย: เปิดเว็บครั้งแรกหลัง Deploy → ระบบสร้างฐานข้อมูลเอง → กรอกรหัสติดตั้ง + ผู้ดูแลระบบ + พิกัด → เข้าใช้งานทันที', async () => {
+    const fresh = createApp({ fresh: true });
+    await new Promise(r => fresh.server.listen(0, '127.0.0.1', r));
+    try {
+      const page = await newPage({ base: 'http://127.0.0.1:' + fresh.server.address().port });
+      await page.waitForSelector('#view-setup:not([hidden])');
+      await shot(page, '10-first-run-setup-mobile.png');
+      // เจ้าของระบบเปิด Google Sheet ฐานข้อมูล → ชีต "เริ่มต้นใช้งาน" เพื่อดูรหัส
+      const code = fresh.env.state.props.SETUP_CODE;
+      const sheetText = JSON.stringify(fresh.env.SpreadsheetApp.openById(fresh.env.state.props.SPREADSHEET_ID).getSheetByName('เริ่มต้นใช้งาน').rows);
+      assert.ok(sheetText.includes(code));
+      assert.ok(!(await page.content()).includes(code));
+      await page.fill('#suCode', 'WRONG-CODE-0000');
+      await page.fill('#suName', 'นายผู้ดูแล คนแรก');
+      await page.fill('#suCode2', '0001');
+      await page.fill('#suUser', 'first.admin');
+      await page.fill('#suPw', 'FirstAdm1n2026');
+      await page.fill('#suPw2', 'FirstAdm1n2026');
+      await page.click('#setupBtn');
+      await page.waitForSelector('[data-field="setupCode"].has-error');
+      await page.fill('#suCode', code);
+      await page.click('#suMyLoc');
+      await page.waitForFunction(() => document.querySelector('#suLat').value !== '');
+      await page.fill('#suStart', '07:30');
+      await page.fill('#suLate', '08:00');
+      await page.check('#suConfirm');
+      await page.click('#setupBtn');
+      await page.waitForSelector('#view-app:not([hidden])', { timeout: 15000 });
+      assert.ok(await page.isVisible('#toAdminBtn'));
+      await page.waitForFunction(() => /07:30–16:30/.test(document.querySelector('#workHours').textContent));
+      assert.ok(await page.isEnabled('#checkInBtn'), 'geofence configured from wizard');
+      assert.ok(!('SETUP_CODE' in fresh.env.state.props));
+      await page.click('#toAdminBtn');
+      await page.waitForSelector('#view-admin:not([hidden]) #ovStats .stat-card');
+      assert.strictEqual(await page.locator('#ovWarnings .alert').count(), 0);
+    } finally { fresh.server.close(); }
+  });
+
   await step('E20', 'ไม่มี JavaScript error ในทุกหน้าที่ทดสอบ', async () => {
     assert.deepStrictEqual(pageErrors, []);
   });
@@ -397,8 +435,9 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
   const passed = results.filter(r => r.ok).length;
   console.log(`\n${passed}/${results.length} passed in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
   fs.mkdirSync(path.join(__dirname, 'results'), { recursive: true });
-  fs.writeFileSync(path.join(__dirname, 'results', 'e2e-results.md'), [
-    '# ผลการทดสอบ End-to-End (Chromium + GPS จำลอง)', '', `รันเมื่อ: ${new Date().toISOString()}  `, `ผลรวม: **${passed}/${results.length} ผ่าน**`, '',
+  const variant = (process.env.GAS_SRC || 'src') === 'dist' ? '-dist' : '';
+  fs.writeFileSync(path.join(__dirname, 'results', 'e2e-results' + variant + '.md'), [
+    '# ผลการทดสอบ End-to-End (Chromium + GPS จำลอง)' + (variant ? ' — ชุดติดตั้งแบบง่าย (dist/ 3 ไฟล์)' : ''), '', `รันเมื่อ: ${new Date().toISOString()}  `, `ผลรวม: **${passed}/${results.length} ผ่าน**`, '',
     '| รหัส | รายการทดสอบ | ผล | เวลา (ms) |', '|---|---|---|---|',
     ...results.map(r => `| ${r.id} | ${r.name} | ${r.ok ? '✅ ผ่าน' : '❌ ไม่ผ่าน'} | ${r.ms} |`), ''].join('\n'));
   process.exitCode = passed === results.length ? 0 : 1;

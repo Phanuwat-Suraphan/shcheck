@@ -10,7 +10,7 @@
  *   - ฟังก์ชันระดับบนสุดที่ "ไม่" ลงท้ายด้วย "_" สามารถถูกเรียกจาก Browser ผ่าน
  *     google.script.run ได้ทั้งหมด
  *   - ระบบนี้จึงเปิดเฉพาะฟังก์ชันสาธารณะที่จำเป็น ได้แก่
- *       doGet, include, getPublicConfig, login, register, api
+ *       doGet, include, getPublicConfig, login, register, firstRunSetup, api
  *       และฟังก์ชันสำหรับผู้พัฒนา (SetupSystem, CreateFirstAdmin, EmergencyResetAdmin,
  *       BenchmarkPasswordHashing, DailyMaintenance) ซึ่งตรวจสอบว่าเรียกจาก
  *       Apps Script Editor โดยเจ้าของโปรเจกต์เท่านั้น
@@ -85,7 +85,11 @@ function doGet(e) {
 function include(filename) {
   var allowed = ['Styles', 'JavaScript', 'Login', 'Register', 'Dashboard'];
   if (allowed.indexOf(filename) < 0) return '';
-  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+  try {
+    return HtmlService.createHtmlOutputFromFile(filename).getContent();
+  } catch (e) {
+    return ''; // ชุดติดตั้งแบบง่ายรวมไฟล์ย่อยไว้ใน Index.html แล้ว
+  }
 }
 
 /** ข้อมูลสาธารณะสำหรับหน้าเข้าสู่ระบบ/สมัครสมาชิก (ไม่มีข้อมูลลับ) */
@@ -93,6 +97,20 @@ function getPublicConfig() {
   resetMemo_();
   try {
     var ready = isSystemReady_();
+    var setupError = '';
+    if (!ready) {
+      // ติดตั้งอัตโนมัติเมื่อเปิดเว็บแอปครั้งแรก (สร้างชีต/ค่าเริ่มต้น/รหัสติดตั้ง) — ไม่ต้องรันโค้ดใน Editor
+      try { setupCore_(); } catch (e) { console.error('auto setup failed: ' + (e && e.stack ? e.stack : e)); setupError = String(e && e.message || e); }
+      resetMemo_();
+      ready = isSystemReady_();
+    }
+    var needsFirstAdmin = false;
+    if (ready && !hasActiveAdmin_()) {
+      needsFirstAdmin = true;
+      if (!scriptProps_().SETUP_CODE) {
+        try { withLock_(function () { if (!scriptProps_().SETUP_CODE) ensureSetupCode_(); }); } catch (e2) { console.error(e2); }
+      }
+    }
     var s = ready ? getSettings_() : null;
     return {
       ok: true,
@@ -103,6 +121,10 @@ function getPublicConfig() {
         slogan: APP.SLOGAN,
         version: APP.VERSION,
         setupComplete: ready,
+        setupError: setupError ? 'ติดตั้งอัตโนมัติไม่สำเร็จ กรุณาให้เจ้าของระบบเปิด Apps Script แล้วรัน SetupSystem() หนึ่งครั้ง' : '',
+        needsFirstAdmin: needsFirstAdmin,
+        dbFileName: DB_FILE_NAME_,
+        setupSheetName: SETUP_SHEET_,
         allowRegistration: s ? s.allowRegistration : false,
         positions: POSITIONS,
         gpsRetentionDays: s ? s.gpsRetentionDays : 365,

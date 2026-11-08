@@ -9,9 +9,17 @@
 
 /** ส่ง HTML + JavaScript ของหน้า Admin ให้เฉพาะผู้บริหาร/ผู้ดูแลระบบ */
 function getAdminView_(ctx) {
+  var html, script = '';
+  try {
+    // ชุดติดตั้งแบบง่าย (dist/): หน้า Admin รวมอยู่ในไฟล์ Admin.html ไฟล์เดียว
+    html = HtmlService.createHtmlOutputFromFile('Admin').getContent();
+  } catch (e) {
+    html = HtmlService.createHtmlOutputFromFile('AdminDashboard').getContent();
+    script = HtmlService.createHtmlOutputFromFile('AdminScript').getContent();
+  }
   return {
-    html: HtmlService.createHtmlOutputFromFile('AdminDashboard').getContent(),
-    script: HtmlService.createHtmlOutputFromFile('AdminScript').getContent(),
+    html: html,
+    script: script,
     role: ctx.user.Role,
     roleLabel: ROLE_LABELS[ctx.user.Role]
   };
@@ -407,6 +415,37 @@ function normalizeSetting_(key, value) {
   }
 }
 
+/** ตรวจความสัมพันธ์ของค่าที่จะบันทึก (merged = ค่าทั้งหมดหลังแก้ไข) */
+function validateSettingRelations_(merged) {
+  if (merged.LATE_AFTER_TIME < merged.WORK_START_TIME) throw appError_('เวลาที่ถือว่ามาสายต้องไม่ก่อนเวลาเริ่มปฏิบัติงาน', 'VALIDATION', { field: 'LATE_AFTER_TIME' });
+  if (merged.WORK_END_TIME <= merged.LATE_AFTER_TIME) throw appError_('เวลาเลิกงานต้องหลังเวลาที่ถือว่ามาสาย', 'VALIDATION', { field: 'WORK_END_TIME' });
+  if (merged.CHECKIN_EARLIEST_TIME > merged.WORK_START_TIME) throw appError_('เวลาเปิดให้ลงเวลาเข้าต้องไม่หลังเวลาเริ่มปฏิบัติงาน', 'VALIDATION', { field: 'CHECKIN_EARLIEST_TIME' });
+  if ((merged.SCHOOL_LAT === '') !== (merged.SCHOOL_LNG === '')) throw appError_('กรุณากรอกทั้งละติจูดและลองจิจูด', 'VALIDATION', { field: 'SCHOOL_LAT' });
+  if (merged.SETTINGS_CONFIRMED === 'TRUE' && merged.SCHOOL_LAT === '') {
+    throw appError_('กรุณาตั้งค่าพิกัดโรงเรียนก่อนยืนยันการตั้งค่า', 'VALIDATION', { field: 'SCHOOL_LAT' });
+  }
+}
+
+/** เขียนค่าที่เปลี่ยนลงชีต Settings (เรียกภายใต้ Lock) → รายการที่เปลี่ยน */
+function writeSettingValues_(next, current, actorName) {
+  var changes = [];
+  var byKey = {};
+  readAll_('Settings').forEach(function (r) { byKey[r.Key] = r; });
+  Object.keys(next).forEach(function (k) {
+    var before = String(current[k] === undefined ? '' : current[k]);
+    if (before === next[k]) return;
+    changes.push({ key: k, label: SETTING_RULES_[k].label, from: before, to: next[k] });
+    if (byKey[k]) {
+      updateRecord_('Settings', byKey[k]._row, { Value: next[k], UpdatedAt: nowStamp_(), UpdatedBy: actorName });
+    } else {
+      var desc = '';
+      DEFAULT_SETTINGS_.forEach(function (d) { if (d[0] === k) desc = d[2]; });
+      appendRecord_('Settings', { Key: k, Value: next[k], Description: desc, UpdatedAt: nowStamp_(), UpdatedBy: actorName });
+    }
+  });
+  return changes;
+}
+
 function saveSettings_(ctx, p) {
   var input = p.values || {};
   var current = getSettings_().raw;
@@ -417,32 +456,8 @@ function saveSettings_(ctx, p) {
   });
   var merged = {};
   Object.keys(SETTING_RULES_).forEach(function (k) { merged[k] = k in next ? next[k] : String(current[k] === undefined ? '' : current[k]); });
-  // ตรวจความสัมพันธ์ของค่าเวลา
-  if (merged.LATE_AFTER_TIME < merged.WORK_START_TIME) throw appError_('เวลาที่ถือว่ามาสายต้องไม่ก่อนเวลาเริ่มปฏิบัติงาน', 'VALIDATION', { field: 'LATE_AFTER_TIME' });
-  if (merged.WORK_END_TIME <= merged.LATE_AFTER_TIME) throw appError_('เวลาเลิกงานต้องหลังเวลาที่ถือว่ามาสาย', 'VALIDATION', { field: 'WORK_END_TIME' });
-  if (merged.CHECKIN_EARLIEST_TIME > merged.WORK_START_TIME) throw appError_('เวลาเปิดให้ลงเวลาเข้าต้องไม่หลังเวลาเริ่มปฏิบัติงาน', 'VALIDATION', { field: 'CHECKIN_EARLIEST_TIME' });
-  if ((merged.SCHOOL_LAT === '') !== (merged.SCHOOL_LNG === '')) throw appError_('กรุณากรอกทั้งละติจูดและลองจิจูด', 'VALIDATION', { field: 'SCHOOL_LAT' });
-  if (merged.SETTINGS_CONFIRMED === 'TRUE' && merged.SCHOOL_LAT === '') {
-    throw appError_('กรุณาตั้งค่าพิกัดโรงเรียนก่อนยืนยันการตั้งค่า', 'VALIDATION', { field: 'SCHOOL_LAT' });
-  }
-  var changes = [];
-  withLock_(function () {
-    var rows = readAll_('Settings');
-    var byKey = {};
-    rows.forEach(function (r) { byKey[r.Key] = r; });
-    Object.keys(next).forEach(function (k) {
-      var before = String(current[k] === undefined ? '' : current[k]);
-      if (before === next[k]) return;
-      changes.push({ key: k, label: SETTING_RULES_[k].label, from: before, to: next[k] });
-      if (byKey[k]) {
-        updateRecord_('Settings', byKey[k]._row, { Value: next[k], UpdatedAt: nowStamp_(), UpdatedBy: ctx.user.FullName });
-      } else {
-        var desc = '';
-        DEFAULT_SETTINGS_.forEach(function (d) { if (d[0] === k) desc = d[2]; });
-        appendRecord_('Settings', { Key: k, Value: next[k], Description: desc, UpdatedAt: nowStamp_(), UpdatedBy: ctx.user.FullName });
-      }
-    });
-  });
+  validateSettingRelations_(merged);
+  var changes = withLock_(function () { return writeSettingValues_(next, current, ctx.user.FullName); });
   if (changes.length) writeAudit_(ctx, 'SETTINGS_UPDATE', 'Settings', '', { changes: changes });
   resetMemo_();
   return { changes: changes.length, message: changes.length ? 'บันทึกการตั้งค่าแล้ว (' + changes.length + ' รายการ)' : 'ไม่มีการเปลี่ยนแปลง' };

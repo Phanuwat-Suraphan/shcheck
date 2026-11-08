@@ -1,0 +1,2328 @@
+<!DOCTYPE html>
+<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.0.0
+ * ชุดติดตั้งแบบง่าย: ไฟล์ Index.html
+ * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่ -->
+<html lang="th">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0B2545">
+  <meta name="description" content="<?= app.nameTh ?> <?= app.school ?>">
+  <title><?= app.nameTh ?> | <?= app.school ?></title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Prompt:wght@500;600&family=Sarabun:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,500,0..1,0&display=block">
+  <style>
+/* ==========================================================================
+   ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน — Design System
+   Mobile-first · Navy Blue / Sky Blue / White · ภาษาไทย (Sarabun / Prompt)
+   ========================================================================== */
+:root {
+  --navy-900: #0B2545;
+  --navy-800: #13315C;
+  --navy-700: #1B4F8A;
+  --navy-600: #24609F;
+  --sky-500: #2E9BE0;
+  --sky-400: #4FB3F0;
+  --sky-200: #BFE3FA;
+  --sky-100: #E3F2FD;
+  --sky-50: #F2F9FE;
+  --white: #FFFFFF;
+  --bg: #F3F6FB;
+  --surface: #FFFFFF;
+  --border: #DCE4EE;
+  --border-strong: #C5D2E2;
+  --text: #0F172A;
+  --text-2: #334155;
+  --muted: #64748B;
+  --success: #15803D;
+  --success-500: #16A34A;
+  --success-bg: #DCFCE7;
+  --danger: #B91C1C;
+  --danger-500: #DC2626;
+  --danger-bg: #FEE2E2;
+  --warning: #B45309;
+  --warning-bg: #FEF3C7;
+  --info-bg: #E0F2FE;
+  /* สีกราฟ (ตรวจสอบความแตกต่างสำหรับผู้มีภาวะตาบอดสีแล้ว) */
+  --c-ontime: #0CA30C;
+  --c-leave: #2A78D6;
+  --c-late: #EDA100;
+  --c-absent: #D03B3B;
+  --c-notyet: #94A3B8;
+  --radius-sm: 10px;
+  --radius: 14px;
+  --radius-lg: 20px;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, .06);
+  --shadow: 0 4px 16px rgba(11, 37, 69, .08);
+  --shadow-lg: 0 12px 40px rgba(11, 37, 69, .18);
+  --font: 'Sarabun', 'Noto Sans Thai', 'Leelawadee UI', 'Tahoma', sans-serif;
+  --font-head: 'Prompt', 'Sarabun', 'Noto Sans Thai', 'Tahoma', sans-serif;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; font-family: var(--font); font-size: 16px; line-height: 1.55; color: var(--text);
+  background: var(--bg); -webkit-font-smoothing: antialiased; min-height: 100vh;
+}
+h1, h2, h3, h4 { font-family: var(--font-head); font-weight: 600; line-height: 1.3; margin: 0 0 .5rem; color: var(--navy-900); }
+h1 { font-size: 1.5rem; } h2 { font-size: 1.25rem; } h3 { font-size: 1.08rem; } h4 { font-size: 1rem; }
+p { margin: 0 0 .75rem; }
+a { color: var(--navy-700); }
+[hidden] { display: none !important; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--sky-400); outline-offset: 2px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); border: 0; }
+
+/* Material Symbols */
+.ms {
+  font-family: 'Material Symbols Rounded'; font-weight: normal; font-style: normal; font-size: 22px; line-height: 1;
+  letter-spacing: normal; text-transform: none; display: inline-block; white-space: nowrap; direction: ltr;
+  -webkit-font-feature-settings: 'liga'; font-feature-settings: 'liga'; -webkit-font-smoothing: antialiased;
+  font-variation-settings: 'FILL' 0, 'wght' 500, 'GRAD' 0, 'opsz' 24; vertical-align: middle; overflow: hidden;
+  width: 1em; flex-shrink: 0;
+}
+.ms.fill { font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 24; }
+
+/* ---------- Layout ---------- */
+.view { min-height: 100vh; }
+.container { width: 100%; max-width: 1180px; margin: 0 auto; padding: 0 16px; }
+.stack > * + * { margin-top: 16px; }
+.grid { display: grid; gap: 14px; }
+.grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.grid-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.row-between { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.spacer { flex: 1; }
+.muted { color: var(--muted); }
+.small { font-size: .875rem; }
+.tiny { font-size: .78rem; }
+.center { text-align: center; }
+.nowrap { white-space: nowrap; }
+.mt-0 { margin-top: 0 !important; }
+.mb-0 { margin-bottom: 0 !important; }
+
+/* ---------- Boot / loading ---------- */
+.boot {
+  position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+  background: linear-gradient(160deg, var(--navy-900), var(--navy-700) 60%, var(--sky-500)); color: #fff; z-index: 100; text-align: center; padding: 24px;
+}
+.boot .brand-mark { width: 72px; height: 72px; font-size: 40px; }
+.spinner {
+  width: 34px; height: 34px; border-radius: 50%; border: 3px solid rgba(255, 255, 255, .35); border-top-color: #fff;
+  animation: spin .8s linear infinite;
+}
+.spinner.dark { border-color: var(--sky-100); border-top-color: var(--navy-700); }
+.spinner.sm { width: 18px; height: 18px; border-width: 2px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-overlay {
+  position: fixed; inset: 0; background: rgba(11, 37, 69, .35); z-index: 90; display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(2px);
+}
+.loading-box { background: #fff; border-radius: var(--radius); padding: 22px 28px; display: flex; align-items: center; gap: 14px; box-shadow: var(--shadow-lg); font-weight: 600; color: var(--navy-800); }
+
+/* ---------- Brand ---------- */
+.brand-mark {
+  width: 44px; height: 44px; border-radius: 14px; display: inline-flex; align-items: center; justify-content: center;
+  background: linear-gradient(145deg, var(--sky-400), var(--navy-700)); color: #fff; font-size: 26px; box-shadow: 0 6px 18px rgba(46, 155, 224, .35);
+}
+.brand-mark .ms { font-size: inherit; }
+
+/* ---------- Auth pages (Login / Register) ---------- */
+.auth-hero {
+  background: radial-gradient(1200px 400px at 80% -10%, rgba(79, 179, 240, .55), transparent 60%),
+              linear-gradient(160deg, var(--navy-900) 0%, var(--navy-800) 55%, var(--navy-700) 100%);
+  color: #fff; padding: 36px 16px 96px; text-align: center; position: relative; overflow: hidden;
+}
+.auth-hero::after {
+  content: ''; position: absolute; left: -10%; right: -10%; bottom: -60px; height: 120px; background: var(--bg); border-radius: 50% 50% 0 0;
+}
+.auth-hero .brand-mark { width: 68px; height: 68px; font-size: 38px; border-radius: 20px; margin-bottom: 14px; }
+.auth-hero h1 { color: #fff; font-size: 1.45rem; margin-bottom: 4px; }
+.auth-hero .school { font-size: 1.05rem; color: var(--sky-200); font-weight: 600; }
+.auth-hero .en { font-size: .82rem; letter-spacing: .02em; opacity: .8; margin-top: 2px; }
+.auth-hero .slogan {
+  display: inline-flex; align-items: center; gap: 6px; margin-top: 14px; padding: 6px 14px; border-radius: 999px;
+  background: rgba(255, 255, 255, .12); border: 1px solid rgba(255, 255, 255, .22); font-size: .86rem;
+}
+.auth-wrap { max-width: 460px; margin: -72px auto 0; padding: 0 16px 40px; position: relative; z-index: 2; }
+.auth-card { padding: 24px 20px; }
+.auth-card h2 { display: flex; align-items: center; gap: 8px; }
+.auth-footer { text-align: center; color: var(--muted); font-size: .8rem; margin-top: 20px; }
+.divider { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: .85rem; margin: 18px 0; }
+.divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+/* ---------- Cards ---------- */
+.card {
+  background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--shadow); border: 1px solid rgba(220, 228, 238, .7);
+  padding: 18px;
+}
+.card-title { display: flex; align-items: center; gap: 8px; font-family: var(--font-head); font-weight: 600; color: var(--navy-900); font-size: 1.05rem; margin: 0 0 12px; }
+.card-title .ms { color: var(--sky-500); }
+.card-sub { color: var(--muted); font-size: .88rem; margin-top: -6px; margin-bottom: 12px; }
+.card.flat { box-shadow: var(--shadow-sm); }
+.card.tint { background: var(--sky-50); border-color: var(--sky-100); }
+
+.stat-card { display: flex; flex-direction: column; gap: 4px; padding: 14px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-sm); position: relative; min-height: 98px; }
+.stat-card .stat-icon { width: 36px; height: 36px; border-radius: 11px; display: inline-flex; align-items: center; justify-content: center; background: var(--sky-100); color: var(--navy-700); }
+.stat-card .stat-value { font-family: var(--font-head); font-size: 1.7rem; font-weight: 600; color: var(--navy-900); line-height: 1.1; }
+.stat-card .stat-unit { font-size: .85rem; color: var(--muted); font-weight: 500; margin-left: 4px; font-family: var(--font); }
+.stat-card .stat-label { font-size: .86rem; color: var(--text-2); }
+.stat-card.clickable { cursor: pointer; transition: transform .15s ease, box-shadow .15s ease; }
+.stat-card.clickable:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+.tone-success .stat-icon { background: var(--success-bg); color: var(--success); }
+.tone-danger .stat-icon { background: var(--danger-bg); color: var(--danger); }
+.tone-warning .stat-icon { background: var(--warning-bg); color: var(--warning); }
+.tone-sky .stat-icon { background: var(--info-bg); color: #0369A1; }
+.tone-muted .stat-icon { background: #EEF2F7; color: var(--muted); }
+.tone-navy .stat-icon { background: var(--sky-100); color: var(--navy-800); }
+
+/* ---------- Buttons ---------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px; padding: 10px 18px;
+  border-radius: 12px; border: 1px solid transparent; background: var(--navy-800); color: #fff; font-weight: 600; cursor: pointer;
+  text-decoration: none; transition: background .15s ease, transform .05s ease, box-shadow .15s ease; user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.btn:hover { background: var(--navy-700); }
+.btn:active { transform: translateY(1px); }
+.btn[disabled], .btn.is-loading { opacity: .6; cursor: not-allowed; }
+.btn.block { width: 100%; }
+.btn.lg { min-height: 54px; font-size: 1.05rem; border-radius: 14px; }
+.btn.sm { min-height: 36px; padding: 6px 12px; font-size: .88rem; border-radius: 10px; }
+.btn.sky { background: var(--sky-500); }
+.btn.sky:hover { background: #1F87CA; }
+.btn.success { background: var(--success-500); }
+.btn.success:hover { background: var(--success); }
+.btn.danger { background: var(--danger-500); }
+.btn.danger:hover { background: var(--danger); }
+.btn.outline { background: #fff; color: var(--navy-800); border-color: var(--border-strong); }
+.btn.outline:hover { background: var(--sky-50); border-color: var(--sky-400); }
+.btn.ghost { background: transparent; color: var(--navy-800); }
+.btn.ghost:hover { background: var(--sky-50); }
+.btn.white { background: #fff; color: var(--navy-800); }
+.btn .spinner { width: 18px; height: 18px; border-width: 2px; }
+.icon-btn {
+  width: 42px; height: 42px; border-radius: 12px; border: 0; background: transparent; color: inherit; display: inline-flex;
+  align-items: center; justify-content: center; cursor: pointer;
+}
+.icon-btn:hover { background: rgba(255, 255, 255, .12); }
+.link-btn { background: none; border: 0; color: var(--navy-700); font-weight: 600; cursor: pointer; padding: 4px; text-decoration: underline; text-underline-offset: 3px; }
+
+/* ---------- Attendance big buttons ---------- */
+.att-actions { display: grid; grid-template-columns: 1fr; gap: 12px; }
+.att-btn {
+  position: relative; display: flex; align-items: center; gap: 14px; width: 100%; min-height: 88px; padding: 16px 18px; border: 0; border-radius: 20px;
+  color: #fff; cursor: pointer; text-align: left; box-shadow: 0 10px 24px rgba(11, 37, 69, .18); transition: transform .08s ease, filter .15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.att-btn:active { transform: scale(.985); }
+.att-btn .att-icon { width: 54px; height: 54px; border-radius: 16px; background: rgba(255, 255, 255, .18); display: inline-flex; align-items: center; justify-content: center; }
+.att-btn .att-icon .ms { font-size: 32px; }
+.att-btn .att-text { display: flex; flex-direction: column; }
+.att-btn .att-title { font-family: var(--font-head); font-size: 1.25rem; font-weight: 600; }
+.att-btn .att-sub { font-size: .88rem; opacity: .9; }
+.att-btn.in { background: linear-gradient(135deg, #15803D, #16A34A 60%, #22C55E); }
+.att-btn.out { background: linear-gradient(135deg, var(--navy-800), var(--navy-700) 55%, var(--sky-500)); }
+.att-btn[disabled] { filter: grayscale(.85); opacity: .55; cursor: not-allowed; box-shadow: none; }
+.att-btn .done-mark { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; background: rgba(255, 255, 255, .2); border-radius: 999px; padding: 4px 10px; font-size: .85rem; }
+
+/* ---------- Forms ---------- */
+.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.field > label, .field-label { font-weight: 600; font-size: .92rem; color: var(--text-2); }
+.field .hint { font-size: .8rem; color: var(--muted); }
+.field .err { font-size: .82rem; color: var(--danger); display: none; }
+.field.has-error .err { display: block; }
+.field.has-error .input, .field.has-error input, .field.has-error select, .field.has-error textarea { border-color: var(--danger-500); background: #FFF7F7; }
+.input, .field input:not([type]), .field input[type=text], .field input[type=password], .field input[type=date], .field input[type=time], .field input[type=number],
+.field input[type=search], .field select, .field textarea {
+  width: 100%; min-height: 48px; padding: 10px 14px; border: 1.5px solid var(--border-strong); border-radius: 12px; background: #fff;
+  font-size: 16px; transition: border-color .15s ease, box-shadow .15s ease; -webkit-appearance: none; appearance: none;
+}
+.field select { background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 20px) 21px, calc(100% - 15px) 21px; background-size: 5px 5px; background-repeat: no-repeat; padding-right: 36px; }
+.field textarea { min-height: 96px; resize: vertical; }
+.input:focus, .field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: var(--sky-500); box-shadow: 0 0 0 4px rgba(46, 155, 224, .18); }
+.input-icon { position: relative; }
+.input-icon > .ms { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+.input-icon input { padding-left: 44px !important; }
+.input-icon .toggle-pw { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 42px; height: 42px; border: 0; background: none; color: var(--muted); cursor: pointer; border-radius: 10px; }
+.input-icon .toggle-pw:hover { background: var(--sky-50); color: var(--navy-700); }
+.input-icon.has-toggle input { padding-right: 50px !important; }
+.check { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; font-size: .92rem; }
+.check input { width: 22px; height: 22px; margin: 1px 0 0; accent-color: var(--navy-700); flex-shrink: 0; }
+.form-grid { display: grid; grid-template-columns: 1fr; gap: 0 14px; }
+.seg { display: inline-flex; background: #EEF2F7; padding: 4px; border-radius: 12px; gap: 4px; flex-wrap: wrap; }
+.seg button { border: 0; background: transparent; padding: 8px 14px; border-radius: 9px; font-weight: 600; color: var(--text-2); cursor: pointer; min-height: 40px; }
+.seg button.active { background: #fff; color: var(--navy-800); box-shadow: var(--shadow-sm); }
+.radio-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.radio-cards label { border: 1.5px solid var(--border-strong); border-radius: 12px; padding: 12px; display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; min-height: 50px; }
+.radio-cards input { accent-color: var(--navy-700); width: 18px; height: 18px; }
+.radio-cards label:has(input:checked) { border-color: var(--sky-500); background: var(--sky-50); }
+.pw-meter { height: 6px; border-radius: 6px; background: #E2E8F0; overflow: hidden; }
+.pw-meter > span { display: block; height: 100%; width: 0; transition: width .25s ease, background .25s ease; }
+.pw-rules { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 4px; font-size: .82rem; color: var(--muted); }
+.pw-rules li { display: flex; align-items: center; gap: 6px; }
+.pw-rules li .ms { font-size: 18px; }
+.pw-rules li.ok { color: var(--success); }
+.file-drop { border: 1.5px dashed var(--border-strong); border-radius: 12px; padding: 14px; display: flex; align-items: center; gap: 10px; background: #FAFCFF; cursor: pointer; }
+.file-drop:hover { border-color: var(--sky-400); }
+.file-drop input { display: none; }
+.switch { position: relative; display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-weight: 600; }
+.switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.switch .track { width: 46px; height: 26px; border-radius: 999px; background: #CBD5E1; position: relative; transition: background .2s; flex-shrink: 0; }
+.switch .track::after { content: ''; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: var(--shadow-sm); transition: transform .2s; }
+.switch input:checked + .track { background: var(--success-500); }
+.switch input:checked + .track::after { transform: translateX(20px); }
+.switch input:focus-visible + .track { outline: 3px solid var(--sky-400); outline-offset: 2px; }
+
+/* ---------- Badges / chips ---------- */
+.badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px; font-size: .8rem; font-weight: 600; line-height: 1.5; white-space: nowrap; background: #EEF2F7; color: var(--text-2); }
+.badge .ms { font-size: 16px; }
+.badge.success { background: var(--success-bg); color: var(--success); }
+.badge.danger { background: var(--danger-bg); color: var(--danger); }
+.badge.warning { background: var(--warning-bg); color: var(--warning); }
+.badge.info { background: var(--info-bg); color: #075985; }
+.badge.navy { background: var(--sky-100); color: var(--navy-800); }
+.badge.muted { background: #EEF2F7; color: var(--muted); }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; background: rgba(255, 255, 255, .14); color: #fff; font-size: .85rem; }
+
+/* ---------- Alerts ---------- */
+.alert { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; font-size: .92rem; border: 1px solid transparent; }
+.alert .ms { margin-top: 1px; }
+.alert.info { background: var(--info-bg); color: #075985; border-color: #BAE6FD; }
+.alert.success { background: var(--success-bg); color: var(--success); border-color: #BBF7D0; }
+.alert.warning { background: var(--warning-bg); color: var(--warning); border-color: #FDE68A; }
+.alert.danger { background: var(--danger-bg); color: var(--danger); border-color: #FECACA; }
+
+/* ---------- App bar & navigation ---------- */
+.appbar {
+  position: sticky; top: 0; z-index: 30; background: linear-gradient(120deg, var(--navy-900), var(--navy-800) 60%, var(--navy-700));
+  color: #fff; box-shadow: 0 2px 12px rgba(11, 37, 69, .25);
+}
+.appbar .container { display: flex; align-items: center; gap: 10px; min-height: 62px; }
+.appbar .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.appbar .brand .brand-mark { width: 38px; height: 38px; font-size: 22px; border-radius: 11px; box-shadow: none; }
+.appbar .brand-text { display: flex; flex-direction: column; min-width: 0; }
+.appbar .brand-title { font-family: var(--font-head); font-weight: 600; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.appbar .brand-sub { font-size: .75rem; color: var(--sky-200); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.appbar .user-chip { display: none; align-items: center; gap: 8px; padding: 4px 12px 4px 4px; border-radius: 999px; background: rgba(255, 255, 255, .1); }
+.avatar { width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: linear-gradient(145deg, var(--sky-400), var(--sky-500)); color: #fff; font-weight: 700; font-family: var(--font-head); font-size: .95rem; flex-shrink: 0; }
+.avatar.lg { width: 56px; height: 56px; font-size: 1.35rem; }
+.app-main { padding: 16px 0 calc(96px + var(--safe-bottom)); }
+.tabnav {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; background: #fff; border-top: 1px solid var(--border);
+  display: grid; grid-template-columns: repeat(5, 1fr); padding: 6px 4px calc(6px + var(--safe-bottom)); box-shadow: 0 -4px 16px rgba(11, 37, 69, .06);
+}
+.tabnav button {
+  border: 0; background: none; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 2px; color: var(--muted);
+  font-size: .72rem; font-weight: 600; cursor: pointer; border-radius: 12px; position: relative; min-height: 54px;
+}
+.tabnav button .ms { font-size: 24px; }
+.tabnav button.active { color: var(--navy-800); }
+.tabnav button.active .ms { font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 24; color: var(--sky-500); }
+.tabnav .dot { position: absolute; top: 4px; right: calc(50% - 20px); min-width: 18px; height: 18px; border-radius: 9px; background: var(--danger-500); color: #fff; font-size: .68rem; display: inline-flex; align-items: center; justify-content: center; padding: 0 5px; }
+.page-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+.page-head h2 { margin: 0; display: flex; align-items: center; gap: 8px; }
+.page-head h2 .ms { color: var(--sky-500); }
+
+/* ---------- Dashboard widgets ---------- */
+.hello { display: flex; align-items: center; gap: 14px; }
+.hello .name { font-family: var(--font-head); font-size: 1.15rem; font-weight: 600; color: var(--navy-900); }
+.clock-card { background: linear-gradient(140deg, var(--navy-900), var(--navy-700) 70%, var(--sky-500)); color: #fff; border: 0; position: relative; overflow: hidden; }
+.clock-card::after { content: ''; position: absolute; right: -40px; top: -40px; width: 160px; height: 160px; border-radius: 50%; background: rgba(255, 255, 255, .07); }
+.clock-card .date { font-size: .98rem; color: var(--sky-200); }
+.clock-card .time { font-family: var(--font-head); font-size: 2.7rem; font-weight: 600; letter-spacing: .02em; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.clock-card .work-hours { font-size: .86rem; opacity: .9; margin-top: 4px; }
+.clock-card .src { font-size: .72rem; opacity: .7; }
+.today-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.today-slot { border-radius: 14px; padding: 12px; background: var(--sky-50); border: 1px solid var(--sky-100); }
+.today-slot .lbl { display: flex; align-items: center; gap: 6px; font-size: .85rem; color: var(--text-2); font-weight: 600; }
+.today-slot .val { font-family: var(--font-head); font-size: 1.6rem; font-weight: 600; color: var(--navy-900); font-variant-numeric: tabular-nums; }
+.today-slot .val.empty { color: #A0AEC0; }
+.gps-row { display: flex; align-items: center; gap: 12px; }
+.gps-pulse { width: 46px; height: 46px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; background: #EEF2F7; color: var(--muted); }
+.gps-pulse.ok { background: var(--success-bg); color: var(--success); }
+.gps-pulse.bad { background: var(--danger-bg); color: var(--danger); }
+.gps-pulse.wait { background: var(--warning-bg); color: var(--warning); }
+.zone-result { margin-top: 12px; padding: 12px 14px; border-radius: 12px; display: flex; gap: 10px; align-items: flex-start; }
+.zone-result.in { background: var(--success-bg); color: var(--success); }
+.zone-result.out { background: var(--danger-bg); color: var(--danger); }
+.zone-result .big { font-family: var(--font-head); font-size: 1.15rem; font-weight: 600; }
+.list { display: flex; flex-direction: column; gap: 10px; }
+.list-item { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 14px; background: #fff; border: 1px solid var(--border); }
+.list-item .date-box { width: 52px; text-align: center; border-radius: 12px; background: var(--sky-50); padding: 6px 0; flex-shrink: 0; }
+.list-item .date-box .d { font-family: var(--font-head); font-size: 1.25rem; font-weight: 600; color: var(--navy-800); line-height: 1.1; }
+.list-item .date-box .m { font-size: .72rem; color: var(--muted); }
+.list-item .body { flex: 1; min-width: 0; }
+.list-item .times { display: flex; gap: 14px; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text-2); flex-wrap: wrap; }
+.list-item .times span { display: inline-flex; align-items: center; gap: 4px; }
+.list-item .times .ms { font-size: 18px; color: var(--muted); }
+.req-card { border: 1px solid var(--border); border-radius: 14px; padding: 14px; background: #fff; }
+.req-card .head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
+.req-card .title { font-weight: 700; color: var(--navy-900); }
+.req-card .meta { font-size: .84rem; color: var(--muted); margin-top: 4px; }
+.req-card .reason { margin-top: 8px; font-size: .92rem; background: #F8FAFC; border-radius: 10px; padding: 8px 10px; white-space: pre-wrap; word-break: break-word; }
+.req-card .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.empty-state { text-align: center; padding: 28px 12px; color: var(--muted); }
+.empty-state .ms { font-size: 44px; color: var(--sky-200); display: block; margin: 0 auto 6px; width: auto; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; font-size: .95rem; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; font-weight: 600; word-break: break-word; }
+
+/* ---------- Tables ---------- */
+.table-wrap { width: 100%; overflow-x: auto; border-radius: 14px; border: 1px solid var(--border); background: #fff; -webkit-overflow-scrolling: touch; }
+table.table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.table th { background: var(--navy-800); color: #fff; font-weight: 600; text-align: left; padding: 10px 12px; white-space: nowrap; position: sticky; top: 0; }
+.table td { padding: 10px 12px; border-top: 1px solid var(--border); vertical-align: middle; }
+.table tbody tr:nth-child(even) td { background: #F8FBFE; }
+.table tbody tr:hover td { background: var(--sky-50); }
+.table .c { text-align: center; }
+.table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.table .actions { white-space: nowrap; }
+@media (max-width: 719px) {
+  table.table.stack-mobile thead { display: none; }
+  table.table.stack-mobile, .table.stack-mobile tbody, .table.stack-mobile tr, .table.stack-mobile td { display: block; width: 100%; }
+  .table.stack-mobile tr { border-top: 1px solid var(--border); padding: 8px 4px; }
+  .table.stack-mobile tbody tr:nth-child(even) td { background: transparent; }
+  .table.stack-mobile td { border: 0; padding: 4px 10px; display: flex; justify-content: space-between; gap: 12px; text-align: right !important; }
+  .table.stack-mobile td::before { content: attr(data-label); font-weight: 600; color: var(--muted); text-align: left; flex-shrink: 0; }
+  .table.stack-mobile td.full { display: block; text-align: left !important; }
+  .table.stack-mobile td.full::before { display: block; margin-bottom: 4px; }
+}
+
+/* ---------- Toast ---------- */
+/* ข้อความแจ้งเตือนอยู่ใต้แถบเมนูด้านบน และไม่บังการแตะปุ่มใด ๆ (pointer-events: none) */
+.toast-host { position: fixed; left: 50%; transform: translateX(-50%); top: 70px; z-index: 120; display: flex; flex-direction: column; gap: 8px; width: min(94vw, 440px); pointer-events: none; }
+.toast { pointer-events: none; display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 14px; background: var(--navy-900); color: #fff; box-shadow: var(--shadow-lg); animation: toastIn .25s ease; font-size: .95rem; }
+.toast.success { background: #14532D; }
+.toast.error { background: #7F1D1D; }
+.toast.warning { background: #78350F; }
+.toast .ms { margin-top: 1px; }
+@keyframes toastIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+
+/* ---------- Modal ---------- */
+.modal-backdrop { position: fixed; inset: 0; background: rgba(11, 37, 69, .5); z-index: 100; display: flex; align-items: flex-end; justify-content: center; animation: fadeIn .2s ease; }
+.modal {
+  background: #fff; width: 100%; max-height: 92vh; overflow: auto; border-radius: 22px 22px 0 0; box-shadow: var(--shadow-lg);
+  animation: slideUp .25s ease; padding-bottom: var(--safe-bottom);
+}
+.modal-head { display: flex; align-items: center; gap: 10px; padding: 16px 18px 6px; position: sticky; top: 0; background: #fff; z-index: 1; }
+.modal-head h3 { margin: 0; flex: 1; }
+.modal-head .icon-btn { color: var(--muted); }
+.modal-head .icon-btn:hover { background: #F1F5F9; }
+.modal-body { padding: 8px 18px 16px; }
+.modal-actions { display: flex; gap: 10px; padding: 12px 18px 18px; flex-wrap: wrap; justify-content: flex-end; }
+.modal-actions .btn { flex: 1 1 140px; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUp { from { transform: translateY(30px); opacity: .4; } to { transform: none; opacity: 1; } }
+.result-hero { text-align: center; padding: 6px 0 4px; }
+.result-hero .ring { width: 84px; height: 84px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 8px; }
+.result-hero .ring .ms { font-size: 52px; width: auto; }
+.result-hero.ok .ring { background: var(--success-bg); color: var(--success); }
+.result-hero.bad .ring { background: var(--danger-bg); color: var(--danger); }
+.result-hero .big-time { font-family: var(--font-head); font-size: 2.2rem; font-weight: 600; color: var(--navy-900); font-variant-numeric: tabular-nums; }
+.steps { list-style: none; padding: 0; margin: 6px 0 0; display: grid; gap: 10px; }
+.steps li { display: flex; align-items: center; gap: 10px; color: var(--muted); }
+.steps li .st { width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: #EEF2F7; flex-shrink: 0; }
+.steps li .st .ms { font-size: 18px; }
+.steps li.active { color: var(--navy-800); font-weight: 600; }
+.steps li.active .st { background: var(--sky-100); }
+.steps li.done { color: var(--success); }
+.steps li.done .st { background: var(--success-bg); }
+.steps li.fail { color: var(--danger); }
+.steps li.fail .st { background: var(--danger-bg); }
+.help-list { padding-left: 20px; margin: 6px 0 12px; }
+.help-list li { margin-bottom: 6px; }
+.temp-pass { font-family: 'Courier New', monospace; font-size: 1.5rem; font-weight: 700; letter-spacing: .08em; background: var(--sky-50); border: 1.5px dashed var(--sky-400); border-radius: 12px; padding: 12px; text-align: center; color: var(--navy-900); user-select: all; }
+
+/* ---------- Charts ---------- */
+.chart-box { position: relative; height: 260px; }
+.chart-box.tall { height: 320px; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: .86rem; color: var(--text-2); margin-top: 10px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.segbar { display: flex; height: 28px; border-radius: 8px; overflow: hidden; background: #EEF2F7; gap: 2px; }
+.segbar > div { height: 100%; min-width: 0; transition: flex-grow .4s ease; }
+.segbar-legend { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px 16px; margin-top: 14px; }
+.segbar-legend .it { display: flex; align-items: center; gap: 8px; font-size: .9rem; color: var(--text-2); white-space: nowrap; padding: 4px 0; border-bottom: 1px dashed var(--border); }
+.segbar-legend .it i { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+.segbar-legend .it b { margin-left: auto; color: var(--text); font-variant-numeric: tabular-nums; }
+
+/* ---------- Footer / misc ---------- */
+.privacy-box { font-size: .88rem; color: var(--text-2); background: #F8FAFC; border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+.privacy-box h4 { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.footer-note { text-align: center; color: var(--muted); font-size: .78rem; padding: 18px 0 6px; }
+.print-area { display: none; }
+
+/* ---------- Tablet / Desktop ---------- */
+@media (max-width: 559px) { .hide-xs { display: none; } }
+/* มือถือ: ปุ่มลงเวลาอยู่ถัดจากนาฬิกาทันที (ไม่ต้องเลื่อนหา) */
+@media (max-width: 899px) {
+  .home-main { display: flex; flex-direction: column; gap: 16px; }
+  .home-main > .stack { display: contents; }
+  .home-main > .stack > * { margin-top: 0 !important; }
+  .o-hello { order: 1; } .o-clock { order: 2; } .o-actions { order: 3; } .o-geo { order: 4; } .o-today { order: 5; } .o-gps { order: 6; }
+  .o-hello { padding: 14px 16px; }
+}
+@media (min-width: 560px) {
+  .grid-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .att-actions { grid-template-columns: 1fr 1fr; }
+  .form-grid.two { grid-template-columns: 1fr 1fr; }
+  .modal-backdrop { align-items: center; padding: 20px; }
+  .modal { border-radius: 22px; max-width: 560px; }
+  .modal.wide { max-width: 860px; }
+}
+@media (min-width: 900px) {
+  .grid-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .grid-stats.five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .appbar .user-chip { display: inline-flex; }
+  .app-main { padding-bottom: 40px; }
+  .tabnav {
+    position: sticky; top: 62px; bottom: auto; z-index: 25; display: flex; justify-content: center; gap: 6px; padding: 8px 16px;
+    border-top: 0; border-bottom: 1px solid var(--border); box-shadow: var(--shadow-sm);
+  }
+  .tabnav button { flex-direction: row; gap: 8px; font-size: .95rem; padding: 8px 16px; min-height: 44px; }
+  .tabnav button.active { background: var(--sky-50); }
+  .tabnav .dot { position: static; }
+  .home-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 16px; align-items: start; }
+  .home-grid > .stack { margin-top: 0; }
+  .auth-hero { padding-top: 56px; }
+}
+
+/* ---------- Print (รายงาน) ---------- */
+@media print {
+  @page { size: A4 landscape; margin: 12mm; }
+  body { background: #fff !important; }
+  body.printing > *:not(#printArea) { display: none !important; }
+  body.printing #printArea { display: block !important; }
+  .print-doc { font-family: 'Sarabun', 'TH Sarabun New', Tahoma, sans-serif; color: #000; font-size: 12.5pt; }
+  .print-doc .p-school { text-align: center; font-size: 17pt; font-weight: 700; }
+  .print-doc .p-title { text-align: center; font-size: 15pt; font-weight: 700; margin-top: 2px; }
+  .print-doc .p-meta { text-align: center; font-size: 11.5pt; margin-top: 2px; }
+  .print-doc h4 { font-size: 12.5pt; margin: 14px 0 6px; color: #000; }
+  .print-doc table { width: 100%; border-collapse: collapse; margin-top: 4px; page-break-inside: auto; }
+  .print-doc th, .print-doc td { border: 1px solid #555; padding: 4px 6px; font-size: 11pt; }
+  .print-doc th { background: #E5ECF5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .print-doc tr { page-break-inside: avoid; }
+  .print-doc .c { text-align: center; }
+  .print-doc .p-summary { margin-top: 10px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px 18px; font-size: 11.5pt; }
+  .print-doc .p-sign { margin-top: 28px; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; text-align: center; font-size: 12pt; page-break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+  <noscript><div class="alert danger" style="margin:16px">กรุณาเปิดใช้งาน JavaScript เพื่อใช้งานระบบ</div></noscript>
+
+  <!-- หน้าจอเริ่มต้นระหว่างโหลด -->
+  <div id="bootScreen" class="boot" role="status" aria-live="polite">
+    <div class="brand-mark"><span class="ms fill">schedule</span></div>
+    <div>
+      <div style="font-family:var(--font-head);font-size:1.2rem;font-weight:600"><?= app.nameTh ?></div>
+      <div style="color:var(--sky-200)"><?= app.school ?></div>
+    </div>
+    <div class="spinner" aria-hidden="true"></div>
+    <div class="small" id="bootText">กำลังเตรียมระบบ...</div>
+  </div>
+
+  <!-- ======================= หน้าเข้าสู่ระบบ (Login) ======================= -->
+<section id="view-login" class="view" hidden aria-labelledby="loginTitle">
+  <header class="auth-hero">
+    <div class="brand-mark"><span class="ms fill">schedule</span></div>
+    <h1 data-meta="nameTh">ระบบลงเวลาปฏิบัติงานออนไลน์</h1>
+    <div class="school" data-meta="school">โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่</div>
+    <div class="en" data-meta="nameEn">Wat Sao Hin School Attendance System</div>
+    <div class="slogan"><span class="ms" style="font-size:18px">verified</span><span data-meta="slogan">ระบบลงเวลาอัจฉริยะ สะดวก โปร่งใส ตรวจสอบได้</span></div>
+  </header>
+
+  <div class="auth-wrap">
+    <div class="card auth-card">
+      <h2 id="loginTitle"><span class="ms" style="color:var(--sky-500)">login</span>เข้าสู่ระบบ</h2>
+      <p class="muted small">สำหรับครูและบุคลากรโรงเรียนวัดเสาหิน</p>
+
+      <div id="setupNotice" class="alert warning" hidden>
+        <span class="ms">construction</span>
+        <div>ระบบยังไม่ได้ติดตั้งฐานข้อมูล กรุณาแจ้งผู้ดูแลระบบให้รันฟังก์ชัน <b>SetupSystem()</b> ตามคู่มือการติดตั้ง</div>
+      </div>
+      <div id="loginAlert" class="alert danger" hidden role="alert"><span class="ms">error</span><div id="loginAlertText"></div></div>
+
+      <form id="loginForm" novalidate autocomplete="on">
+        <div class="field">
+          <label for="loginUsername">ชื่อผู้ใช้ (Username)</label>
+          <div class="input-icon">
+            <span class="ms">person</span>
+            <input id="loginUsername" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required maxlength="60" placeholder="เช่น somchai.j">
+          </div>
+        </div>
+        <div class="field">
+          <label for="loginPassword">รหัสผ่าน</label>
+          <div class="input-icon has-toggle">
+            <span class="ms">lock</span>
+            <input id="loginPassword" name="password" type="password" autocomplete="current-password" required maxlength="128" placeholder="รหัสผ่าน">
+            <button type="button" class="toggle-pw" data-toggle-pw="loginPassword" aria-label="แสดงรหัสผ่าน"><span class="ms">visibility</span></button>
+          </div>
+        </div>
+        <div class="row-between" style="margin-bottom:16px">
+          <label class="check"><input type="checkbox" id="rememberUser"> จดจำชื่อผู้ใช้</label>
+          <button type="button" class="link-btn" id="forgotBtn">ลืมรหัสผ่าน?</button>
+        </div>
+        <button type="submit" class="btn lg block" id="loginBtn"><span class="ms">login</span>เข้าสู่ระบบ</button>
+      </form>
+
+      <div id="registerArea">
+        <div class="divider">ยังไม่มีบัญชีผู้ใช้</div>
+        <button type="button" class="btn outline lg block" id="goRegisterBtn"><span class="ms">person_add</span>สมัครสมาชิก</button>
+      </div>
+    </div>
+
+    <div class="privacy-box" style="margin-top:16px">
+      <h4><span class="ms" style="color:var(--sky-500)">shield_person</span>การคุ้มครองข้อมูลส่วนบุคคล</h4>
+      ระบบใช้ตำแหน่ง GPS <b>เฉพาะตอนกดลงเวลา</b> เพื่อยืนยันว่าอยู่ในพื้นที่โรงเรียน ไม่มีการติดตามตำแหน่งตลอดวัน
+      <button type="button" class="link-btn small" data-open-privacy>อ่านนโยบายฉบับเต็ม</button>
+    </div>
+    <div class="auth-footer">
+      <span data-meta="school">โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่</span> · เวอร์ชัน <span data-meta="version">1.0.0</span>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= ติดตั้งครั้งแรก (สร้างผู้ดูแลระบบคนแรก) ======================= -->
+<section id="view-setup" class="view" hidden aria-labelledby="setupTitle">
+  <header class="auth-hero" style="padding-bottom:88px">
+    <div class="brand-mark"><span class="ms fill">rocket_launch</span></div>
+    <h1 id="setupTitle">เริ่มต้นใช้งานระบบ</h1>
+    <div class="school" data-meta="school">โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่</div>
+    <div class="en">ขั้นตอนเดียว: สร้างผู้ดูแลระบบคนแรก</div>
+  </header>
+  <div class="auth-wrap" style="max-width:640px">
+    <div class="card auth-card">
+      <div class="alert info" style="margin-bottom:16px"><span class="ms">key</span>
+        <div><b>หารหัสติดตั้งได้ที่ไหน?</b><br>
+          เปิด <b>Google Drive</b> ของบัญชีที่ใช้ติดตั้งระบบ → เปิดไฟล์ Google Sheet <b id="setupDbName">ฐานข้อมูลระบบลงเวลา โรงเรียนวัดเสาหิน</b>
+          (หรือ Google Sheet ที่คุณสร้างไว้) → ชีต <b id="setupSheetName">เริ่มต้นใช้งาน</b> → คัดลอกรหัสตัวใหญ่สีแดง<br>
+          <span class="small">มีเพียงเจ้าของบัญชีเท่านั้นที่เห็นรหัสนี้ คนอื่นจึงสร้างผู้ดูแลระบบแทนไม่ได้</span></div>
+      </div>
+      <div id="setupAlert" class="alert danger" hidden role="alert"><span class="ms">error</span><div id="setupAlertText"></div></div>
+      <form id="setupForm" novalidate autocomplete="off">
+        <div class="field" data-field="setupCode">
+          <label for="suCode">รหัสติดตั้ง</label>
+          <input id="suCode" name="setupCode" type="text" maxlength="20" placeholder="XXXX-XXXX-XXXX" autocapitalize="characters" spellcheck="false"
+            style="font-family:'Courier New',monospace;font-size:1.25rem;letter-spacing:.08em;text-transform:uppercase">
+          <span class="err"></span>
+        </div>
+
+        <h3 style="margin-top:8px"><span class="ms" style="color:var(--sky-500)">admin_panel_settings</span> ข้อมูลผู้ดูแลระบบ</h3>
+        <div class="field" data-field="fullName"><label for="suName">ชื่อ-นามสกุล</label><input id="suName" name="fullName" maxlength="100" placeholder="เช่น นายสมชาย ใจดี"><span class="err"></span></div>
+        <div class="form-grid two">
+          <div class="field" data-field="staffCode"><label for="suCode2">รหัสประจำตัวบุคลากร</label><input id="suCode2" name="staffCode" maxlength="20"><span class="err"></span></div>
+          <div class="field" data-field="position"><label for="suPos">ตำแหน่ง</label>
+            <select id="suPos" name="position"><option>ผู้อำนวยการ</option><option selected>ครู</option><option>บุคลากรทางการศึกษา</option><option>เจ้าหน้าที่อื่น ๆ</option></select><span class="err"></span></div>
+        </div>
+        <div class="field" data-field="username"><label for="suUser">ชื่อผู้ใช้ (Username)</label><input id="suUser" name="username" maxlength="30" placeholder="เช่น admin.saohin" autocapitalize="none" spellcheck="false"><span class="hint">4–30 ตัว ขึ้นต้นด้วย a-z ใช้ได้ a-z 0-9 . _ -</span><span class="err"></span></div>
+        <div class="form-grid two">
+          <div class="field" data-field="password"><label for="suPw">รหัสผ่าน</label>
+            <div class="input-icon has-toggle"><span class="ms">lock</span><input id="suPw" name="password" type="password" maxlength="64" autocomplete="new-password">
+              <button type="button" class="toggle-pw" data-toggle-pw="suPw" aria-label="แสดงรหัสผ่าน"><span class="ms">visibility</span></button></div>
+            <span class="hint">อย่างน้อย 8 ตัว มีตัวอักษรอังกฤษและตัวเลข</span><span class="err"></span></div>
+          <div class="field" data-field="confirmPassword"><label for="suPw2">ยืนยันรหัสผ่าน</label>
+            <div class="input-icon has-toggle"><span class="ms">lock_reset</span><input id="suPw2" name="confirmPassword" type="password" maxlength="64" autocomplete="new-password">
+              <button type="button" class="toggle-pw" data-toggle-pw="suPw2" aria-label="แสดงรหัสผ่าน"><span class="ms">visibility</span></button></div><span class="err"></span></div>
+        </div>
+
+        <h3 style="margin-top:8px"><span class="ms" style="color:var(--sky-500)">location_on</span> พิกัดโรงเรียน <span class="small muted">(ทำภายหลังได้)</span></h3>
+        <p class="small muted">ถ้าตอนนี้อยู่ที่โรงเรียน ให้ยืนกลางโรงเรียนในที่โล่งแล้วกดปุ่มด้านล่าง</p>
+        <div class="form-grid two">
+          <div class="field" data-field="SCHOOL_LAT"><label for="suLat">ละติจูด</label><input id="suLat" type="text" inputmode="decimal" placeholder="เช่น 18.788300"><span class="err"></span></div>
+          <div class="field" data-field="SCHOOL_LNG"><label for="suLng">ลองจิจูด</label><input id="suLng" type="text" inputmode="decimal" placeholder="เช่น 98.985300"><span class="err"></span></div>
+        </div>
+        <div class="row" style="margin-bottom:14px">
+          <button type="button" class="btn outline sm" id="suMyLoc"><span class="ms">my_location</span>ใช้ตำแหน่งปัจจุบันของฉัน</button>
+          <span class="small muted" id="suLocNote"></span>
+        </div>
+
+        <h3 style="margin-top:8px"><span class="ms" style="color:var(--sky-500)">schedule</span> เวลาปฏิบัติงาน</h3>
+        <div class="form-grid two">
+          <div class="field" data-field="WORK_START_TIME"><label for="suStart">เวลาเริ่มปฏิบัติงาน</label><input id="suStart" type="time" value="08:00"><span class="err"></span></div>
+          <div class="field" data-field="LATE_AFTER_TIME"><label for="suLate">ถือว่ามาสายเมื่อลงเวลาหลัง</label><input id="suLate" type="time" value="08:30"><span class="err"></span></div>
+          <div class="field" data-field="WORK_END_TIME"><label for="suEnd">เวลาเลิกงาน</label><input id="suEnd" type="time" value="16:30"><span class="err"></span></div>
+        </div>
+        <label class="check" style="margin-bottom:16px"><input type="checkbox" id="suConfirm"> เวลาด้านบนตรงตามระเบียบของโรงเรียนแล้ว (ถ้ายังไม่แน่ใจ ไม่ต้องติ๊ก — แก้ได้ภายหลังในหน้าตั้งค่าระบบ)</label>
+        <button type="submit" class="btn lg block" id="setupBtn"><span class="ms">rocket_launch</span>เริ่มใช้งานระบบ</button>
+      </form>
+    </div>
+  </div>
+</section>
+  <!-- ======================= หน้าสมัครสมาชิก (Register) ======================= -->
+<section id="view-register" class="view" hidden aria-labelledby="registerTitle">
+  <header class="auth-hero" style="padding-bottom:88px">
+    <div class="brand-mark"><span class="ms fill">person_add</span></div>
+    <h1 id="registerTitle">สมัครสมาชิก</h1>
+    <div class="school" data-meta="school">โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่</div>
+    <div class="en">บัญชีใหม่จะใช้งานได้หลังผู้ดูแลระบบอนุมัติ</div>
+  </header>
+
+  <div class="auth-wrap" style="max-width:620px">
+    <div class="card auth-card" id="registerCard">
+      <div class="row-between" style="margin-bottom:6px">
+        <h2 class="mb-0"><span class="ms" style="color:var(--sky-500)">badge</span>ข้อมูลบุคลากร</h2>
+        <button type="button" class="btn ghost sm" data-go="login"><span class="ms">arrow_back</span>กลับ</button>
+      </div>
+      <p class="muted small">กรอกข้อมูลให้ครบถ้วนและตรงกับข้อมูลจริง เพื่อให้ผู้ดูแลระบบตรวจสอบได้</p>
+      <div id="registerAlert" class="alert danger" hidden role="alert"><span class="ms">error</span><div id="registerAlertText"></div></div>
+
+      <form id="registerForm" novalidate autocomplete="off">
+        <div class="field" data-field="fullName">
+          <label for="regFullName">ชื่อ-นามสกุล <span class="muted">*</span></label>
+          <input id="regFullName" name="fullName" type="text" maxlength="100" required placeholder="เช่น นางสาวสมศรี ใจดี" autocomplete="name">
+          <span class="hint">รวมคำนำหน้า และเว้นวรรคระหว่างชื่อกับนามสกุล</span>
+          <span class="err"></span>
+        </div>
+        <div class="form-grid two">
+          <div class="field" data-field="staffCode">
+            <label for="regStaffCode">รหัสประจำตัวบุคลากร <span class="muted">*</span></label>
+            <input id="regStaffCode" name="staffCode" type="text" maxlength="20" required placeholder="เช่น 1001" autocapitalize="characters">
+            <span class="err"></span>
+          </div>
+          <div class="field" data-field="position">
+            <label for="regPosition">ตำแหน่ง <span class="muted">*</span></label>
+            <select id="regPosition" name="position" required>
+              <option value="">— เลือกตำแหน่ง —</option>
+              <option>ผู้อำนวยการ</option>
+              <option>ครู</option>
+              <option>บุคลากรทางการศึกษา</option>
+              <option>เจ้าหน้าที่อื่น ๆ</option>
+            </select>
+            <span class="err"></span>
+          </div>
+        </div>
+        <div class="field" data-field="username">
+          <label for="regUsername">ชื่อผู้ใช้ (Username) <span class="muted">*</span></label>
+          <div class="input-icon"><span class="ms">person</span>
+            <input id="regUsername" name="username" type="text" maxlength="30" required placeholder="ภาษาอังกฤษ เช่น somsri.j" autocapitalize="none" spellcheck="false" autocomplete="username">
+          </div>
+          <span class="hint">4–30 ตัว ขึ้นต้นด้วยตัวอักษร a-z ใช้ได้เฉพาะ a-z 0-9 . _ -</span>
+          <span class="err"></span>
+        </div>
+        <div class="form-grid two">
+          <div class="field" data-field="password">
+            <label for="regPassword">รหัสผ่าน <span class="muted">*</span></label>
+            <div class="input-icon has-toggle"><span class="ms">lock</span>
+              <input id="regPassword" name="password" type="password" maxlength="64" required autocomplete="new-password">
+              <button type="button" class="toggle-pw" data-toggle-pw="regPassword" aria-label="แสดงรหัสผ่าน"><span class="ms">visibility</span></button>
+            </div>
+            <div class="pw-meter" aria-hidden="true"><span id="regPwMeter"></span></div>
+            <span class="err"></span>
+          </div>
+          <div class="field" data-field="confirmPassword">
+            <label for="regConfirm">ยืนยันรหัสผ่าน <span class="muted">*</span></label>
+            <div class="input-icon has-toggle"><span class="ms">lock_reset</span>
+              <input id="regConfirm" name="confirmPassword" type="password" maxlength="64" required autocomplete="new-password">
+              <button type="button" class="toggle-pw" data-toggle-pw="regConfirm" aria-label="แสดงรหัสผ่าน"><span class="ms">visibility</span></button>
+            </div>
+            <span class="err"></span>
+          </div>
+        </div>
+        <ul class="pw-rules" id="regPwRules" aria-live="polite">
+          <li data-rule="len"><span class="ms">radio_button_unchecked</span>อย่างน้อย 8 ตัวอักษร</li>
+          <li data-rule="mix"><span class="ms">radio_button_unchecked</span>มีทั้งตัวอักษรภาษาอังกฤษและตัวเลข</li>
+          <li data-rule="user"><span class="ms">radio_button_unchecked</span>ไม่มีชื่อผู้ใช้อยู่ในรหัสผ่าน</li>
+          <li data-rule="match"><span class="ms">radio_button_unchecked</span>ยืนยันรหัสผ่านตรงกัน</li>
+        </ul>
+
+        <div class="privacy-box" style="margin:16px 0">
+          <h4><span class="ms" style="color:var(--sky-500)">location_on</span>การใช้ข้อมูลตำแหน่ง (GPS) และข้อมูลส่วนบุคคล</h4>
+          <ul class="help-list small" style="margin-bottom:6px">
+            <li>ใช้ GPS เฉพาะขณะกดลงเวลาหรือกดตรวจสอบตำแหน่ง ไม่ติดตามตำแหน่งตลอดวัน</li>
+            <li>เก็บพิกัดไว้ไม่เกิน <b data-retention>365</b> วัน แล้วลบอัตโนมัติ (คงไว้เฉพาะเวลาและระยะห่าง)</li>
+            <li>ข้อมูลเข้าถึงได้เฉพาะผู้บริหารและผู้ดูแลระบบ เพื่อการบริหารงานบุคคลของโรงเรียน</li>
+          </ul>
+          <button type="button" class="link-btn small" data-open-privacy>อ่านนโยบายฉบับเต็ม</button>
+        </div>
+        <div class="field" data-field="acceptPrivacy">
+          <label class="check"><input type="checkbox" id="regAccept" name="acceptPrivacy"> ข้าพเจ้าได้อ่านและยินยอมให้เก็บและใช้ข้อมูลตามนโยบายข้างต้น</label>
+          <span class="err"></span>
+        </div>
+        <button type="submit" class="btn lg block" id="registerBtn"><span class="ms">how_to_reg</span>ส่งข้อมูลสมัครสมาชิก</button>
+      </form>
+    </div>
+
+    <!-- สมัครสำเร็จ -->
+    <div class="card auth-card" id="registerDone" hidden>
+      <div class="result-hero ok">
+        <div class="ring"><span class="ms fill">task_alt</span></div>
+        <h2>สมัครสมาชิกสำเร็จ</h2>
+      </div>
+      <div class="alert info"><span class="ms">hourglass_top</span><div id="registerDoneText">บัญชีของท่านอยู่ระหว่างรอการอนุมัติ</div></div>
+      <dl class="kv" style="margin:16px 0">
+        <dt>ชื่อ-นามสกุล</dt><dd id="regDoneName">-</dd>
+        <dt>ชื่อผู้ใช้</dt><dd id="regDoneUser">-</dd>
+        <dt>เลขอ้างอิง</dt><dd id="regDoneRef">-</dd>
+        <dt>สถานะ</dt><dd><span class="badge warning"><span class="ms">schedule</span>รออนุมัติ</span></dd>
+      </dl>
+      <p class="small muted">เมื่อผู้ดูแลระบบอนุมัติแล้ว ท่านจะเข้าสู่ระบบและลงเวลาได้ทันที หากรอนานเกินไป กรุณาแจ้งผู้ดูแลระบบพร้อมเลขอ้างอิง</p>
+      <button type="button" class="btn lg block" data-go="login"><span class="ms">login</span>ไปหน้าเข้าสู่ระบบ</button>
+    </div>
+  </div>
+</section>
+  <!-- ======================= หน้าบุคลากร (Dashboard) ======================= -->
+<section id="view-app" class="view" hidden>
+  <header class="appbar">
+    <div class="container">
+      <div class="brand">
+        <div class="brand-mark"><span class="ms fill">schedule</span></div>
+        <div class="brand-text">
+          <span class="brand-title">ระบบลงเวลาปฏิบัติงาน</span>
+          <span class="brand-sub" data-meta="school">โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่</span>
+        </div>
+      </div>
+      <div class="spacer"></div>
+      <button type="button" class="btn white sm" id="toAdminBtn" hidden><span class="ms">admin_panel_settings</span><span class="hide-xs">ผู้บริหาร/Admin</span></button>
+      <div class="user-chip"><span class="avatar" id="appAvatar">ค</span><span id="appUserName" class="small"></span></div>
+      <button type="button" class="icon-btn" id="logoutBtn" aria-label="ออกจากระบบ" title="ออกจากระบบ"><span class="ms">logout</span></button>
+    </div>
+  </header>
+
+  <nav class="tabnav" id="userTabs" aria-label="เมนูหลัก">
+    <button type="button" data-tab="home" class="active"><span class="ms">fingerprint</span>ลงเวลา</button>
+    <button type="button" data-tab="history"><span class="ms">calendar_month</span>ประวัติ</button>
+    <button type="button" data-tab="leave"><span class="ms">event_busy</span>การลา<span class="dot" id="leaveDot" hidden></span></button>
+    <button type="button" data-tab="correction"><span class="ms">edit_calendar</span>แก้ไขเวลา<span class="dot" id="corrDot" hidden></span></button>
+    <button type="button" data-tab="account"><span class="ms">account_circle</span>บัญชี</button>
+  </nav>
+
+  <main class="app-main">
+    <div class="container">
+
+      <!-- ===== แท็บ: ลงเวลา ===== -->
+      <div class="tab-panel" data-panel="home">
+        <div class="home-grid home-main">
+          <div class="stack">
+            <div class="card hello-card o-hello">
+              <div class="hello">
+                <span class="avatar lg" id="homeAvatar">ค</span>
+                <div style="min-width:0">
+                  <div class="muted small" id="greeting">สวัสดี</div>
+                  <div class="name" id="homeName">-</div>
+                  <div class="row small" style="gap:6px;margin-top:2px">
+                    <span class="badge navy" id="homePosition">-</span>
+                    <span class="badge muted" id="homeRole">-</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card clock-card o-clock" aria-live="off">
+              <div class="date" id="clockDate">-</div>
+              <div class="time" id="clockTime">--:--:--</div>
+              <div class="row" style="margin-top:6px">
+                <span class="chip" id="dayTypeChip"><span class="ms" style="font-size:18px">work</span><span>วันทำงาน</span></span>
+              </div>
+              <div class="work-hours" id="workHours">เวลาทำงาน -</div>
+              <div class="src">เวลาอ้างอิงจากเซิร์ฟเวอร์ (Asia/Bangkok)</div>
+            </div>
+
+            <div class="card o-today">
+              <div class="row-between" style="margin-bottom:10px">
+                <div class="card-title mb-0"><span class="ms">today</span>สถานะการลงเวลาวันนี้</div>
+                <span class="badge muted" id="todayStatus">-</span>
+              </div>
+              <div class="today-grid">
+                <div class="today-slot">
+                  <div class="lbl"><span class="ms" style="color:var(--success-500)">login</span>เวลาเข้างาน</div>
+                  <div class="val empty" id="todayIn">--:--</div>
+                  <div class="tiny muted" id="todayInMeta">&nbsp;</div>
+                </div>
+                <div class="today-slot">
+                  <div class="lbl"><span class="ms" style="color:var(--sky-500)">logout</span>เวลาออกงาน</div>
+                  <div class="val empty" id="todayOut">--:--</div>
+                  <div class="tiny muted" id="todayOutMeta">&nbsp;</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="stack">
+            <div class="card o-gps">
+              <div class="card-title"><span class="ms">my_location</span>สถานะ GPS</div>
+              <div class="gps-row">
+                <span class="gps-pulse" id="gpsIcon"><span class="ms">location_searching</span></span>
+                <div style="flex:1;min-width:0">
+                  <div style="font-weight:700" id="gpsStatusText">กำลังตรวจสอบสิทธิ์การเข้าถึงตำแหน่ง...</div>
+                  <div class="small muted" id="gpsStatusSub">ระบบจะขอตำแหน่งเฉพาะตอนกดปุ่มเท่านั้น</div>
+                </div>
+              </div>
+              <div id="zoneResult" class="zone-result" hidden></div>
+              <div class="row" style="margin-top:12px">
+                <button type="button" class="btn outline sm" id="checkLocBtn"><span class="ms">near_me</span>ตรวจสอบตำแหน่งของฉัน</button>
+                <a class="btn ghost sm" id="schoolMapLink" href="#" target="_blank" rel="noopener" hidden><span class="ms">map</span>แผนที่โรงเรียน</a>
+                <button type="button" class="btn ghost sm" id="gpsHelpBtn"><span class="ms">help</span>วิธีเปิด GPS</button>
+              </div>
+            </div>
+
+            <div class="att-actions o-actions">
+              <button type="button" class="att-btn in" id="checkInBtn">
+                <span class="att-icon"><span class="ms fill">login</span></span>
+                <span class="att-text"><span class="att-title">ลงเวลาเข้างาน</span><span class="att-sub" id="checkInSub">กดเพื่อบันทึกเวลาเข้า</span></span>
+              </button>
+              <button type="button" class="att-btn out" id="checkOutBtn">
+                <span class="att-icon"><span class="ms fill">logout</span></span>
+                <span class="att-text"><span class="att-title">ลงเวลาออกงาน</span><span class="att-sub" id="checkOutSub">กดเพื่อบันทึกเวลาออก</span></span>
+              </button>
+            </div>
+            <div id="geoNotSetAlert" class="alert warning o-geo" hidden><span class="ms">warning</span><div>ผู้ดูแลระบบยังไม่ได้ตั้งค่าพิกัดโรงเรียน จึงยังลงเวลาไม่ได้</div></div>
+          </div>
+        </div>
+
+        <div class="page-head" style="margin-top:22px">
+          <h2><span class="ms">insights</span>สรุปเดือน <span id="monthLabel">-</span></h2>
+        </div>
+        <div class="grid grid-stats five" id="monthStats"></div>
+
+        <div class="card" style="margin-top:16px">
+          <div class="row-between">
+            <div class="card-title"><span class="ms">history</span>ประวัติการลงเวลาล่าสุด</div>
+            <button type="button" class="btn ghost sm" data-tab-go="history">ดูทั้งหมด<span class="ms">chevron_right</span></button>
+          </div>
+          <div class="list" id="recentList"></div>
+        </div>
+      </div>
+
+      <!-- ===== แท็บ: ประวัติ ===== -->
+      <div class="tab-panel" data-panel="history" hidden>
+        <div class="page-head">
+          <h2><span class="ms">calendar_month</span>ประวัติการลงเวลารายเดือน</h2>
+        </div>
+        <div class="card">
+          <div class="form-grid two">
+            <div class="field"><label for="histMonth">เดือน</label><select id="histMonth"></select></div>
+            <div class="field"><label for="histYear">ปี (พ.ศ.)</label><select id="histYear"></select></div>
+          </div>
+          <div class="grid grid-stats five" id="histStats"></div>
+        </div>
+        <div class="card" style="margin-top:16px">
+          <div class="card-title"><span class="ms">list_alt</span><span id="histTitle">รายการ</span></div>
+          <div id="histTable"></div>
+        </div>
+      </div>
+
+      <!-- ===== แท็บ: การลา ===== -->
+      <div class="tab-panel" data-panel="leave" hidden>
+        <div class="page-head"><h2><span class="ms">event_busy</span>แจ้งการลา</h2></div>
+        <div class="home-grid">
+          <div class="card">
+            <div class="card-title"><span class="ms">edit_note</span>แบบฟอร์มขอลา</div>
+            <form id="leaveForm" novalidate>
+              <div class="field" data-field="type">
+                <label for="leaveType">ประเภทการลา</label>
+                <select id="leaveType" name="type" required>
+                  <option value="">— เลือกประเภท —</option>
+                  <option value="SICK">ลาป่วย</option>
+                  <option value="PERSONAL">ลากิจ</option>
+                  <option value="VACATION">ลาพักผ่อน</option>
+                  <option value="OFFICIAL">ไปราชการ</option>
+                  <option value="OTHER">อื่น ๆ</option>
+                </select>
+                <span class="err"></span>
+              </div>
+              <div class="form-grid two">
+                <div class="field" data-field="startDate">
+                  <label for="leaveStart">วันที่เริ่มลา</label>
+                  <input id="leaveStart" name="startDate" type="date" required>
+                  <span class="hint" data-thai-for="leaveStart"></span><span class="err"></span>
+                </div>
+                <div class="field" data-field="endDate">
+                  <label for="leaveEnd">วันที่สิ้นสุด</label>
+                  <input id="leaveEnd" name="endDate" type="date" required>
+                  <span class="hint" data-thai-for="leaveEnd"></span><span class="err"></span>
+                </div>
+              </div>
+              <div class="field" data-field="period">
+                <span class="field-label">ช่วงเวลา</span>
+                <div class="seg" id="leavePeriod" role="radiogroup">
+                  <button type="button" data-val="FULL" class="active">เต็มวัน</button>
+                  <button type="button" data-val="MORNING">ครึ่งวันเช้า</button>
+                  <button type="button" data-val="AFTERNOON">ครึ่งวันบ่าย</button>
+                </div>
+                <span class="hint">ลาครึ่งวันได้เฉพาะเมื่อวันที่เริ่มและสิ้นสุดเป็นวันเดียวกัน</span>
+                <span class="err"></span>
+              </div>
+              <div class="field" data-field="reason">
+                <label for="leaveReason">เหตุผล</label>
+                <textarea id="leaveReason" name="reason" maxlength="500" required placeholder="ระบุเหตุผลการลา"></textarea>
+                <span class="err"></span>
+              </div>
+              <div class="field" data-field="attachment">
+                <span class="field-label">เอกสารประกอบ (ถ้ามี)</span>
+                <label class="file-drop"><span class="ms" style="color:var(--sky-500)">attach_file</span>
+                  <span class="small" data-file-label>แนบไฟล์ PDF หรือรูปภาพ (ไม่เกิน 5 MB)</span>
+                  <input type="file" name="attachment" accept="application/pdf,image/jpeg,image/png,image/webp">
+                </label>
+                <span class="err"></span>
+              </div>
+              <button type="submit" class="btn lg block"><span class="ms">send</span>ส่งใบลา</button>
+            </form>
+          </div>
+          <div class="card">
+            <div class="card-title"><span class="ms">inventory</span>รายการลาของฉัน</div>
+            <div class="list" id="myLeaves"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== แท็บ: คำร้องแก้ไขเวลา ===== -->
+      <div class="tab-panel" data-panel="correction" hidden>
+        <div class="page-head"><h2><span class="ms">edit_calendar</span>คำร้องแก้ไขการลงเวลา</h2></div>
+        <div class="home-grid">
+          <div class="card">
+            <div class="card-title"><span class="ms">edit_note</span>แบบฟอร์มคำร้อง</div>
+            <p class="small muted">ใช้เมื่อลืมลงเวลา โทรศัพท์มีปัญหา หรือ GPS ใช้งานไม่ได้ เมื่อได้รับอนุมัติ ระบบจะบันทึกเวลาใหม่โดยเก็บประวัติเดิมไว้ทั้งหมด</p>
+            <form id="corrForm" novalidate>
+              <div class="form-grid two">
+                <div class="field" data-field="date">
+                  <label for="corrDate">วันที่ที่ต้องการแก้ไข</label>
+                  <input id="corrDate" name="date" type="date" required>
+                  <span class="hint" data-thai-for="corrDate"></span><span class="err"></span>
+                </div>
+                <div class="field" data-field="time">
+                  <label for="corrTime">เวลาที่ต้องการแจ้ง</label>
+                  <input id="corrTime" name="time" type="time" required>
+                  <span class="err"></span>
+                </div>
+              </div>
+              <div class="field" data-field="type">
+                <span class="field-label">ประเภทเวลา</span>
+                <div class="radio-cards">
+                  <label><input type="radio" name="type" value="IN" checked><span class="ms" style="color:var(--success-500)">login</span>เวลาเข้างาน</label>
+                  <label><input type="radio" name="type" value="OUT"><span class="ms" style="color:var(--sky-500)">logout</span>เวลาออกงาน</label>
+                </div>
+                <span class="err"></span>
+              </div>
+              <div class="field" data-field="reason">
+                <label for="corrReason">เหตุผล</label>
+                <textarea id="corrReason" name="reason" maxlength="500" required placeholder="อธิบายเหตุผล เช่น โทรศัพท์แบตเตอรี่หมด"></textarea>
+                <span class="err"></span>
+              </div>
+              <div class="field" data-field="attachment">
+                <span class="field-label">หลักฐานประกอบ (ถ้ามี)</span>
+                <label class="file-drop"><span class="ms" style="color:var(--sky-500)">attach_file</span>
+                  <span class="small" data-file-label>แนบไฟล์ PDF หรือรูปภาพ (ไม่เกิน 5 MB)</span>
+                  <input type="file" name="attachment" accept="application/pdf,image/jpeg,image/png,image/webp">
+                </label>
+                <span class="err"></span>
+              </div>
+              <button type="submit" class="btn lg block"><span class="ms">send</span>ส่งคำร้อง</button>
+            </form>
+          </div>
+          <div class="card">
+            <div class="card-title"><span class="ms">inventory</span>คำร้องของฉัน</div>
+            <div class="list" id="myCorrections"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== แท็บ: บัญชี ===== -->
+      <div class="tab-panel" data-panel="account" hidden>
+        <div class="page-head"><h2><span class="ms">account_circle</span>บัญชีของฉัน</h2></div>
+        <div class="home-grid">
+          <div class="stack">
+            <div class="card">
+              <div class="hello" style="margin-bottom:14px">
+                <span class="avatar lg" id="accAvatar">ค</span>
+                <div><div class="name" id="accName">-</div><div class="muted small" id="accRole">-</div></div>
+              </div>
+              <dl class="kv">
+                <dt>รหัสบุคลากร</dt><dd id="accCode">-</dd>
+                <dt>ตำแหน่ง</dt><dd id="accPosition">-</dd>
+                <dt>ชื่อผู้ใช้</dt><dd id="accUsername">-</dd>
+              </dl>
+              <p class="small muted" style="margin-top:12px">หากข้อมูลไม่ถูกต้อง กรุณาแจ้งผู้ดูแลระบบเพื่อแก้ไข</p>
+              <button type="button" class="btn danger block" id="logoutBtn2"><span class="ms">logout</span>ออกจากระบบ</button>
+            </div>
+            <div class="privacy-box">
+              <h4><span class="ms" style="color:var(--sky-500)">shield_person</span>นโยบายการใช้ข้อมูลตำแหน่ง</h4>
+              ระบบขอตำแหน่ง GPS เฉพาะตอนที่ท่านกดลงเวลาหรือกดตรวจสอบตำแหน่ง และเก็บพิกัดไว้ไม่เกิน <b data-retention>365</b> วัน
+              <button type="button" class="link-btn small" data-open-privacy>อ่านฉบับเต็ม</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title"><span class="ms">password</span>เปลี่ยนรหัสผ่าน</div>
+            <form id="pwForm" novalidate>
+              <div class="field" data-field="currentPassword">
+                <label for="pwCurrent">รหัสผ่านปัจจุบัน</label>
+                <div class="input-icon has-toggle"><span class="ms">lock</span>
+                  <input id="pwCurrent" name="currentPassword" type="password" autocomplete="current-password" required>
+                  <button type="button" class="toggle-pw" data-toggle-pw="pwCurrent" aria-label="แสดงรหัสผ่าน"><span class="ms">visibility</span></button>
+                </div><span class="err"></span>
+              </div>
+              <div class="field" data-field="newPassword">
+                <label for="pwNew">รหัสผ่านใหม่</label>
+                <div class="input-icon has-toggle"><span class="ms">key</span>
+                  <input id="pwNew" name="newPassword" type="password" autocomplete="new-password" required>
+                  <button type="button" class="toggle-pw" data-toggle-pw="pwNew" aria-label="แสดงรหัสผ่าน"><span class="ms">visibility</span></button>
+                </div>
+                <span class="hint">อย่างน้อย 8 ตัว มีตัวอักษรภาษาอังกฤษและตัวเลข</span><span class="err"></span>
+              </div>
+              <div class="field" data-field="confirmPassword">
+                <label for="pwConfirm">ยืนยันรหัสผ่านใหม่</label>
+                <div class="input-icon has-toggle"><span class="ms">lock_reset</span>
+                  <input id="pwConfirm" name="confirmPassword" type="password" autocomplete="new-password" required>
+                  <button type="button" class="toggle-pw" data-toggle-pw="pwConfirm" aria-label="แสดงรหัสผ่าน"><span class="ms">visibility</span></button>
+                </div><span class="err"></span>
+              </div>
+              <button type="submit" class="btn lg block"><span class="ms">save</span>บันทึกรหัสผ่านใหม่</button>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-note"><span data-meta="nameTh">ระบบลงเวลาปฏิบัติงานออนไลน์</span> · <span data-meta="school">โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่</span></div>
+    </div>
+  </main>
+</section>
+
+<!-- ======================= บังคับเปลี่ยนรหัสผ่าน ======================= -->
+<section id="view-force-password" class="view" hidden>
+  <header class="auth-hero" style="padding-bottom:88px">
+    <div class="brand-mark"><span class="ms fill">key</span></div>
+    <h1>ตั้งรหัสผ่านใหม่</h1>
+    <div class="school">เพื่อความปลอดภัย กรุณาเปลี่ยนรหัสผ่านก่อนเริ่มใช้งาน</div>
+  </header>
+  <div class="auth-wrap">
+    <div class="card auth-card">
+      <div class="alert info" style="margin-bottom:14px"><span class="ms">info</span><div>บัญชีของท่านใช้รหัสผ่านชั่วคราว (ตั้งโดยผู้ดูแลระบบ) จึงต้องตั้งรหัสผ่านใหม่ที่มีเพียงท่านเท่านั้นที่ทราบ</div></div>
+      <form id="forcePwForm" novalidate>
+        <div class="field" data-field="currentPassword">
+          <label for="fpCurrent">รหัสผ่านชั่วคราว/ปัจจุบัน</label>
+          <div class="input-icon has-toggle"><span class="ms">lock</span>
+            <input id="fpCurrent" name="currentPassword" type="password" autocomplete="current-password" required>
+            <button type="button" class="toggle-pw" data-toggle-pw="fpCurrent" aria-label="แสดงรหัสผ่าน"><span class="ms">visibility</span></button>
+          </div><span class="err"></span>
+        </div>
+        <div class="field" data-field="newPassword">
+          <label for="fpNew">รหัสผ่านใหม่</label>
+          <div class="input-icon has-toggle"><span class="ms">key</span>
+            <input id="fpNew" name="newPassword" type="password" autocomplete="new-password" required>
+            <button type="button" class="toggle-pw" data-toggle-pw="fpNew" aria-label="แสดงรหัสผ่าน"><span class="ms">visibility</span></button>
+          </div>
+          <span class="hint">อย่างน้อย 8 ตัว มีตัวอักษรภาษาอังกฤษและตัวเลข ไม่มีชื่อผู้ใช้อยู่ในรหัสผ่าน</span><span class="err"></span>
+        </div>
+        <div class="field" data-field="confirmPassword">
+          <label for="fpConfirm">ยืนยันรหัสผ่านใหม่</label>
+          <div class="input-icon has-toggle"><span class="ms">lock_reset</span>
+            <input id="fpConfirm" name="confirmPassword" type="password" autocomplete="new-password" required>
+            <button type="button" class="toggle-pw" data-toggle-pw="fpConfirm" aria-label="แสดงรหัสผ่าน"><span class="ms">visibility</span></button>
+          </div><span class="err"></span>
+        </div>
+        <button type="submit" class="btn lg block"><span class="ms">save</span>บันทึกและเริ่มใช้งาน</button>
+        <button type="button" class="btn ghost block" style="margin-top:8px" data-logout><span class="ms">logout</span>ออกจากระบบ</button>
+      </form>
+    </div>
+  </div>
+</section>
+
+  <!-- หน้าผู้บริหาร/ผู้ดูแลระบบ: โหลดจาก Server เฉพาะผู้มีสิทธิ์ (ตรวจสิทธิ์ฝั่ง Server) -->
+  <section id="view-admin" class="view" hidden aria-label="ระบบผู้ดูแล"><div id="adminRoot"></div></section>
+
+  <div id="toastHost" class="toast-host" aria-live="assertive"></div>
+  <div id="modalHost"></div>
+  <div id="loadingOverlay" class="loading-overlay" hidden>
+    <div class="loading-box"><div class="spinner dark"></div><span id="loadingText">กำลังประมวลผล...</span></div>
+  </div>
+  <div id="printArea" class="print-area" aria-hidden="true"></div>
+
+  <script>
+    window.APP_META = {
+      nameTh: <?!= JSON.stringify(app.nameTh) ?>,
+      school: <?!= JSON.stringify(app.school) ?>,
+      nameEn: <?!= JSON.stringify(app.nameEn) ?>,
+      slogan: <?!= JSON.stringify(app.slogan) ?>,
+      version: <?!= JSON.stringify(app.version) ?>
+    };
+  </script>
+  <script>
+/* ==========================================================================
+   JavaScript.html — Client หลัก (บุคลากร): Auth, ลงเวลา GPS, ประวัติ, การลา, คำร้อง
+   หมายเหตุความปลอดภัย: โค้ดฝั่ง Browser ไม่ใช่จุดตรวจสิทธิ์ — Server ตรวจ Session/Role
+   ทุกคำสั่งเสมอ การแก้ไข JavaScript ใน DevTools จึงไม่สามารถเพิ่มสิทธิ์ได้
+   ========================================================================== */
+(function () {
+  'use strict';
+
+  var META = window.APP_META || {};
+  var S = {
+    token: null, user: null, cfg: null, offsetMs: 0, timeoutMin: 30, lastApi: Date.now(), lastPing: 0,
+    dash: null, attBusy: false, adminLoaded: false, clockTimer: null, tab: 'home', loadedTabs: {}
+  };
+
+  /* ------------------------------------------------------------------ utils */
+  var $ = function (sel, root) { return (root || document).querySelector(sel); };
+  var $$ = function (sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); };
+  function esc(v) {
+    return String(v === null || v === undefined ? '' : v).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function icon(name, cls) { return '<span class="ms' + (cls ? ' ' + cls : '') + '" aria-hidden="true">' + esc(name) + '</span>'; }
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  var TH_M = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+  var TH_MS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+  var TH_D = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
+  function parseYmd(s) { var p = String(s || '').split('-'); return { y: +p[0], m: +p[1], d: +p[2] }; }
+  function dowOf(s) { var p = parseYmd(s); return new Date(Date.UTC(p.y, p.m - 1, p.d)).getUTCDay(); }
+  function thDate(s, style) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(s || ''))) return '';
+    var p = parseYmd(s);
+    if (style === 'short') return p.d + ' ' + TH_MS[p.m - 1] + ' ' + String(p.y + 543).slice(-2);
+    if (style === 'long') return 'วัน' + TH_D[dowOf(s)] + 'ที่ ' + p.d + ' ' + TH_M[p.m - 1] + ' พ.ศ. ' + (p.y + 543);
+    if (style === 'dow') return TH_D[dowOf(s)] + ' ' + p.d + ' ' + TH_MS[p.m - 1] + ' ' + (p.y + 543);
+    return p.d + ' ' + TH_M[p.m - 1] + ' ' + (p.y + 543);
+  }
+  function hm(t) { return t ? String(t).substr(0, 5) : ''; }
+  function initials(name) {
+    var n = String(name || '').replace(/^(นาย|นางสาว|นาง|น\.ส\.|ด\.ต\.|ว่าที่ร้อยตรี|ดร\.)\s*/, '').trim();
+    return n ? n.charAt(0) : 'ค';
+  }
+  /** เวลา Bangkok ตามนาฬิกา Server (ใช้แสดงผลเท่านั้น — Server เป็นผู้บันทึกเวลาจริง) */
+  function serverNow() { return Date.now() + S.offsetMs; }
+  function bkkParts(ms) {
+    var d = new Date(ms + 7 * 3600000);
+    return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1, d: d.getUTCDate(), hh: d.getUTCHours(), mi: d.getUTCMinutes(), ss: d.getUTCSeconds(), dow: d.getUTCDay() };
+  }
+  function bkkToday() { var p = bkkParts(serverNow()); return p.y + '-' + pad2(p.m) + '-' + pad2(p.d); }
+  function bkkTimeHM() { var p = bkkParts(serverNow()); return pad2(p.hh) + ':' + pad2(p.mi); }
+  function fmtDistance(m) { if (m === null || m === undefined || m === '') return '-'; m = Number(m); return m >= 1000 ? (m / 1000).toFixed(2) + ' กม.' : Math.round(m) + ' ม.'; }
+
+  /* ------------------------------------------------------------------ storage */
+  function safeStore(kind) {
+    var mem = {};
+    return {
+      get: function (k) { try { return window[kind].getItem(k); } catch (e) { return mem[k] || null; } },
+      set: function (k, v) { try { window[kind].setItem(k, v); } catch (e) { mem[k] = v; } },
+      del: function (k) { try { window[kind].removeItem(k); } catch (e) { delete mem[k]; } }
+    };
+  }
+  var session = safeStore('sessionStorage');
+  var local = safeStore('localStorage');
+
+  /* ------------------------------------------------------------------ RPC */
+  function run(fn, args) {
+    return new Promise(function (resolve, reject) {
+      if (!window.google || !google.script || !google.script.run) {
+        reject(appErr('ไม่สามารถเชื่อมต่อ Google Apps Script ได้ กรุณาเปิดผ่าน URL ของเว็บแอป', 'NO_GAS'));
+        return;
+      }
+      var r = google.script.run.withSuccessHandler(resolve).withFailureHandler(function (e) {
+        reject(appErr('เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่', 'NETWORK', null, e));
+      });
+      r[fn].apply(r, args || []);
+    });
+  }
+  function appErr(message, code, data, cause) {
+    var e = new Error(message); e.code = code || 'ERROR'; e.data = data || null; e.cause = cause; return e;
+  }
+  /** เรียกคำสั่งที่ต้องเข้าสู่ระบบ */
+  function api(action, params, opts) {
+    opts = opts || {};
+    if (!opts.silent) showLoading(opts.loadingText);
+    return run('api', [S.token, action, params || {}]).then(function (res) {
+      if (!opts.silent) hideLoading();
+      if (!res) throw appErr('ไม่ได้รับข้อมูลจากเซิร์ฟเวอร์', 'EMPTY');
+      if (!res.ok) {
+        if (res.code === 'AUTH') { forceLogout(res.error); }
+        else if (res.code === 'MUST_CHANGE_PASSWORD') { showView('force-password'); }
+        throw appErr(res.error, res.code, res.data);
+      }
+      S.lastApi = Date.now();
+      return res.data;
+    }, function (e) { if (!opts.silent) hideLoading(); throw e; });
+  }
+  function publicCall(fn, args, loadingText) {
+    showLoading(loadingText);
+    return run(fn, args).then(function (res) {
+      hideLoading();
+      if (!res) throw appErr('ไม่ได้รับข้อมูลจากเซิร์ฟเวอร์', 'EMPTY');
+      if (!res.ok) throw appErr(res.error, res.code, res.data);
+      return res.data;
+    }, function (e) { hideLoading(); throw e; });
+  }
+
+  /* ------------------------------------------------------------------ UI primitives */
+  var loadingCount = 0;
+  function showLoading(text) { loadingCount++; $('#loadingText').textContent = text || 'กำลังประมวลผล...'; $('#loadingOverlay').hidden = false; }
+  function hideLoading() { loadingCount = Math.max(0, loadingCount - 1); if (!loadingCount) $('#loadingOverlay').hidden = true; }
+
+  function toast(msg, type, ms) {
+    var icons = { success: 'check_circle', error: 'error', warning: 'warning', info: 'info' };
+    var el = document.createElement('div');
+    el.className = 'toast ' + (type || 'info');
+    el.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    el.innerHTML = icon(icons[type] || 'info') + '<div>' + esc(msg) + '</div>';
+    $('#toastHost').appendChild(el);
+    setTimeout(function () { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(function () { el.remove(); }, 320); }, ms || 3800);
+  }
+
+  /**
+   * modal({title, icon, body (HTML), actions: [{label, cls, icon, onClick(close), keepOpen}], wide, onClose})
+   */
+  function modal(o) {
+    var host = $('#modalHost');
+    var back = document.createElement('div');
+    back.className = 'modal-backdrop';
+    back.innerHTML = '<div class="modal' + (o.wide ? ' wide' : '') + '" role="dialog" aria-modal="true" aria-label="' + esc(o.title || '') + '">' +
+      '<div class="modal-head">' + (o.icon ? icon(o.icon) : '') + '<h3>' + esc(o.title || '') + '</h3>' +
+      (o.noClose ? '' : '<button type="button" class="icon-btn" data-close aria-label="ปิด">' + icon('close') + '</button>') + '</div>' +
+      '<div class="modal-body">' + (o.body || '') + '</div>' +
+      (o.actions && o.actions.length ? '<div class="modal-actions"></div>' : '') + '</div>';
+    var closed = false;
+    function close(v) {
+      if (closed) return; closed = true;
+      back.remove();
+      document.removeEventListener('keydown', onKey);
+      if (o.onClose) o.onClose(v);
+    }
+    function onKey(e) { if (e.key === 'Escape' && !o.noClose) close(); }
+    document.addEventListener('keydown', onKey);
+    if (!o.noClose) {
+      back.addEventListener('click', function (e) { if (e.target === back) close(); });
+      $('[data-close]', back).addEventListener('click', function () { close(); });
+    }
+    if (o.actions) {
+      var bar = $('.modal-actions', back);
+      o.actions.forEach(function (a) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'btn ' + (a.cls || '');
+        b.innerHTML = (a.icon ? icon(a.icon) : '') + esc(a.label);
+        b.addEventListener('click', function () {
+          if (a.onClick) {
+            var r = a.onClick(close, b, back);
+            if (r === false || a.keepOpen) return;
+          }
+          close(a.value);
+        });
+        bar.appendChild(b);
+      });
+    }
+    host.appendChild(back);
+    var focusEl = $('input, select, textarea', back) || $('.modal-actions .btn', back);
+    if (focusEl) setTimeout(function () { try { focusEl.focus(); } catch (e) { /* ignore */ } }, 50);
+    if (o.onOpen) o.onOpen(back, close);
+    return { close: close, root: back };
+  }
+
+  function confirmDialog(o) {
+    return new Promise(function (resolve) {
+      var answered = false;
+      modal({
+        title: o.title || 'ยืนยัน', icon: o.icon || (o.danger ? 'warning' : 'help'),
+        body: '<p>' + (o.html || esc(o.message || '')) + '</p>',
+        actions: [
+          { label: o.cancelText || 'ยกเลิก', cls: 'outline', onClick: function () { answered = true; resolve(false); } },
+          { label: o.confirmText || 'ยืนยัน', cls: o.danger ? 'danger' : '', icon: o.confirmIcon, onClick: function () { answered = true; resolve(true); } }
+        ],
+        onClose: function () { if (!answered) resolve(false); }
+      });
+    });
+  }
+
+  /** ขอข้อความจากผู้ใช้ (เช่น เหตุผลไม่อนุมัติ) → string หรือ null */
+  function promptDialog(o) {
+    return new Promise(function (resolve) {
+      var done = false;
+      modal({
+        title: o.title, icon: o.icon || 'edit_note',
+        body: (o.message ? '<p>' + esc(o.message) + '</p>' : '') +
+          '<div class="field"><label for="promptInput">' + esc(o.label || 'ข้อความ') + '</label>' +
+          '<textarea id="promptInput" maxlength="500" placeholder="' + esc(o.placeholder || '') + '"></textarea>' +
+          '<span class="err"></span></div>',
+        actions: [
+          { label: 'ยกเลิก', cls: 'outline', onClick: function () { done = true; resolve(null); } },
+          {
+            label: o.confirmText || 'ตกลง', cls: o.danger ? 'danger' : '', onClick: function (close, btn, root) {
+              var v = $('#promptInput', root).value.trim();
+              if (o.required && v.length < 2) {
+                var f = $('.field', root); f.classList.add('has-error'); $('.err', f).textContent = 'กรุณากรอก' + (o.label || 'ข้อความ');
+                return false;
+              }
+              done = true; resolve(v);
+            }
+          }
+        ],
+        onClose: function () { if (!done) resolve(null); }
+      });
+    });
+  }
+
+  function setBtnLoading(btn, on) {
+    if (!btn) return;
+    if (on) {
+      btn.dataset.html = btn.innerHTML; btn.disabled = true; btn.classList.add('is-loading');
+      btn.innerHTML = '<span class="spinner"></span>กำลังดำเนินการ...';
+    } else if (btn.dataset.html !== undefined) {
+      btn.innerHTML = btn.dataset.html; btn.disabled = false; btn.classList.remove('is-loading'); delete btn.dataset.html;
+    }
+  }
+
+  function clearFieldErrors(form) { $$('.field.has-error', form).forEach(function (f) { f.classList.remove('has-error'); }); }
+  function showFieldError(form, field, msg) {
+    var f = field ? $('.field[data-field="' + field + '"]', form) : null;
+    if (!f) return false;
+    f.classList.add('has-error');
+    var e = $('.err', f); if (e) e.textContent = msg;
+    var inp = $('input, select, textarea', f); if (inp && inp.focus) { try { inp.focus(); } catch (x) { /* ignore */ } }
+    return true;
+  }
+  function handleFormError(form, err) {
+    if (!(err.data && err.data.field && showFieldError(form, err.data.field, err.message))) toast(err.message, 'error', 5500);
+  }
+
+  var BADGE = {
+    PRESENT: ['success', 'check_circle'], LATE: ['warning', 'schedule'], LEAVE: ['info', 'event_busy'], ABSENT: ['danger', 'cancel'],
+    NOT_YET: ['muted', 'hourglass_empty'], HOLIDAY: ['muted', 'beach_access'], HOLIDAY_WORK: ['navy', 'work_history'],
+    ON_TIME: ['success', 'check_circle'], NORMAL: ['success', 'check_circle'], EARLY: ['warning', 'running_with_errors'],
+    PENDING: ['warning', 'pending'], APPROVED: ['success', 'verified'], REJECTED: ['danger', 'block'], CANCELLED: ['muted', 'do_not_disturb_on'],
+    ACTIVE: ['success', 'check_circle'], INACTIVE: ['muted', 'person_off']
+  };
+  function badge(code, label) {
+    var b = BADGE[code] || ['muted', 'info'];
+    return '<span class="badge ' + b[0] + '">' + icon(b[1]) + esc(label || code) + '</span>';
+  }
+  function emptyState(text, ic) { return '<div class="empty-state">' + icon(ic || 'inbox') + '<div>' + esc(text) + '</div></div>'; }
+
+  /** ไฟล์แนบ → {name, mimeType, data(base64)} พร้อมย่อรูปภาพให้เล็กลง */
+  function fileToPayload(file) {
+    return new Promise(function (resolve, reject) {
+      if (!file) { resolve(null); return; }
+      var okTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+      if (okTypes.indexOf(file.type) < 0) { reject(appErr('รองรับเฉพาะไฟล์ PDF, JPG, PNG, WEBP', 'VALIDATION', { field: 'attachment' })); return; }
+      var finish = function (blob, name, type) {
+        if (blob.size > 5 * 1024 * 1024) { reject(appErr('ไฟล์แนบต้องมีขนาดไม่เกิน 5 MB', 'VALIDATION', { field: 'attachment' })); return; }
+        var fr = new FileReader();
+        fr.onload = function () { resolve({ name: name, mimeType: type, data: String(fr.result).split(',')[1] }); };
+        fr.onerror = function () { reject(appErr('อ่านไฟล์ไม่สำเร็จ', 'VALIDATION', { field: 'attachment' })); };
+        fr.readAsDataURL(blob);
+      };
+      if (file.type.indexOf('image/') === 0 && file.size > 700 * 1024) {
+        var img = new Image(), url = URL.createObjectURL(file);
+        img.onload = function () {
+          var scale = Math.min(1, 1600 / Math.max(img.width, img.height));
+          var c = document.createElement('canvas');
+          c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          URL.revokeObjectURL(url);
+          c.toBlob(function (b) { finish(b || file, file.name.replace(/\.\w+$/, '') + '.jpg', b ? 'image/jpeg' : file.type); }, 'image/jpeg', 0.82);
+        };
+        img.onerror = function () { URL.revokeObjectURL(url); finish(file, file.name, file.type); };
+        img.src = url;
+      } else {
+        finish(file, file.name, file.type);
+      }
+    });
+  }
+
+  function base64ToBlob(b64, mime) {
+    var bin = atob(b64), bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+  }
+  function downloadBase64(b64, mime, name) {
+    var url = URL.createObjectURL(base64ToBlob(b64, mime));
+    var a = document.createElement('a');
+    // ต้องระบุ target เป็น _self: หน้าเว็บใช้ <base target="_top"> ซึ่งจะทำให้ลิงก์ดาวน์โหลดไปเปิดที่หน้าต่างแม่ (นอก iframe ของ Apps Script)
+    a.href = url; a.download = name; a.target = '_self'; a.rel = 'noopener';
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 5000);
+  }
+
+  /** ดูไฟล์แนบ (ตรวจสิทธิ์ที่ Server) */
+  function viewAttachment(kind, id) {
+    api('file.get', { kind: kind, id: id }, { loadingText: 'กำลังโหลดเอกสาร...' }).then(function (f) {
+      var url = URL.createObjectURL(base64ToBlob(f.base64, f.mimeType));
+      var isImg = f.mimeType.indexOf('image/') === 0;
+      modal({
+        title: f.name, icon: 'description', wide: true,
+        body: isImg ? '<img src="' + url + '" alt="' + esc(f.name) + '" style="max-width:100%;border-radius:12px">'
+          : '<div class="alert info">' + icon('picture_as_pdf') + '<div>เอกสาร PDF — กดปุ่มด้านล่างเพื่อดาวน์โหลดและเปิดดู</div></div>',
+        actions: [{ label: 'ดาวน์โหลด', icon: 'download', cls: 'outline', keepOpen: true, onClick: function () { downloadBase64(f.base64, f.mimeType, f.name); } },
+          { label: 'ปิด' }],
+        onClose: function () { setTimeout(function () { URL.revokeObjectURL(url); }, 1000); }
+      });
+    }).catch(function (e) { toast(e.message, 'error'); });
+  }
+
+  /** โหลด Chart.js เฉพาะเมื่อต้องใช้ (ประหยัดข้อมูลบนมือถือ) */
+  var chartPromise = null;
+  function loadChartJs() {
+    if (window.Chart) return Promise.resolve(window.Chart);
+    if (!chartPromise) {
+      chartPromise = new Promise(function (resolve, reject) {
+        var s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js';
+        s.onload = function () { if (window.Chart) { window.Chart.defaults.font.family = "'Sarabun', sans-serif"; resolve(window.Chart); } else reject(new Error('Chart.js')); };
+        s.onerror = function () { chartPromise = null; reject(new Error('โหลด Chart.js ไม่สำเร็จ')); };
+        document.head.appendChild(s);
+      });
+    }
+    return chartPromise;
+  }
+
+  /* ------------------------------------------------------------------ views */
+  function showView(name) {
+    ['login', 'register', 'app', 'admin', 'force-password', 'setup'].forEach(function (v) {
+      var el = $('#view-' + v); if (el) el.hidden = v !== name;
+    });
+    $('#bootScreen').hidden = true;
+    window.scrollTo(0, 0);
+  }
+
+  function applyMeta(cfg) {
+    $$('[data-meta]').forEach(function (el) {
+      var k = el.getAttribute('data-meta');
+      var v = k === 'nameTh' ? (cfg.appName || META.nameTh) : (cfg[k] || META[k]);
+      if (v) el.textContent = v;
+    });
+    $$('[data-retention]').forEach(function (el) { el.textContent = cfg.gpsRetentionDays || 365; });
+  }
+
+  function privacyHtml() {
+    var days = (S.cfg && S.cfg.gpsRetentionDays) || (S.dash && S.dash.settings.gpsRetentionDays) || 365;
+    return '<div class="small" style="line-height:1.7">' +
+      '<h4>1. วัตถุประสงค์</h4><p>เพื่อบันทึกและยืนยันการมาปฏิบัติงานของบุคลากรภายในพื้นที่โรงเรียน สรุปสถิติ และใช้ประกอบการบริหารงานบุคคลของ' + esc(META.school || 'โรงเรียน') + '</p>' +
+      '<h4>2. ข้อมูลที่จัดเก็บ</h4><p>ชื่อ-นามสกุล รหัสบุคลากร ตำแหน่ง ชื่อผู้ใช้ รหัสผ่าน (จัดเก็บแบบเข้ารหัสทางเดียว ไม่มีผู้ใดทราบรหัสผ่านจริง) วันและเวลาลงเวลา พิกัด GPS ค่าความแม่นยำ ระยะห่างจากโรงเรียน ข้อมูลการลา คำร้องแก้ไขเวลา เอกสารแนบ และประวัติการใช้งานระบบ</p>' +
+      '<h4>3. การใช้ตำแหน่ง (GPS)</h4><p>ระบบขออ่านตำแหน่ง <b>เฉพาะขณะที่ท่านกดปุ่มลงเวลา หรือกดตรวจสอบตำแหน่งเท่านั้น</b> ไม่มีการติดตามตำแหน่งเบื้องหลังหรือตลอดวัน</p>' +
+      '<h4>4. ระยะเวลาเก็บรักษา</h4><p>พิกัด GPS เก็บไว้ไม่เกิน <b>' + esc(days) + ' วัน</b> หลังจากนั้นระบบจะลบพิกัดอัตโนมัติ คงไว้เฉพาะวันเวลาและระยะห่าง ข้อมูลการลงเวลาและการลาเก็บไว้ตามระเบียบงานบุคคลของโรงเรียน</p>' +
+      '<h4>5. ผู้มีสิทธิ์เข้าถึง</h4><p>ท่านเห็นข้อมูลของตนเอง ผู้บริหารและผู้ดูแลระบบเข้าถึงได้ตามหน้าที่ ข้อมูลจัดเก็บใน Google Sheets/Google Drive ของบัญชีโรงเรียน ไม่เปิดเป็นสาธารณะ</p>' +
+      '<h4>6. สิทธิของเจ้าของข้อมูล (พ.ร.บ.คุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562)</h4><p>ท่านสามารถขอเข้าถึง ขอแก้ไขข้อมูลที่ไม่ถูกต้อง หรือสอบถามการใช้ข้อมูลได้ที่ผู้ดูแลระบบของโรงเรียน</p>' +
+      '<h4>7. ข้อจำกัด</h4><p>การตรวจสอบ GPS ผ่านเว็บเบราว์เซอร์ไม่สามารถป้องกันการปลอมพิกัดได้ทั้งหมด การใช้แอปหรือวิธีใด ๆ ปลอมตำแหน่งถือเป็นการให้ข้อมูลอันเป็นเท็จต่อทางราชการ</p></div>';
+  }
+  function openPrivacy() { modal({ title: 'นโยบายการเก็บและใช้ข้อมูล', icon: 'shield_person', body: privacyHtml(), actions: [{ label: 'รับทราบ' }] }); }
+
+  /* ------------------------------------------------------------------ boot */
+  function boot() {
+    bindStatic();
+    $('#bootText').textContent = 'กำลังเชื่อมต่อเซิร์ฟเวอร์...';
+    run('getPublicConfig', []).then(function (res) {
+      if (!res || !res.ok) throw appErr(res ? res.error : 'โหลดข้อมูลไม่สำเร็จ');
+      S.cfg = res.data;
+      S.offsetMs = res.data.serverNow - Date.now();
+      applyMeta(S.cfg);
+      $('#setupNotice').hidden = !!S.cfg.setupComplete;
+      $('#registerArea').hidden = !S.cfg.allowRegistration;
+      if (S.cfg.needsFirstAdmin) { showSetup(); return; }
+      var token = session.get('wsh_token');
+      if (token && S.cfg.setupComplete) {
+        S.token = token;
+        return api('auth.session', {}, { silent: true }).then(enterApp).catch(function () { clearSession(); showLogin(); });
+      }
+      showLogin();
+    }).catch(function (e) {
+      showLogin();
+      showLoginAlert(e.message || 'เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ');
+    });
+  }
+
+  function showLogin() {
+    var remembered = local.get('wsh_user');
+    if (remembered) { $('#loginUsername').value = remembered; $('#rememberUser').checked = true; }
+    showView('login');
+    setTimeout(function () { (remembered ? $('#loginPassword') : $('#loginUsername')).focus(); }, 60);
+  }
+  function showLoginAlert(msg) { $('#loginAlertText').textContent = msg; $('#loginAlert').hidden = !msg; }
+
+  function bindStatic() {
+    document.addEventListener('click', function (e) {
+      var t = e.target.closest('[data-toggle-pw]');
+      if (t) {
+        var inp = document.getElementById(t.getAttribute('data-toggle-pw'));
+        var show = inp.type === 'password';
+        inp.type = show ? 'text' : 'password';
+        $('.ms', t).textContent = show ? 'visibility_off' : 'visibility';
+        t.setAttribute('aria-label', show ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน');
+        return;
+      }
+      if (e.target.closest('[data-open-privacy]')) { openPrivacy(); return; }
+      var go = e.target.closest('[data-go]');
+      if (go) { if (go.getAttribute('data-go') === 'login') showLogin(); return; }
+      if (e.target.closest('[data-logout]')) { doLogout(); return; }
+      var tg = e.target.closest('[data-tab-go]');
+      if (tg) { switchTab(tg.getAttribute('data-tab-go')); }
+    });
+    $('#loginForm').addEventListener('submit', doLogin);
+    $('#goRegisterBtn').addEventListener('click', function () { resetRegister(); showView('register'); });
+    $('#forgotBtn').addEventListener('click', function () {
+      modal({
+        title: 'ลืมรหัสผ่าน', icon: 'lock_reset',
+        body: '<p>เพื่อความปลอดภัย ระบบไม่มีการส่งรหัสผ่านทางอีเมลหรือข้อความ</p><ol class="help-list">' +
+          '<li>ติดต่อ<b>ผู้ดูแลระบบของโรงเรียน</b> พร้อมแสดงตัวตน</li>' +
+          '<li>ผู้ดูแลระบบจะสั่ง “รีเซ็ตรหัสผ่าน” และแจ้งรหัสผ่านชั่วคราวแก่ท่านโดยตรง (ระบบแสดงรหัสชั่วคราวเพียงครั้งเดียว)</li>' +
+          '<li>เข้าสู่ระบบด้วยรหัสผ่านชั่วคราว ระบบจะบังคับให้ตั้งรหัสผ่านใหม่ทันที</li></ol>' +
+          '<p class="small muted">หากใส่รหัสผ่านผิดหลายครั้ง บัญชีจะถูกล็อกชั่วคราว ผู้ดูแลระบบสามารถปลดล็อกให้ได้</p>',
+        actions: [{ label: 'เข้าใจแล้ว' }]
+      });
+    });
+    $('#registerForm').addEventListener('submit', doRegister);
+    $('#setupForm').addEventListener('submit', doFirstRun);
+    $('#suMyLoc').addEventListener('click', setupUseMyLocation);
+    ['#regPassword', '#regConfirm', '#regUsername'].forEach(function (s) { $(s).addEventListener('input', updatePwRules); });
+    $('#forcePwForm').addEventListener('submit', function (e) { submitPasswordChange(e, true); });
+    $('#pwForm').addEventListener('submit', function (e) { submitPasswordChange(e, false); });
+    $('#logoutBtn').addEventListener('click', doLogout);
+    $('#logoutBtn2').addEventListener('click', doLogout);
+    $('#toAdminBtn').addEventListener('click', openAdmin);
+    $$('#userTabs [data-tab]').forEach(function (b) { b.addEventListener('click', function () { switchTab(b.getAttribute('data-tab')); }); });
+    $('#checkInBtn').addEventListener('click', function () { doAttendance('IN'); });
+    $('#checkOutBtn').addEventListener('click', function () { doAttendance('OUT'); });
+    $('#checkLocBtn').addEventListener('click', checkMyLocation);
+    $('#gpsHelpBtn').addEventListener('click', function () { showGeoHelp(null); });
+    $('#histMonth').addEventListener('change', loadHistory);
+    $('#histYear').addEventListener('change', loadHistory);
+    bindLeaveForm();
+    bindCorrectionForm();
+    ['click', 'keydown', 'touchstart'].forEach(function (ev) { document.addEventListener(ev, onUserActivity, { passive: true }); });
+    setInterval(checkIdle, 20000);
+  }
+
+  /* ------------------------------------------------------------------ auth */
+  function doLogin(e) {
+    e.preventDefault();
+    showLoginAlert('');
+    var u = $('#loginUsername').value.trim(), p = $('#loginPassword').value;
+    if (!u || !p) { showLoginAlert('กรุณากรอกชื่อผู้ใช้และรหัสผ่าน'); return; }
+    var btn = $('#loginBtn');
+    setBtnLoading(btn, true);
+    run('login', [u, p, { ua: navigator.userAgent.substr(0, 240) }]).then(function (res) {
+      setBtnLoading(btn, false);
+      if (!res || !res.ok) { showLoginAlert(res ? res.error : 'เข้าสู่ระบบไม่สำเร็จ'); $('#loginPassword').select(); return; }
+      if ($('#rememberUser').checked) local.set('wsh_user', u); else local.del('wsh_user');
+      $('#loginPassword').value = '';
+      S.token = res.data.token;
+      session.set('wsh_token', S.token);
+      enterApp(res.data);
+    }).catch(function (err) { setBtnLoading(btn, false); showLoginAlert(err.message); });
+  }
+
+  function enterApp(data) {
+    S.user = data.user;
+    S.timeoutMin = data.sessionTimeoutMin || 30;
+    S.lastApi = Date.now();
+    S.loadedTabs = {};
+    S.adminLoaded = false;
+    $('#adminRoot').innerHTML = '';
+    if (data.mustChangePassword || (data.user && data.user.mustChangePassword)) {
+      $('#forcePwForm').reset();
+      showView('force-password');
+      return;
+    }
+    renderUserChrome();
+    showView('app');
+    switchTab('home', true);
+  }
+
+  function renderUserChrome() {
+    var u = S.user;
+    var ini = initials(u.fullName);
+    ['#appAvatar', '#homeAvatar', '#accAvatar'].forEach(function (s) { $(s).textContent = ini; });
+    $('#appUserName').textContent = u.fullName;
+    $('#homeName').textContent = u.fullName;
+    $('#homePosition').textContent = u.position;
+    $('#homeRole').textContent = u.roleLabel;
+    $('#accName').textContent = u.fullName;
+    $('#accRole').textContent = u.roleLabel + ' · ' + u.position;
+    $('#accCode').textContent = u.staffCode;
+    $('#accPosition').textContent = u.position;
+    $('#accUsername').textContent = u.username;
+    $('#toAdminBtn').hidden = !(u.role === 'ADMIN' || u.role === 'EXECUTIVE');
+  }
+
+  function clearSession() {
+    S.token = null; S.user = null; S.dash = null; session.del('wsh_token');
+    if (S.clockTimer) { clearInterval(S.clockTimer); S.clockTimer = null; }
+    $('#modalHost').innerHTML = '';
+    $('#adminRoot').innerHTML = '';
+    S.adminLoaded = false;
+    if (window.Admin && window.Admin.destroy) { try { window.Admin.destroy(); } catch (e) { /* ignore */ } }
+  }
+
+  function forceLogout(msg) {
+    if (!S.token) return;
+    clearSession();
+    showLogin();
+    showLoginAlert(msg || 'หมดเวลาการใช้งาน กรุณาเข้าสู่ระบบใหม่');
+  }
+
+  /* ---------- ติดตั้งครั้งแรก ---------- */
+  function showSetup() {
+    if (S.cfg.dbFileName) $('#setupDbName').textContent = S.cfg.dbFileName;
+    if (S.cfg.setupSheetName) $('#setupSheetName').textContent = S.cfg.setupSheetName;
+    showView('setup');
+  }
+  function doFirstRun(e) {
+    e.preventDefault();
+    var f = $('#setupForm');
+    clearFieldErrors(f);
+    $('#setupAlert').hidden = true;
+    var data = {
+      setupCode: $('#suCode').value.trim(), fullName: $('#suName').value.trim(), staffCode: $('#suCode2').value.trim(),
+      position: $('#suPos').value, username: $('#suUser').value.trim().toLowerCase(),
+      password: $('#suPw').value, confirmPassword: $('#suPw2').value,
+      settings: {
+        SCHOOL_LAT: $('#suLat').value.trim(), SCHOOL_LNG: $('#suLng').value.trim(),
+        WORK_START_TIME: $('#suStart').value, LATE_AFTER_TIME: $('#suLate').value, WORK_END_TIME: $('#suEnd').value,
+        SETTINGS_CONFIRMED: $('#suConfirm').checked && !!$('#suLat').value.trim()
+      },
+      clientInfo: { ua: navigator.userAgent.substr(0, 240) }
+    };
+    if (data.setupCode.replace(/[^A-Za-z0-9]/g, '').length < 12) return showFieldError(f, 'setupCode', 'กรุณากรอกรหัสติดตั้ง 12 ตัวจากชีต "เริ่มต้นใช้งาน"');
+    if (data.password !== data.confirmPassword) return showFieldError(f, 'confirmPassword', 'การยืนยันรหัสผ่านไม่ตรงกัน');
+    var btn = $('#setupBtn');
+    setBtnLoading(btn, true);
+    run('firstRunSetup', [data]).then(function (res) {
+      setBtnLoading(btn, false);
+      if (!res || !res.ok) {
+        var err = appErr(res ? res.error : 'ติดตั้งไม่สำเร็จ', res && res.code, res && res.data);
+        if (err.code === 'ALREADY_SETUP') { S.cfg.needsFirstAdmin = false; showLogin(); showLoginAlert(err.message); return; }
+        if (!(err.data && err.data.field && showFieldError(f, err.data.field, err.message))) { $('#setupAlertText').textContent = err.message; $('#setupAlert').hidden = false; window.scrollTo(0, 0); }
+        return;
+      }
+      S.cfg.needsFirstAdmin = false;
+      S.token = res.data.token;
+      session.set('wsh_token', S.token);
+      f.reset();
+      toast(res.data.message, 'success', 5000);
+      enterApp(res.data);
+    }).catch(function (err) { setBtnLoading(btn, false); $('#setupAlertText').textContent = err.message; $('#setupAlert').hidden = false; });
+  }
+  function setupUseMyLocation() {
+    var b = $('#suMyLoc');
+    setBtnLoading(b, true);
+    $('#suLocNote').textContent = 'กำลังอ่านตำแหน่ง...';
+    acquirePosition(15, function (best) { $('#suLocNote').textContent = 'ความแม่นยำ ±' + Math.round(best.accuracy) + ' ม.'; }).then(function (p) {
+      $('#suLat').value = p.lat.toFixed(6); $('#suLng').value = p.lng.toFixed(6);
+      $('#suLocNote').textContent = 'ได้ตำแหน่งแล้ว (±' + Math.round(p.accuracy) + ' ม.)';
+    }, function (err) { $('#suLocNote').textContent = ''; showGeoHelp(err); }).then(function () { setBtnLoading(b, false); });
+  }
+
+  function doLogout() {
+    confirmDialog({ title: 'ออกจากระบบ', message: 'ต้องการออกจากระบบใช่หรือไม่', confirmText: 'ออกจากระบบ', icon: 'logout' }).then(function (yes) {
+      if (!yes) return;
+      var t = S.token;
+      clearSession();
+      showLogin();
+      if (t) run('api', [t, 'auth.logout', {}]).catch(function () { /* ignore */ });
+      toast('ออกจากระบบเรียบร้อยแล้ว', 'success');
+    });
+  }
+
+  function onUserActivity() {
+    if (!S.token || !S.user) return;
+    var now = Date.now();
+    if (now - S.lastApi > 60000 && now - S.lastPing > 120000 && now - S.lastApi < S.timeoutMin * 60000) {
+      S.lastPing = now;
+      api('auth.ping', {}, { silent: true }).catch(function () { /* handled */ });
+    }
+  }
+  function checkIdle() {
+    if (S.token && Date.now() - S.lastApi > S.timeoutMin * 60000) forceLogout('ออกจากระบบอัตโนมัติ เนื่องจากไม่ได้ใช้งานเกิน ' + S.timeoutMin + ' นาที');
+  }
+
+  /* ---------- Register ---------- */
+  function resetRegister() {
+    $('#registerForm').reset();
+    clearFieldErrors($('#registerForm'));
+    $('#registerAlert').hidden = true;
+    $('#registerCard').hidden = false;
+    $('#registerDone').hidden = true;
+    updatePwRules();
+  }
+  function pwRuleState() {
+    var pw = $('#regPassword').value, cf = $('#regConfirm').value, u = $('#regUsername').value.trim().toLowerCase();
+    return {
+      len: pw.length >= 8,
+      mix: /[A-Za-z]/.test(pw) && /\d/.test(pw),
+      user: pw.length > 0 && !(u.length >= 4 && pw.toLowerCase().indexOf(u) >= 0),
+      match: pw.length > 0 && pw === cf
+    };
+  }
+  function updatePwRules() {
+    var st = pwRuleState();
+    $$('#regPwRules li').forEach(function (li) {
+      var ok = st[li.getAttribute('data-rule')];
+      li.classList.toggle('ok', ok);
+      $('.ms', li).textContent = ok ? 'check_circle' : 'radio_button_unchecked';
+    });
+    var pw = $('#regPassword').value;
+    var score = 0;
+    if (pw.length >= 8) score++;
+    if (pw.length >= 12) score++;
+    if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score++;
+    if (/\d/.test(pw)) score++;
+    if (/[^A-Za-z0-9]/.test(pw)) score++;
+    var colors = ['#DC2626', '#DC2626', '#F59E0B', '#F59E0B', '#16A34A', '#15803D'];
+    var m = $('#regPwMeter');
+    m.style.width = (pw ? Math.max(12, score * 20) : 0) + '%';
+    m.style.background = colors[score];
+  }
+  function doRegister(e) {
+    e.preventDefault();
+    var f = $('#registerForm');
+    clearFieldErrors(f);
+    $('#registerAlert').hidden = true;
+    var data = {
+      fullName: f.fullName.value.trim(), staffCode: f.staffCode.value.trim(), position: f.position.value,
+      username: f.username.value.trim().toLowerCase(), password: f.password.value, confirmPassword: f.confirmPassword.value,
+      acceptPrivacy: $('#regAccept').checked
+    };
+    var st = pwRuleState();
+    if (!data.fullName) return showFieldError(f, 'fullName', 'กรุณากรอกชื่อ-นามสกุล');
+    if (!data.staffCode) return showFieldError(f, 'staffCode', 'กรุณากรอกรหัสประจำตัวบุคลากร');
+    if (!data.position) return showFieldError(f, 'position', 'กรุณาเลือกตำแหน่ง');
+    if (!/^[a-z][a-z0-9._-]{3,29}$/.test(data.username)) return showFieldError(f, 'username', 'ชื่อผู้ใช้ไม่ถูกต้อง (4–30 ตัว ขึ้นต้นด้วย a-z)');
+    if (!st.len || !st.mix || !st.user) return showFieldError(f, 'password', 'รหัสผ่านยังไม่ผ่านเกณฑ์ด้านล่าง');
+    if (!st.match) return showFieldError(f, 'confirmPassword', 'การยืนยันรหัสผ่านไม่ตรงกัน');
+    if (!data.acceptPrivacy) return showFieldError(f, 'acceptPrivacy', 'กรุณายอมรับนโยบายการใช้ข้อมูล');
+    var btn = $('#registerBtn');
+    setBtnLoading(btn, true);
+    run('register', [data]).then(function (res) {
+      setBtnLoading(btn, false);
+      if (!res || !res.ok) {
+        var err = appErr(res ? res.error : 'สมัครสมาชิกไม่สำเร็จ', res && res.code, res && res.data);
+        if (!(err.data && err.data.field && showFieldError(f, err.data.field, err.message))) {
+          $('#registerAlertText').textContent = err.message; $('#registerAlert').hidden = false; window.scrollTo(0, 0);
+        }
+        return;
+      }
+      $('#registerCard').hidden = true;
+      $('#registerDone').hidden = false;
+      $('#registerDoneText').textContent = res.data.message;
+      $('#regDoneName').textContent = res.data.fullName;
+      $('#regDoneUser').textContent = res.data.username;
+      $('#regDoneRef').textContent = res.data.reference;
+      $('#loginUsername').value = res.data.username;
+      window.scrollTo(0, 0);
+    }).catch(function (err) { setBtnLoading(btn, false); $('#registerAlertText').textContent = err.message; $('#registerAlert').hidden = false; });
+  }
+
+  /* ---------- Change password ---------- */
+  function submitPasswordChange(e, forced) {
+    e.preventDefault();
+    var f = e.target;
+    clearFieldErrors(f);
+    var d = { currentPassword: f.currentPassword.value, newPassword: f.newPassword.value, confirmPassword: f.confirmPassword.value };
+    if (!d.currentPassword) return showFieldError(f, 'currentPassword', 'กรุณากรอกรหัสผ่านปัจจุบัน');
+    if (d.newPassword.length < 8 || !/[A-Za-z]/.test(d.newPassword) || !/\d/.test(d.newPassword)) return showFieldError(f, 'newPassword', 'รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัว และมีทั้งตัวอักษรและตัวเลข');
+    if (d.newPassword !== d.confirmPassword) return showFieldError(f, 'confirmPassword', 'การยืนยันรหัสผ่านไม่ตรงกัน');
+    var btn = $('button[type=submit]', f);
+    setBtnLoading(btn, true);
+    api('auth.changePassword', d, { silent: true }).then(function (r) {
+      setBtnLoading(btn, false);
+      f.reset();
+      S.token = r.token;
+      session.set('wsh_token', S.token);
+      toast(r.message + ' — ระบบได้ออกจากระบบบนอุปกรณ์อื่นทั้งหมดแล้ว', 'success', 5000);
+      if (forced) enterApp({ user: r.user, sessionTimeoutMin: S.timeoutMin, mustChangePassword: false });
+    }).catch(function (err) { setBtnLoading(btn, false); if (err.code !== 'AUTH') handleFormError(f, err); });
+  }
+
+  /* ------------------------------------------------------------------ tabs */
+  function switchTab(tab, force) {
+    S.tab = tab;
+    $$('#userTabs [data-tab]').forEach(function (b) { b.classList.toggle('active', b.getAttribute('data-tab') === tab); });
+    $$('#view-app .tab-panel').forEach(function (p) { p.hidden = p.getAttribute('data-panel') !== tab; });
+    window.scrollTo(0, 0);
+    if (tab === 'home') loadDashboard(!force);
+    if (tab === 'history') { initHistorySelectors(); loadHistory(); }
+    if (tab === 'leave') { initLeaveForm(); loadMyLeaves(); }
+    if (tab === 'correction') { initCorrectionForm(); loadMyCorrections(); }
+  }
+
+  /* ------------------------------------------------------------------ home / dashboard */
+  function loadDashboard(silent) {
+    return api('me.dashboard', {}, { silent: !!silent && !!S.dash, loadingText: 'กำลังโหลดข้อมูล...' }).then(function (d) {
+      S.dash = d;
+      S.offsetMs = d.serverNow - Date.now();
+      renderDashboard();
+    }).catch(function (e) { if (e.code !== 'AUTH' && e.code !== 'MUST_CHANGE_PASSWORD') toast(e.message, 'error'); });
+  }
+
+  function renderDashboard() {
+    var d = S.dash, s = d.settings, row = d.today.row;
+    var hh = bkkParts(serverNow()).hh;
+    $('#greeting').textContent = hh < 12 ? 'สวัสดีตอนเช้า' : (hh < 17 ? 'สวัสดีตอนบ่าย' : 'สวัสดีตอนเย็น');
+    $('#workHours').textContent = 'เวลาทำงาน ' + s.workStart + '–' + s.workEnd + ' น. · ถือว่าสายเมื่อลงเวลาหลัง ' + s.lateAfter + ' น.';
+    var chip = $('#dayTypeChip');
+    chip.innerHTML = d.today.isWorkday ? icon('work') + '<span>วันทำงาน</span>' : icon('beach_access') + '<span>' + esc(d.today.holidayName || 'วันหยุด') + '</span>';
+    // วันนี้
+    var inEl = $('#todayIn'), outEl = $('#todayOut');
+    inEl.textContent = row && row.checkIn ? hm(row.checkIn) : '--:--';
+    inEl.classList.toggle('empty', !(row && row.checkIn));
+    outEl.textContent = row && row.checkOut ? hm(row.checkOut) : '--:--';
+    outEl.classList.toggle('empty', !(row && row.checkOut));
+    $('#todayInMeta').innerHTML = row && row.checkIn ? (row.isLate ? '<span style="color:var(--warning)">สาย ' + row.lateMinutes + ' นาที</span>' : 'ตรงเวลา') +
+      (row.inDistanceM !== null && row.inDistanceM !== undefined ? ' · ห่าง ' + fmtDistance(row.inDistanceM) : '') : '&nbsp;';
+    $('#todayOutMeta').innerHTML = row && row.checkOut ? (row.earlyLeave ? '<span style="color:var(--warning)">ออกก่อนเวลา</span>' : 'ปกติ') +
+      (row.outDistanceM !== null && row.outDistanceM !== undefined ? ' · ห่าง ' + fmtDistance(row.outDistanceM) : '') : '&nbsp;';
+    var st = $('#todayStatus');
+    if (row) st.outerHTML = '<span id="todayStatus">' + badge(row.inProgress ? 'PRESENT' : row.status, row.inProgress ? (row.isLate ? 'มาสาย · ยังไม่ลงเวลาออก' : 'กำลังปฏิบัติงาน') : row.statusLabel) + '</span>';
+    else st.outerHTML = '<span id="todayStatus">' + badge(d.today.isWorkday ? 'NOT_YET' : 'HOLIDAY', d.today.isWorkday ? 'ยังไม่ลงเวลา' : 'วันหยุด') + '</span>';
+    // ปุ่ม
+    updateAttendanceButtons();
+    $('#geoNotSetAlert').hidden = !!s.geofenceConfigured;
+    var mapA = $('#schoolMapLink');
+    if (s.schoolMaps) { mapA.href = s.schoolMaps.google; mapA.hidden = false; } else mapA.hidden = true;
+    // สถิติเดือน
+    $('#monthLabel').textContent = d.month.label;
+    $('#monthStats').innerHTML = statCards(d.month.totals);
+    // ล่าสุด
+    $('#recentList').innerHTML = d.recent.length ? d.recent.map(dayListItem).join('') : emptyState('ยังไม่มีประวัติการลงเวลา', 'history');
+    $('#leaveDot').hidden = !d.pending.leaves; $('#leaveDot').textContent = d.pending.leaves;
+    $('#corrDot').hidden = !d.pending.corrections; $('#corrDot').textContent = d.pending.corrections;
+    startClock();
+    updateGpsPermission();
+  }
+
+  function statCards(t) {
+    var cards = [
+      ['success', 'how_to_reg', t.present, 'วัน', 'มาปฏิบัติงาน'],
+      ['warning', 'schedule', t.late, 'ครั้ง', 'มาสาย' + (t.lateMinutes ? ' (' + t.lateMinutes + ' นาที)' : '')],
+      ['sky', 'event_busy', t.leaveDays, 'วัน', 'ลา'],
+      ['warning', 'rule', t.incomplete, 'ครั้ง', 'ลงเวลาไม่ครบ'],
+      ['danger', 'person_cancel', t.absent, 'วัน', 'ขาดงาน']
+    ];
+    return cards.map(function (c) {
+      return '<div class="stat-card tone-' + c[0] + '"><span class="stat-icon">' + icon(c[1]) + '</span>' +
+        '<div class="stat-value">' + esc(c[2]) + '<span class="stat-unit">' + c[3] + '</span></div><div class="stat-label">' + esc(c[4]) + '</div></div>';
+    }).join('');
+  }
+
+  function dayListItem(d) {
+    var p = parseYmd(d.date);
+    return '<div class="list-item"><div class="date-box"><div class="d">' + p.d + '</div><div class="m">' + TH_MS[p.m - 1] + '</div></div>' +
+      '<div class="body"><div class="row-between"><span class="small muted">วัน' + esc(d.dayName) + '</span>' +
+      badge(d.status, d.statusLabel) + '</div>' +
+      '<div class="times"><span>' + icon('login') + (d.checkIn ? hm(d.checkIn) : '--:--') + '</span><span>' + icon('logout') + (d.checkOut ? hm(d.checkOut) : '--:--') + '</span>' +
+      (d.lateMinutes ? '<span class="small" style="color:var(--warning)">สาย ' + d.lateMinutes + ' นาที</span>' : '') + '</div>' +
+      (d.note ? '<div class="tiny muted">' + esc(d.note) + '</div>' : '') + '</div></div>';
+  }
+
+  function startClock() {
+    if (S.clockTimer) return;
+    var tick = function () {
+      var p = bkkParts(serverNow());
+      $('#clockTime').textContent = pad2(p.hh) + ':' + pad2(p.mi) + ':' + pad2(p.ss);
+      var ymd = p.y + '-' + pad2(p.m) + '-' + pad2(p.d);
+      $('#clockDate').textContent = thDate(ymd, 'long');
+      if (S.dash && S.dash.today.date !== ymd && S.tab === 'home' && $('#view-app').hidden === false) {
+        S.dash.today.date = ymd; loadDashboard(true); // เปลี่ยนวันแล้ว
+      }
+    };
+    tick();
+    S.clockTimer = setInterval(tick, 1000);
+  }
+
+  function updateAttendanceButtons() {
+    var d = S.dash; if (!d) return;
+    var row = d.today.row, s = d.settings;
+    var inBtn = $('#checkInBtn'), outBtn = $('#checkOutBtn');
+    var hasIn = !!(row && row.checkIn), hasOut = !!(row && row.checkOut);
+    inBtn.disabled = S.attBusy || !s.geofenceConfigured || hasIn;
+    outBtn.disabled = S.attBusy || !s.geofenceConfigured || !hasIn || hasOut;
+    $('#checkInSub').textContent = hasIn ? 'ลงเวลาเข้าแล้ว ' + hm(row.checkIn) + ' น.' : 'กดเพื่อบันทึกเวลาเข้า (ใช้ GPS)';
+    $('#checkOutSub').textContent = hasOut ? 'ลงเวลาออกแล้ว ' + hm(row.checkOut) + ' น.' : (hasIn ? 'กดเพื่อบันทึกเวลาออก (ใช้ GPS)' : 'ต้องลงเวลาเข้างานก่อน');
+  }
+
+  /* ---------- GPS ---------- */
+  function inAppBrowser() { return /Line\/|FBAN|FBAV|Instagram|KAKAOTALK|MicroMessenger/i.test(navigator.userAgent); }
+
+  function updateGpsPermission() {
+    var setStatus = function (cls, ic, text, sub) {
+      var i = $('#gpsIcon'); i.className = 'gps-pulse ' + cls; i.innerHTML = icon(ic);
+      $('#gpsStatusText').textContent = text; $('#gpsStatusSub').textContent = sub;
+    };
+    if (!('geolocation' in navigator)) { setStatus('bad', 'location_disabled', 'อุปกรณ์/เบราว์เซอร์นี้ไม่รองรับ GPS', 'กรุณาใช้ Chrome หรือ Safari บนโทรศัพท์มือถือ'); return; }
+    if (inAppBrowser()) { setStatus('wait', 'open_in_browser', 'กำลังเปิดผ่านแอปแชท (เช่น LINE)', 'แนะนำให้เปิดลิงก์ด้วย Chrome หรือ Safari เพื่อให้ GPS ทำงานได้ถูกต้อง'); return; }
+    if (!navigator.permissions || !navigator.permissions.query) { setStatus('wait', 'location_searching', 'พร้อมขอตำแหน่งเมื่อกดลงเวลา', 'เบราว์เซอร์จะถามสิทธิ์ตำแหน่ง กรุณากด “อนุญาต”'); return; }
+    navigator.permissions.query({ name: 'geolocation' }).then(function (p) {
+      var apply = function () {
+        if (p.state === 'granted') setStatus('ok', 'location_on', 'อนุญาตการเข้าถึงตำแหน่งแล้ว', 'ระบบจะอ่านตำแหน่งเฉพาะตอนกดปุ่มเท่านั้น');
+        else if (p.state === 'denied') setStatus('bad', 'location_off', 'ตำแหน่งถูกปิดกั้น', 'กด “วิธีเปิด GPS” เพื่อดูวิธีอนุญาตตำแหน่ง');
+        else setStatus('wait', 'location_searching', 'ยังไม่ได้อนุญาตตำแหน่ง', 'เมื่อกดลงเวลา เบราว์เซอร์จะถามสิทธิ์ กรุณากด “อนุญาต”');
+      };
+      apply();
+      p.onchange = apply;
+    }).catch(function () { setStatus('wait', 'location_searching', 'พร้อมขอตำแหน่งเมื่อกดลงเวลา', 'เบราว์เซอร์จะถามสิทธิ์ตำแหน่ง กรุณากด “อนุญาต”'); });
+  }
+
+  /**
+   * อ่านตำแหน่งครั้งเดียวตอนกดปุ่ม: เฝ้ารอค่าความแม่นยำที่ดีขึ้นสูงสุด ~15 วินาที แล้วหยุดอ่านทันที
+   * (ไม่มีการติดตามตำแหน่งต่อเนื่อง)
+   */
+  function acquirePosition(maxAcc, onProgress) {
+    return new Promise(function (resolve, reject) {
+      if (!('geolocation' in navigator)) { reject({ code: 'UNSUPPORTED' }); return; }
+      var best = null, done = false, watchId = null, t1, t2;
+      function finish(ok, v) {
+        if (done) return; done = true;
+        clearTimeout(t1); clearTimeout(t2);
+        if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+        if (ok) resolve(v); else reject(v);
+      }
+      t1 = setTimeout(function () { if (best) finish(true, best); }, 15000);
+      t2 = setTimeout(function () { if (best) finish(true, best); else finish(false, { code: 3 }); }, 30000);
+      watchId = navigator.geolocation.watchPosition(function (pos) {
+        var p = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
+        if (!best || p.accuracy < best.accuracy) best = p;
+        if (onProgress) onProgress(best);
+        if (best.accuracy <= maxAcc) finish(true, best);
+      }, function (err) {
+        if (err.code === 1) finish(false, err);
+        else if (err.code === 2 && !best) finish(false, err);
+      }, { enableHighAccuracy: true, maximumAge: 0, timeout: 25000 });
+    });
+  }
+
+  function showGeoHelp(err) {
+    var head = '';
+    if (err) {
+      var code = err.code;
+      head = code === 1 ? '<div class="alert danger">' + icon('location_off') + '<div><b>ไม่ได้รับอนุญาตให้เข้าถึงตำแหน่ง</b><br>ระบบต้องใช้ตำแหน่งเพื่อยืนยันว่าท่านอยู่ในพื้นที่โรงเรียน</div></div>'
+        : code === 2 ? '<div class="alert danger">' + icon('gps_off') + '<div><b>ไม่สามารถระบุตำแหน่งได้</b><br>GPS อาจปิดอยู่ หรือสัญญาณไม่เพียงพอ</div></div>'
+          : code === 3 ? '<div class="alert warning">' + icon('timer_off') + '<div><b>ค้นหาตำแหน่งนานเกินไป</b><br>กรุณาออกไปบริเวณที่โล่ง แล้วลองใหม่</div></div>'
+            : '<div class="alert danger">' + icon('error') + '<div>อุปกรณ์หรือเบราว์เซอร์นี้ไม่รองรับการระบุตำแหน่ง</div></div>';
+    }
+    modal({
+      title: 'วิธีเปิดใช้งานตำแหน่ง (GPS)', icon: 'location_on',
+      body: head +
+        (inAppBrowser() ? '<div class="alert warning" style="margin-top:10px">' + icon('open_in_browser') + '<div>ท่านเปิดผ่านแอปแชท (เช่น LINE) ซึ่งมักบล็อก GPS — กดเมนู ⋮ หรือ ⋯ แล้วเลือก <b>“เปิดในเบราว์เซอร์”</b> (Chrome/Safari)</div></div>' : '') +
+        '<h4 style="margin-top:14px">โทรศัพท์ Android (Chrome)</h4><ol class="help-list small">' +
+        '<li>ปัดหน้าจอลงจากด้านบน แล้วเปิด <b>ตำแหน่ง (Location)</b></li>' +
+        '<li>ใน Chrome แตะไอคอนด้านซ้ายของแถบที่อยู่ → <b>สิทธิ์</b> → <b>ตำแหน่ง</b> → <b>อนุญาต</b></li>' +
+        '<li>การตั้งค่าโทรศัพท์ → ตำแหน่ง → เปิด <b>ความแม่นยำของตำแหน่งใน Google</b></li></ol>' +
+        '<h4>iPhone / iPad (Safari)</h4><ol class="help-list small">' +
+        '<li>การตั้งค่า → ความเป็นส่วนตัวและความปลอดภัย → <b>บริการหาตำแหน่ง</b> → เปิด</li>' +
+        '<li>ในรายการเดียวกัน เลือก <b>เว็บไซต์ Safari</b> → <b>ขณะใช้แอป</b> และเปิด <b>ตำแหน่งที่แน่นอน</b></li>' +
+        '<li>ใน Safari แตะ <b>aA</b> → การตั้งค่าเว็บไซต์ → ตำแหน่ง → <b>อนุญาต</b></li></ol>' +
+        '<h4>เคล็ดลับให้ GPS แม่นยำ</h4><ul class="help-list small"><li>ยืนบริเวณที่โล่ง ห่างจากอาคารสูงหรือหลังคาโลหะ</li><li>เปิด Wi-Fi ไว้ช่วยระบุตำแหน่ง</li><li>รอสักครู่หลังเปิด GPS แล้วจึงกดลงเวลา</li></ul>',
+      actions: [{ label: 'ตกลง' }]
+    });
+  }
+
+  function zoneHtml(r) {
+    var ok = r.inZone && r.accuracyOk;
+    return '<span class="ms fill">' + (ok ? 'where_to_vote' : 'wrong_location') + '</span><div style="flex:1">' +
+      '<div class="big">' + (ok ? 'อยู่ในพื้นที่โรงเรียน' : (r.accuracyOk ? 'อยู่นอกพื้นที่โรงเรียน' : 'สัญญาณ GPS ไม่แม่นยำพอ')) + '</div>' +
+      '<div class="small">ห่างจากโรงเรียน <b>' + fmtDistance(r.distanceM) + '</b> (รัศมีที่อนุญาต ' + r.radiusM + ' ม.) · ความแม่นยำ ±' + r.accuracyM + ' ม. (เกณฑ์ ≤ ' + r.maxAccuracyM + ' ม.)</div>' +
+      (r.maps ? '<div class="row" style="margin-top:8px"><a class="btn outline sm" target="_blank" rel="noopener" href="' + esc(r.maps.osm) + '">' + icon('map') + 'OpenStreetMap</a>' +
+        '<a class="btn outline sm" target="_blank" rel="noopener" href="' + esc(r.maps.google) + '">' + icon('pin_drop') + 'Google Maps</a></div>' : '') +
+      '</div>';
+  }
+
+  function checkMyLocation() {
+    if (!S.dash) return;
+    var btn = $('#checkLocBtn');
+    setBtnLoading(btn, true);
+    acquirePosition(S.dash.settings.maxAccuracyM, null).then(function (pos) {
+      return api('att.preview', pos, { silent: true }).then(function (r) {
+        var z = $('#zoneResult');
+        z.className = 'zone-result ' + (r.inZone && r.accuracyOk ? 'in' : 'out');
+        z.innerHTML = zoneHtml(r);
+        z.hidden = false;
+      });
+    }, function (err) { showGeoHelp(err); }).catch(function (e) { toast(e.message, 'error'); })
+      .then(function () { setBtnLoading(btn, false); updateGpsPermission(); });
+  }
+
+  function progressModal(type) {
+    var steps = ['ขออนุญาตและอ่านพิกัด GPS', 'ตรวจสอบความแม่นยำของสัญญาณ', 'ส่งข้อมูลให้เซิร์ฟเวอร์ตรวจสอบระยะห่าง', 'บันทึกเวลาด้วยเวลาของเซิร์ฟเวอร์'];
+    var m = modal({
+      title: type === 'IN' ? 'กำลังลงเวลาเข้างาน' : 'กำลังลงเวลาออกงาน', icon: 'satellite_alt', noClose: true,
+      body: '<ul class="steps">' + steps.map(function (s, i) { return '<li data-step="' + i + '"><span class="st">' + (i + 1) + '</span><span>' + s + '</span></li>'; }).join('') + '</ul>' +
+        '<div class="small muted" id="gpsProgressNote" style="margin-top:12px">กรุณาอยู่ในบริเวณที่โล่งและรอสักครู่...</div>'
+    });
+    return {
+      set: function (i, state) {
+        var li = $('[data-step="' + i + '"]', m.root); if (!li) return;
+        li.className = state;
+        $('.st', li).innerHTML = state === 'done' ? icon('check') : state === 'fail' ? icon('close') : state === 'active' ? '<span class="spinner sm dark"></span>' : (i + 1);
+      },
+      note: function (t) { var n = $('#gpsProgressNote', m.root); if (n) n.textContent = t; },
+      close: m.close
+    };
+  }
+
+  function doAttendance(type) {
+    if (S.attBusy || !S.dash) return;
+    var s = S.dash.settings;
+    var pre = Promise.resolve(true);
+    if (type === 'OUT' && S.dash.today.isWorkday && bkkTimeHM() < s.workEnd) {
+      pre = confirmDialog({ title: 'ยังไม่ถึงเวลาเลิกงาน', icon: 'schedule', html: 'ขณะนี้เวลา <b>' + bkkTimeHM() + ' น.</b> ยังไม่ถึงเวลาเลิกงาน (' + esc(s.workEnd) + ' น.)<br>ระบบจะบันทึกสถานะ <b>“ออกก่อนเวลา”</b> ต้องการลงเวลาออกงานใช่หรือไม่', confirmText: 'ลงเวลาออก' });
+    }
+    pre.then(function (go) {
+      if (!go) return;
+      S.attBusy = true; updateAttendanceButtons();
+      var prog = progressModal(type);
+      prog.set(0, 'active');
+      acquirePosition(s.maxAccuracyM, function (best) {
+        prog.note('ความแม่นยำปัจจุบัน ±' + Math.round(best.accuracy) + ' ม. (เกณฑ์ ≤ ' + s.maxAccuracyM + ' ม.)');
+        prog.set(0, 'done'); prog.set(1, 'active');
+      }).then(function (pos) {
+        prog.set(0, 'done'); prog.set(1, pos.accuracy <= s.maxAccuracyM ? 'done' : 'fail'); prog.set(2, 'active');
+        return api(type === 'IN' ? 'att.checkIn' : 'att.checkOut', { lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy }, { silent: true })
+          .then(function (r) {
+            prog.set(2, 'done'); prog.set(3, 'done');
+            setTimeout(function () { prog.close(); showAttendanceSuccess(r); }, 350);
+            return loadDashboard(true);
+          }, function (e) {
+            prog.set(2, 'fail');
+            setTimeout(function () { prog.close(); showAttendanceFailure(e); }, 350);
+            if (e.code === 'DUPLICATE') loadDashboard(true);
+          });
+      }, function (geoErr) {
+        prog.set(0, 'fail');
+        prog.close();
+        showGeoHelp(geoErr);
+      }).then(function () { S.attBusy = false; updateAttendanceButtons(); updateGpsPermission(); });
+    });
+  }
+
+  function showAttendanceSuccess(r) {
+    var late = r.status === 'LATE', early = r.status === 'EARLY';
+    modal({
+      title: r.message, icon: 'task_alt',
+      body: '<div class="result-hero ok"><div class="ring"><span class="ms fill">check_circle</span></div>' +
+        '<div class="muted">' + esc(r.typeLabel) + ' · ' + esc(r.dateLabel) + '</div>' +
+        '<div class="big-time">' + hm(r.time) + ' น.</div>' +
+        '<div style="margin:6px 0 10px">' + badge(r.status, r.statusLabel + (late ? ' ' + r.lateMinutes + ' นาที' : '')) + '</div></div>' +
+        '<div class="zone-result in">' + zoneHtml({ inZone: true, accuracyOk: true, distanceM: r.distanceM, radiusM: r.radiusM, accuracyM: r.accuracyM, maxAccuracyM: S.dash.settings.maxAccuracyM, maps: r.maps }) + '</div>' +
+        (late ? '<p class="small muted" style="margin-top:10px">ระบบบันทึกเวลาตามนาฬิกาของเซิร์ฟเวอร์ หากมีเหตุจำเป็นสามารถแจ้งผู้บริหารหรือยื่นใบลาครึ่งวันได้</p>' : '') +
+        (early ? '<p class="small muted" style="margin-top:10px">บันทึกสถานะออกก่อนเวลาเลิกงานแล้ว</p>' : ''),
+      actions: [{ label: 'เรียบร้อย', icon: 'done' }]
+    });
+  }
+
+  function showAttendanceFailure(e) {
+    var d = e.data;
+    var zone = d && d.distanceM !== undefined ? '<div class="zone-result out">' + zoneHtml(d) + '</div>' : '';
+    var tips = e.code === 'GPS_ACCURACY' ? '<ul class="help-list small" style="margin-top:10px"><li>เปิด GPS แบบความแม่นยำสูง และเปิด Wi-Fi</li><li>ออกไปบริเวณที่โล่ง แล้วรอ 10–20 วินาที</li><li>กดลงเวลาใหม่อีกครั้ง</li></ul>'
+      : e.code === 'OUT_OF_ZONE' ? '<p class="small muted" style="margin-top:10px">กรุณาลงเวลาเมื่ออยู่ในบริเวณโรงเรียน หากอยู่ในโรงเรียนแล้วแต่ยังแสดงว่าอยู่นอกพื้นที่ ให้รอสัญญาณ GPS สักครู่ หรือยื่นคำร้องแก้ไขเวลา</p>'
+        : (e.code === 'NETWORK' ? '<p class="small muted">ตรวจสอบสัญญาณอินเทอร์เน็ตแล้วลองใหม่</p>' : '');
+    modal({
+      title: 'ลงเวลาไม่สำเร็จ', icon: 'error',
+      body: '<div class="result-hero bad"><div class="ring"><span class="ms fill">' + (e.code === 'OUT_OF_ZONE' ? 'wrong_location' : 'cancel') + '</span></div></div>' +
+        '<div class="alert danger">' + icon('error') + '<div>' + esc(e.message) + '</div></div>' + zone + tips,
+      actions: (e.code === 'OUT_OF_ZONE' || e.code === 'NO_CHECKIN') ? [{ label: 'ยื่นคำร้องแก้ไขเวลา', cls: 'outline', icon: 'edit_calendar', onClick: function () { switchTab('correction'); } }, { label: 'ปิด' }] : [{ label: 'ปิด' }]
+    });
+  }
+
+  /* ------------------------------------------------------------------ history */
+  function fillMonthYear(mSel, ySel, yearsBack) {
+    if (mSel.options.length) return;
+    var p = bkkParts(serverNow());
+    TH_M.forEach(function (m, i) { var o = document.createElement('option'); o.value = i + 1; o.textContent = m; mSel.appendChild(o); });
+    for (var y = p.y; y >= p.y - (yearsBack || 3); y--) { var o = document.createElement('option'); o.value = y; o.textContent = y + 543; ySel.appendChild(o); }
+    mSel.value = p.m; ySel.value = p.y;
+  }
+  function initHistorySelectors() { fillMonthYear($('#histMonth'), $('#histYear'), 3); }
+  function loadHistory() {
+    api('me.history', { year: +$('#histYear').value, month: +$('#histMonth').value }, { loadingText: 'กำลังโหลดประวัติ...' }).then(function (h) {
+      $('#histTitle').textContent = 'เดือน' + h.label;
+      $('#histStats').innerHTML = statCards(h.totals);
+      if (!h.days.length) { $('#histTable').innerHTML = emptyState('ไม่มีข้อมูลในเดือนนี้', 'event_note'); return; }
+      $('#histTable').innerHTML = '<div class="table-wrap"><table class="table stack-mobile"><thead><tr><th>วันที่</th><th>วัน</th><th class="c">เข้างาน</th><th class="c">ออกงาน</th><th class="c">สถานะ</th><th class="c">สาย (นาที)</th><th>หมายเหตุ</th></tr></thead><tbody>' +
+        h.days.map(function (d) {
+          return '<tr><td data-label="วันที่">' + esc(d.dateShort) + '</td><td data-label="วัน">' + esc(d.dayName) + '</td>' +
+            '<td data-label="เข้างาน" class="c">' + (d.checkIn ? hm(d.checkIn) : '-') + '</td><td data-label="ออกงาน" class="c">' + (d.checkOut ? hm(d.checkOut) : '-') + '</td>' +
+            '<td data-label="สถานะ" class="c">' + badge(d.status, d.statusLabel) + '</td><td data-label="สาย (นาที)" class="c">' + (d.lateMinutes || '-') + '</td>' +
+            '<td data-label="หมายเหตุ">' + esc(d.note || '-') + '</td></tr>';
+        }).join('') + '</tbody></table></div>';
+    }).catch(function (e) { if (e.code !== 'AUTH') toast(e.message, 'error'); });
+  }
+
+  /* ------------------------------------------------------------------ leave */
+  function setThaiHint(input) {
+    var h = $('[data-thai-for="' + input.id + '"]');
+    if (h) h.textContent = input.value ? thDate(input.value, 'long') : '';
+  }
+  function bindFileLabel(form) {
+    var inp = $('input[type=file]', form);
+    inp.addEventListener('change', function () {
+      var lab = $('[data-file-label]', form);
+      lab.textContent = inp.files[0] ? inp.files[0].name + ' (' + Math.round(inp.files[0].size / 1024) + ' KB)' : 'แนบไฟล์ PDF หรือรูปภาพ (ไม่เกิน 5 MB)';
+    });
+  }
+  function bindLeaveForm() {
+    var f = $('#leaveForm');
+    ['#leaveStart', '#leaveEnd'].forEach(function (s) {
+      $(s).addEventListener('change', function () {
+        if (s === '#leaveStart' && (!$('#leaveEnd').value || $('#leaveEnd').value < $('#leaveStart').value)) $('#leaveEnd').value = $('#leaveStart').value;
+        setThaiHint($('#leaveStart')); setThaiHint($('#leaveEnd')); syncPeriod();
+      });
+    });
+    $$('#leavePeriod button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        if (b.disabled) return;
+        $$('#leavePeriod button').forEach(function (x) { x.classList.toggle('active', x === b); });
+      });
+    });
+    bindFileLabel(f);
+    f.addEventListener('submit', submitLeave);
+  }
+  function syncPeriod() {
+    var same = $('#leaveStart').value && $('#leaveStart').value === $('#leaveEnd').value;
+    $$('#leavePeriod button').forEach(function (b) {
+      if (b.getAttribute('data-val') !== 'FULL') { b.disabled = !same; if (!same && b.classList.contains('active')) { b.classList.remove('active'); $('#leavePeriod [data-val=FULL]').classList.add('active'); } }
+    });
+  }
+  function initLeaveForm() {
+    if (!$('#leaveStart').value) { $('#leaveStart').value = bkkToday(); $('#leaveEnd').value = bkkToday(); }
+    setThaiHint($('#leaveStart')); setThaiHint($('#leaveEnd')); syncPeriod();
+  }
+  function submitLeave(e) {
+    e.preventDefault();
+    var f = e.target; clearFieldErrors(f);
+    var data = {
+      type: f.type.value, startDate: f.startDate.value, endDate: f.endDate.value,
+      period: $('#leavePeriod .active').getAttribute('data-val'), reason: f.reason.value.trim()
+    };
+    if (!data.type) return showFieldError(f, 'type', 'กรุณาเลือกประเภทการลา');
+    if (!data.startDate) return showFieldError(f, 'startDate', 'กรุณาเลือกวันที่เริ่มลา');
+    if (!data.endDate || data.endDate < data.startDate) return showFieldError(f, 'endDate', 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มลา');
+    if (data.reason.length < 3) return showFieldError(f, 'reason', 'กรุณาระบุเหตุผลการลา');
+    var btn = $('button[type=submit]', f);
+    setBtnLoading(btn, true);
+    fileToPayload(f.attachment.files[0]).then(function (att) {
+      data.attachment = att;
+      return api('leave.submit', data, { silent: true });
+    }).then(function (r) {
+      toast(r.message, 'success');
+      f.reset(); $('[data-file-label]', f).textContent = 'แนบไฟล์ PDF หรือรูปภาพ (ไม่เกิน 5 MB)';
+      $('#leaveStart').value = ''; initLeaveForm();
+      loadMyLeaves();
+    }).catch(function (err) { if (err.code !== 'AUTH') handleFormError(f, err); })
+      .then(function () { setBtnLoading(btn, false); });
+  }
+  function leaveCard(l, mine) {
+    var range = thDate(l.startDate, 'short') + (l.endDate !== l.startDate ? ' – ' + thDate(l.endDate, 'short') : '') + (l.period !== 'FULL' ? ' (' + l.periodLabel + ')' : '');
+    return '<div class="req-card"><div class="head"><div><div class="title">' + esc(l.typeLabel) + ' · ' + esc(l.days) + ' วัน</div>' +
+      '<div class="meta">' + icon('date_range') + ' ' + esc(range) + '</div>' + (mine ? '' : '<div class="meta">' + icon('person') + ' ' + esc(l.fullName) + ' (' + esc(l.staffCode) + ')</div>') + '</div>' +
+      badge(l.status, l.statusLabel) + '</div><div class="reason">' + esc(l.reason) + '</div>' +
+      '<div class="meta">ยื่นเมื่อ ' + esc(l.requestedLabel) + (l.reviewedByName ? ' · พิจารณาโดย ' + esc(l.reviewedByName) + ' ' + esc(l.reviewedLabel) : '') + '</div>' +
+      (l.reviewNote ? '<div class="meta">ความเห็น: ' + esc(l.reviewNote) + '</div>' : '') +
+      '<div class="actions">' + (l.hasAttachment ? '<button type="button" class="btn outline sm" data-view-att="leave" data-id="' + esc(l.leaveId) + '">' + icon('attach_file') + 'เอกสารแนบ</button>' : '') +
+      (mine && l.status === 'PENDING' ? '<button type="button" class="btn ghost sm" data-cancel-leave="' + esc(l.leaveId) + '">' + icon('close') + 'ยกเลิกใบลา</button>' : '') + '</div></div>';
+  }
+  function loadMyLeaves() {
+    api('leave.my', {}, { silent: true }).then(function (list) {
+      var host = $('#myLeaves');
+      host.innerHTML = list.length ? list.map(function (l) { return leaveCard(l, true); }).join('') : emptyState('ยังไม่มีรายการลา', 'event_available');
+      bindRequestButtons(host, loadMyLeaves);
+    }).catch(function (e) { if (e.code !== 'AUTH') toast(e.message, 'error'); });
+  }
+  function bindRequestButtons(host, reload) {
+    $$('[data-view-att]', host).forEach(function (b) { b.addEventListener('click', function () { viewAttachment(b.getAttribute('data-view-att'), b.getAttribute('data-id')); }); });
+    $$('[data-cancel-leave]', host).forEach(function (b) {
+      b.addEventListener('click', function () {
+        confirmDialog({ title: 'ยกเลิกใบลา', message: 'ต้องการยกเลิกใบลานี้ใช่หรือไม่', confirmText: 'ยกเลิกใบลา', danger: true }).then(function (y) {
+          if (y) api('leave.cancel', { leaveId: b.getAttribute('data-cancel-leave') }).then(function (r) { toast(r.message, 'success'); reload(); }).catch(function (e) { toast(e.message, 'error'); });
+        });
+      });
+    });
+    $$('[data-cancel-corr]', host).forEach(function (b) {
+      b.addEventListener('click', function () {
+        confirmDialog({ title: 'ยกเลิกคำร้อง', message: 'ต้องการยกเลิกคำร้องนี้ใช่หรือไม่', confirmText: 'ยกเลิกคำร้อง', danger: true }).then(function (y) {
+          if (y) api('corr.cancel', { requestId: b.getAttribute('data-cancel-corr') }).then(function (r) { toast(r.message, 'success'); reload(); }).catch(function (e) { toast(e.message, 'error'); });
+        });
+      });
+    });
+  }
+
+  /* ------------------------------------------------------------------ correction */
+  function bindCorrectionForm() {
+    var f = $('#corrForm');
+    $('#corrDate').addEventListener('change', function () { setThaiHint($('#corrDate')); });
+    bindFileLabel(f);
+    f.addEventListener('submit', submitCorrection);
+  }
+  function initCorrectionForm() {
+    var today = bkkToday();
+    $('#corrDate').max = today;
+    if (!$('#corrDate').value) $('#corrDate').value = today;
+    setThaiHint($('#corrDate'));
+  }
+  function submitCorrection(e) {
+    e.preventDefault();
+    var f = e.target; clearFieldErrors(f);
+    var data = { date: f.date.value, time: f.time.value, type: ($('input[name=type]:checked', f) || {}).value, reason: f.reason.value.trim() };
+    if (!data.date) return showFieldError(f, 'date', 'กรุณาเลือกวันที่');
+    if (data.date > bkkToday()) return showFieldError(f, 'date', 'ไม่สามารถเลือกวันในอนาคต');
+    if (!/^\d{2}:\d{2}$/.test(data.time)) return showFieldError(f, 'time', 'กรุณาระบุเวลา');
+    if (data.reason.length < 5) return showFieldError(f, 'reason', 'กรุณาระบุเหตุผลอย่างน้อย 5 ตัวอักษร');
+    var btn = $('button[type=submit]', f);
+    setBtnLoading(btn, true);
+    fileToPayload(f.attachment.files[0]).then(function (att) {
+      data.attachment = att;
+      return api('corr.submit', data, { silent: true });
+    }).then(function (r) {
+      toast(r.message, 'success');
+      f.reset(); $('[data-file-label]', f).textContent = 'แนบไฟล์ PDF หรือรูปภาพ (ไม่เกิน 5 MB)';
+      initCorrectionForm(); loadMyCorrections();
+    }).catch(function (err) { if (err.code !== 'AUTH') handleFormError(f, err); })
+      .then(function () { setBtnLoading(btn, false); });
+  }
+  function corrCard(c, mine) {
+    return '<div class="req-card"><div class="head"><div><div class="title">แก้ไข' + esc(c.typeLabel) + ' เป็น ' + esc(c.time) + ' น.</div>' +
+      '<div class="meta">' + icon('event') + ' ' + esc(c.dateLabel) + '</div>' + (mine ? '' : '<div class="meta">' + icon('person') + ' ' + esc(c.fullName) + ' (' + esc(c.staffCode) + ')</div>') +
+      (!mine ? '<div class="meta">เวลาปัจจุบันในระบบ: เข้า ' + esc(c.currentIn || '-') + ' / ออก ' + esc(c.currentOut || '-') + '</div>' : '') + '</div>' +
+      badge(c.status, c.statusLabel) + '</div><div class="reason">' + esc(c.reason) + '</div>' +
+      '<div class="meta">ยื่นเมื่อ ' + esc(c.requestedLabel) + (c.reviewedByName ? ' · พิจารณาโดย ' + esc(c.reviewedByName) + ' ' + esc(c.reviewedLabel) : '') + '</div>' +
+      (c.reviewNote ? '<div class="meta">ความเห็น: ' + esc(c.reviewNote) + '</div>' : '') +
+      '<div class="actions">' + (c.hasAttachment ? '<button type="button" class="btn outline sm" data-view-att="correction" data-id="' + esc(c.requestId) + '">' + icon('attach_file') + 'หลักฐาน</button>' : '') +
+      (mine && c.status === 'PENDING' ? '<button type="button" class="btn ghost sm" data-cancel-corr="' + esc(c.requestId) + '">' + icon('close') + 'ยกเลิกคำร้อง</button>' : '') + '</div></div>';
+  }
+  function loadMyCorrections() {
+    api('corr.my', {}, { silent: true }).then(function (list) {
+      var host = $('#myCorrections');
+      host.innerHTML = list.length ? list.map(function (c) { return corrCard(c, true); }).join('') : emptyState('ยังไม่มีคำร้อง', 'fact_check');
+      bindRequestButtons(host, loadMyCorrections);
+    }).catch(function (e) { if (e.code !== 'AUTH') toast(e.message, 'error'); });
+  }
+
+  /* ------------------------------------------------------------------ admin (lazy load) */
+  function openAdmin() {
+    if (S.adminLoaded && window.Admin) { showView('admin'); window.Admin.show(); return; }
+    api('admin.view', {}, { loadingText: 'กำลังโหลดหน้าผู้ดูแลระบบ...' }).then(function (v) {
+      $('#adminRoot').innerHTML = v.html;
+      // สคริปต์ของหน้า Admin: แยกไฟล์ (v.script) หรือฝังใน HTML (ชุดติดตั้งแบบง่าย)
+      var codes = [];
+      $$('#adminRoot script').forEach(function (el) { codes.push(el.textContent); el.remove(); });
+      if (v.script) codes.push(String(v.script).replace(/^\s*<script>/, '').replace(/<\/script>\s*$/, ''));
+      codes.forEach(function (code) {
+        var s = document.createElement('script');
+        s.text = code;
+        document.body.appendChild(s);
+      });
+      S.adminLoaded = true;
+      showView('admin');
+      window.Admin.init({ role: v.role, roleLabel: v.roleLabel, user: S.user });
+    }).catch(function (e) { if (e.code !== 'AUTH') toast(e.message, 'error'); });
+  }
+  function backToUser() { showView('app'); switchTab('home'); }
+
+  /* ------------------------------------------------------------------ export to Admin script */
+  window.App = {
+    S: S, api: api, toast: toast, modal: modal, confirmDialog: confirmDialog, promptDialog: promptDialog,
+    esc: esc, icon: icon, badge: badge, emptyState: emptyState, thDate: thDate, hm: hm, fmtDistance: fmtDistance,
+    setBtnLoading: setBtnLoading, clearFieldErrors: clearFieldErrors, showFieldError: showFieldError, handleFormError: handleFormError,
+    downloadBase64: downloadBase64, viewAttachment: viewAttachment, loadChartJs: loadChartJs, acquirePosition: acquirePosition,
+    leaveCard: leaveCard, corrCard: corrCard, bkkToday: bkkToday, bkkParts: bkkParts, serverNow: serverNow,
+    fillMonthYear: fillMonthYear, TH_M: TH_M, TH_MS: TH_MS, backToUser: backToUser, doLogout: doLogout, showGeoHelp: showGeoHelp,
+    parseYmd: parseYmd
+  };
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+})();
+</script>
+</body>
+</html>

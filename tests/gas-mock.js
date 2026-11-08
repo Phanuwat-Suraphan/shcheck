@@ -56,7 +56,8 @@ function chainable(target, unknownLog) {
 }
 
 function createGasEnv(opts = {}) {
-  const srcDir = opts.srcDir || path.join(__dirname, '..', 'src');
+  // GAS_SRC=dist → ทดสอบชุดติดตั้งแบบง่าย (3 ไฟล์) แทนโค้ดแยกไฟล์ใน src/
+  const srcDir = opts.srcDir || path.join(__dirname, '..', process.env.GAS_SRC || 'src');
   const clock = opts.clock || new Clock();
   const unknown = new Set();
   const state = {
@@ -193,6 +194,7 @@ function createGasEnv(opts = {}) {
       return chainable(this, unknown);
     }
     deleteRow(r) { this.rows.splice(r - 1, 1); this.maxRows--; return chainable(this, unknown); }
+    clear() { this.rows = []; return chainable(this, unknown); }
     setFrozenRows(n) { this.frozen = n; return chainable(this, unknown); }
     protect() { return chainable({ constructor: { name: 'Protection' } }, unknown); }
     /** test helper: rows as objects */

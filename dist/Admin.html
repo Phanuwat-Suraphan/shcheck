@@ -1,0 +1,951 @@
+<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.0.0
+ * ชุดติดตั้งแบบง่าย: ไฟล์ Admin.html (หน้าผู้บริหาร/ผู้ดูแลระบบ)
+ * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่ -->
+<!-- =====================================================================
+     AdminDashboard.html — หน้าผู้บริหาร/ผู้ดูแลระบบ
+     ไฟล์นี้ไม่ถูกฝังในหน้าเว็บของผู้ใช้ทั่วไป: Server ส่งให้ผ่าน api('admin.view')
+     หลังตรวจสอบสิทธิ์ (ADMIN/EXECUTIVE) แล้วเท่านั้น
+     ===================================================================== -->
+<style>
+  .admin-layout { display: block; padding-top: 12px; padding-bottom: 40px; }
+  .admin-nav { display: flex; gap: 6px; overflow-x: auto; padding: 4px 0 10px; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
+  .admin-nav button {
+    flex-shrink: 0; display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--border); background: #fff; color: var(--text-2);
+    padding: 9px 14px; border-radius: 12px; font-weight: 600; cursor: pointer; min-height: 44px; position: relative;
+  }
+  .admin-nav button .ms { color: var(--sky-500); }
+  .admin-nav button.active { background: var(--navy-800); color: #fff; border-color: var(--navy-800); }
+  .admin-nav button.active .ms { color: var(--sky-200); }
+  .admin-nav .count { min-width: 20px; height: 20px; border-radius: 10px; background: var(--danger-500); color: #fff; font-size: .72rem; display: inline-flex; align-items: center; justify-content: center; padding: 0 6px; }
+  .admin-main { min-width: 0; }
+  .admin-grid-2 { display: grid; grid-template-columns: 1fr; gap: 16px; margin-top: 16px; align-items: start; }
+  .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 14px; }
+  .toolbar .field { margin-bottom: 0; flex: 1 1 160px; }
+  .toolbar .field.grow { flex: 2 1 240px; }
+  .report-doc { background: #fff; border-radius: var(--radius-lg); border: 1px solid var(--border); padding: 18px; box-shadow: var(--shadow-sm); }
+  .report-head { text-align: center; border-bottom: 2px solid var(--navy-800); padding-bottom: 12px; margin-bottom: 14px; }
+  .report-head .r-school { font-family: var(--font-head); font-weight: 600; font-size: 1.15rem; color: var(--navy-900); }
+  .report-head .r-title { font-family: var(--font-head); font-weight: 600; font-size: 1.05rem; color: var(--navy-800); }
+  .report-head .r-meta { font-size: .86rem; color: var(--muted); }
+  .export-bar { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0; }
+  .set-group { border-top: 1px solid var(--border); padding-top: 14px; margin-top: 14px; }
+  .set-group:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
+  .set-group h3 { display: flex; align-items: center; gap: 8px; font-size: 1rem; }
+  .set-group h3 .ms { color: var(--sky-500); }
+  .days-check { display: flex; flex-wrap: wrap; gap: 8px; }
+  .days-check label { border: 1.5px solid var(--border-strong); border-radius: 10px; padding: 8px 12px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 600; }
+  .days-check input { accent-color: var(--navy-700); width: 18px; height: 18px; }
+  .days-check label:has(input:checked) { border-color: var(--sky-500); background: var(--sky-50); }
+  .audit-details { font-family: 'Courier New', monospace; font-size: .78rem; white-space: pre-wrap; word-break: break-all; color: var(--text-2); max-width: 520px; }
+  .reg-card { border: 1px solid var(--border); border-radius: 16px; padding: 14px; background: #fff; display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+  .reg-card .info { flex: 1 1 240px; min-width: 0; }
+  .reg-card .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .mini-link { display: inline-flex; align-items: center; gap: 2px; font-size: .8rem; color: var(--navy-700); text-decoration: none; }
+  .mini-link .ms { font-size: 16px; }
+  @media (min-width: 1024px) {
+    .admin-layout { display: grid; grid-template-columns: 236px minmax(0, 1fr); gap: 20px; align-items: start; }
+    .admin-nav { flex-direction: column; position: sticky; top: 76px; overflow: visible; }
+    .admin-nav button { justify-content: flex-start; width: 100%; }
+    .admin-nav .count { margin-left: auto; }
+    .admin-grid-2 { grid-template-columns: 1fr 1.4fr; }
+  }
+</style>
+
+<header class="appbar">
+  <div class="container">
+    <div class="brand">
+      <div class="brand-mark"><span class="ms fill">admin_panel_settings</span></div>
+      <div class="brand-text">
+        <span class="brand-title">ระบบผู้บริหาร / ผู้ดูแลระบบ</span>
+        <span class="brand-sub" id="admRoleText">โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่</span>
+      </div>
+    </div>
+    <div class="spacer"></div>
+    <button type="button" class="btn white sm" id="admBackBtn"><span class="ms">fingerprint</span><span class="hide-xs">หน้าลงเวลา</span></button>
+    <button type="button" class="icon-btn" id="admLogoutBtn" aria-label="ออกจากระบบ" title="ออกจากระบบ"><span class="ms">logout</span></button>
+  </div>
+</header>
+
+<div class="container admin-layout">
+  <nav class="admin-nav" id="adminNav" aria-label="เมนูผู้ดูแลระบบ">
+    <button type="button" data-sec="overview" class="active"><span class="ms">dashboard</span>ภาพรวม</button>
+    <button type="button" data-sec="registrations" data-admin-only><span class="ms">how_to_reg</span>อนุมัติสมาชิก<span class="count" data-count="registrations" hidden></span></button>
+    <button type="button" data-sec="members" data-admin-only><span class="ms">groups</span>จัดการสมาชิก</button>
+    <button type="button" data-sec="leaves"><span class="ms">event_busy</span>อนุมัติการลา<span class="count" data-count="leaves" hidden></span></button>
+    <button type="button" data-sec="corrections"><span class="ms">edit_calendar</span>คำร้องแก้ไขเวลา<span class="count" data-count="corrections" hidden></span></button>
+    <button type="button" data-sec="reports"><span class="ms">analytics</span>รายงานและสถิติ</button>
+    <button type="button" data-sec="calendar"><span class="ms">calendar_month</span>ปฏิทินวันหยุด</button>
+    <button type="button" data-sec="settings" data-admin-only><span class="ms">settings</span>ตั้งค่าระบบ</button>
+    <button type="button" data-sec="audit" data-admin-only><span class="ms">policy</span>ประวัติการใช้งาน</button>
+  </nav>
+
+  <main class="admin-main">
+    <!-- ================= ภาพรวม ================= -->
+    <section data-panel-sec="overview">
+      <div class="page-head">
+        <h2><span class="ms">dashboard</span>ภาพรวมวันนี้</h2>
+        <div class="row"><span class="badge navy" id="ovDate">-</span><button type="button" class="btn outline sm" id="ovRefresh"><span class="ms">refresh</span>รีเฟรช</button></div>
+      </div>
+      <div id="ovWarnings" class="stack" style="margin-bottom:14px"></div>
+      <div class="grid grid-stats" id="ovStats"></div>
+      <div class="admin-grid-2">
+        <div class="card">
+          <div class="card-title"><span class="ms">donut_large</span>สัดส่วนสถานะบุคลากรวันนี้</div>
+          <div id="ovSegbar"></div>
+        </div>
+        <div class="card">
+          <div class="card-title"><span class="ms">bar_chart</span>การมาปฏิบัติงาน 7 วันทำงานล่าสุด</div>
+          <div class="chart-box"><canvas id="ovTrend" aria-label="กราฟแท่งการมาปฏิบัติงาน 7 วันทำงานล่าสุด" role="img"></canvas></div>
+          <div class="legend" id="ovTrendLegend"></div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <div class="row-between">
+          <div class="card-title"><span class="ms">fact_check</span>การลงเวลาวันนี้รายบุคคล</div>
+          <div class="field" style="margin:0;min-width:200px"><input type="search" id="ovSearch" placeholder="ค้นหาชื่อ/รหัส" aria-label="ค้นหา"></div>
+        </div>
+        <div id="ovTable"></div>
+      </div>
+    </section>
+
+    <!-- ================= อนุมัติสมาชิก ================= -->
+    <section data-panel-sec="registrations" hidden>
+      <div class="page-head"><h2><span class="ms">how_to_reg</span>ผู้สมัครสมาชิกที่รออนุมัติ</h2>
+        <button type="button" class="btn outline sm" data-reload="registrations"><span class="ms">refresh</span>รีเฟรช</button></div>
+      <div class="alert info" style="margin-bottom:14px"><span class="ms">info</span><div>ตรวจสอบชื่อ รหัสบุคลากร และตำแหน่งให้ถูกต้องก่อนอนุมัติ ผู้ที่ได้รับอนุมัติจะเริ่มนับสถิติตั้งแต่วันที่อนุมัติ</div></div>
+      <div class="list" id="regList"></div>
+    </section>
+
+    <!-- ================= จัดการสมาชิก ================= -->
+    <section data-panel-sec="members" hidden>
+      <div class="page-head"><h2><span class="ms">groups</span>จัดการสมาชิก</h2>
+        <button type="button" class="btn" id="memAddBtn"><span class="ms">person_add</span>เพิ่มบุคลากร</button></div>
+      <div class="card">
+        <div class="toolbar">
+          <div class="field grow"><label for="memSearch">ค้นหา</label><input type="search" id="memSearch" placeholder="ชื่อ / รหัสบุคลากร / ชื่อผู้ใช้"></div>
+          <div class="field"><label for="memStatus">สถานะ</label><select id="memStatus"><option value="ALL">ทั้งหมด</option><option value="ACTIVE">ใช้งาน</option><option value="PENDING">รออนุมัติ</option><option value="INACTIVE">ปิดใช้งาน</option><option value="REJECTED">ไม่อนุมัติ</option></select></div>
+          <div class="field"><label for="memRole">ประเภทผู้ใช้</label><select id="memRole"><option value="ALL">ทั้งหมด</option><option value="USER">บุคลากร</option><option value="EXECUTIVE">ผู้บริหาร</option><option value="ADMIN">ผู้ดูแลระบบ</option></select></div>
+        </div>
+        <div id="memTable"></div>
+      </div>
+    </section>
+
+    <!-- ================= อนุมัติการลา ================= -->
+    <section data-panel-sec="leaves" hidden>
+      <div class="page-head"><h2><span class="ms">event_busy</span>การลาของบุคลากร</h2></div>
+      <div class="toolbar">
+        <div class="seg" id="lvStatusSeg"><button type="button" data-val="PENDING" class="active">รออนุมัติ</button><button type="button" data-val="APPROVED">อนุมัติแล้ว</button><button type="button" data-val="REJECTED">ไม่อนุมัติ</button><button type="button" data-val="ALL">ทั้งหมด</button></div>
+        <div class="field grow"><input type="search" id="lvSearch" placeholder="ค้นหาชื่อ / รหัส" aria-label="ค้นหา"></div>
+      </div>
+      <div class="list" id="lvList"></div>
+    </section>
+
+    <!-- ================= คำร้องแก้ไขเวลา ================= -->
+    <section data-panel-sec="corrections" hidden>
+      <div class="page-head"><h2><span class="ms">edit_calendar</span>คำร้องแก้ไขการลงเวลา</h2></div>
+      <div class="alert info" style="margin-bottom:12px"><span class="ms">history_edu</span><div>เมื่ออนุมัติ ระบบจะสร้างรายการเวลาใหม่และเก็บรายการเดิมไว้เป็นประวัติ (ไม่ลบ) พร้อมบันทึกผู้อนุมัติใน Audit Log</div></div>
+      <div class="toolbar">
+        <div class="seg" id="crStatusSeg"><button type="button" data-val="PENDING" class="active">รออนุมัติ</button><button type="button" data-val="APPROVED">อนุมัติแล้ว</button><button type="button" data-val="REJECTED">ไม่อนุมัติ</button><button type="button" data-val="ALL">ทั้งหมด</button></div>
+        <div class="field grow"><input type="search" id="crSearch" placeholder="ค้นหาชื่อ / รหัส" aria-label="ค้นหา"></div>
+      </div>
+      <div class="list" id="crList"></div>
+    </section>
+
+    <!-- ================= รายงาน ================= -->
+    <section data-panel-sec="reports" hidden>
+      <div class="page-head"><h2><span class="ms">analytics</span>รายงานและสถิติ</h2></div>
+      <div class="card">
+        <div class="seg" id="repTypeSeg" style="margin-bottom:14px">
+          <button type="button" data-val="daily" class="active">รายวัน</button><button type="button" data-val="monthly">รายเดือน</button>
+          <button type="button" data-val="yearly">รายปี</button><button type="button" data-val="individual">รายบุคคล</button>
+        </div>
+        <div class="toolbar">
+          <div class="field" data-rep="daily"><label for="repDate">วันที่</label><input type="date" id="repDate"></div>
+          <div class="field" data-rep="monthly" hidden><label for="repMonth">เดือน</label><select id="repMonth"></select></div>
+          <div class="field" data-rep="monthly yearly" hidden><label for="repYear">ปี (พ.ศ.)</label><select id="repYear"></select></div>
+          <div class="field grow" data-rep="individual" hidden><label for="repEmp">บุคลากร</label><select id="repEmp"></select></div>
+          <div class="field" data-rep="individual" hidden><label for="repFrom">ตั้งแต่วันที่</label><input type="date" id="repFrom"></div>
+          <div class="field" data-rep="individual" hidden><label for="repTo">ถึงวันที่</label><input type="date" id="repTo"></div>
+          <button type="button" class="btn" id="repRunBtn"><span class="ms">search</span>แสดงรายงาน</button>
+        </div>
+      </div>
+      <div class="export-bar" id="repExportBar" hidden>
+        <button type="button" class="btn success" data-export="xlsx"><span class="ms">table_view</span>Export Excel (.xlsx)</button>
+        <button type="button" class="btn danger" data-export="pdf"><span class="ms">picture_as_pdf</span>Export PDF</button>
+        <button type="button" class="btn outline" id="repPrintBtn"><span class="ms">print</span>พิมพ์รายงาน</button>
+      </div>
+      <div id="repResult"></div>
+    </section>
+
+    <!-- ================= ปฏิทิน ================= -->
+    <section data-panel-sec="calendar" hidden>
+      <div class="page-head"><h2><span class="ms">calendar_month</span>ปฏิทินวันทำงานและวันหยุด</h2>
+        <div class="field" style="margin:0"><select id="calYear" aria-label="ปี"></select></div></div>
+      <div class="alert info" style="margin-bottom:14px"><span class="ms">event_repeat</span><div id="calWorkdaysInfo">วันทำงานประจำสัปดาห์: -</div></div>
+      <div class="admin-grid-2" style="margin-top:0">
+        <div class="card" id="calFormCard">
+          <div class="card-title"><span class="ms">add_circle</span>เพิ่มวันหยุด / วันทำงานพิเศษ</div>
+          <form id="calForm" novalidate>
+            <div class="form-grid two">
+              <div class="field"><label for="calStart">ตั้งแต่วันที่</label><input type="date" id="calStart" required></div>
+              <div class="field"><label for="calEnd">ถึงวันที่</label><input type="date" id="calEnd" required></div>
+            </div>
+            <div class="field"><label for="calType">ประเภท</label>
+              <select id="calType"><option value="OFFICIAL_HOLIDAY">วันหยุดราชการ</option><option value="SPECIAL_HOLIDAY">วันหยุดพิเศษ (เช่น ปิดภาคเรียน/กิจกรรม)</option><option value="SPECIAL_WORKDAY">วันทำงานพิเศษ (เช่น ทำงานวันเสาร์ชดเชย)</option></select></div>
+            <div class="field"><label for="calTitle">ชื่อ/รายละเอียด</label><input type="text" id="calTitle" maxlength="150" placeholder="เช่น วันมาฆบูชา"></div>
+            <button type="submit" class="btn block"><span class="ms">save</span>บันทึก</button>
+          </form>
+          <div class="divider">หรือ</div>
+          <button type="button" class="btn outline block" id="calFixedBtn"><span class="ms">auto_awesome</span>เพิ่มวันหยุดราชการที่มีวันที่คงที่ของปีนี้</button>
+          <p class="tiny muted" style="margin-top:8px">วันหยุดทางพุทธศาสนา (มาฆบูชา วิสาขบูชา อาสาฬหบูชา เข้าพรรษา) วันหยุดชดเชย และวันหยุดพิเศษตามมติ ครม. เปลี่ยนแปลงทุกปี กรุณาเพิ่มเองตามประกาศของทางราชการ</p>
+        </div>
+        <div class="card">
+          <div class="card-title"><span class="ms">list</span>รายการในปีที่เลือก</div>
+          <div id="calList"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= ตั้งค่า ================= -->
+    <section data-panel-sec="settings" hidden>
+      <div class="page-head"><h2><span class="ms">settings</span>ตั้งค่าระบบ</h2><span class="badge muted" id="setServerTime">-</span></div>
+      <form id="setForm" class="card" novalidate>
+        <div class="set-group">
+          <h3><span class="ms">location_on</span>พื้นที่ลงเวลา (Geofencing)</h3>
+          <div class="form-grid two">
+            <div class="field" data-field="SCHOOL_LAT"><label for="sLat">ละติจูด (Latitude)</label><input type="text" inputmode="decimal" id="sLat" name="SCHOOL_LAT" placeholder="เช่น 18.788300"><span class="err"></span></div>
+            <div class="field" data-field="SCHOOL_LNG"><label for="sLng">ลองจิจูด (Longitude)</label><input type="text" inputmode="decimal" id="sLng" name="SCHOOL_LNG" placeholder="เช่น 98.985300"><span class="err"></span></div>
+          </div>
+          <div class="row" style="margin-bottom:14px">
+            <button type="button" class="btn outline sm" id="sUseMyLoc"><span class="ms">my_location</span>ใช้ตำแหน่งปัจจุบันของฉัน</button>
+            <a class="btn ghost sm" id="sMapLink" target="_blank" rel="noopener" href="#" hidden><span class="ms">map</span>ดูบนแผนที่</a>
+            <span class="small muted" id="sLocNote"></span>
+          </div>
+          <div class="form-grid two">
+            <div class="field" data-field="GEOFENCE_RADIUS_M"><label for="sRadius">รัศมีที่อนุญาต (เมตร)</label><input type="number" id="sRadius" name="GEOFENCE_RADIUS_M" min="10" max="5000" step="1"><span class="hint">ค่าทดลอง 150 เมตร</span><span class="err"></span></div>
+            <div class="field" data-field="MAX_GPS_ACCURACY_M"><label for="sAcc">ค่าความคลาดเคลื่อน GPS สูงสุด (เมตร)</label><input type="number" id="sAcc" name="MAX_GPS_ACCURACY_M" min="5" max="500" step="1"><span class="hint">ค่าทดลอง 50 เมตร</span><span class="err"></span></div>
+          </div>
+          <div class="alert warning"><span class="ms">gpp_maybe</span><div>ข้อจำกัด: การตรวจ GPS ผ่านเว็บไม่สามารถป้องกันแอปปลอมพิกัด (Fake GPS) ได้ทั้งหมด ควรใช้ร่วมกับการกำกับดูแลของผู้บริหาร</div></div>
+        </div>
+        <div class="set-group">
+          <h3><span class="ms">schedule</span>เวลาปฏิบัติงาน</h3>
+          <div class="form-grid two">
+            <div class="field" data-field="WORK_START_TIME"><label for="sStart">เวลาเริ่มปฏิบัติงาน</label><input type="time" id="sStart" name="WORK_START_TIME"><span class="err"></span></div>
+            <div class="field" data-field="LATE_AFTER_TIME"><label for="sLate">ถือว่ามาสายเมื่อลงเวลาหลัง</label><input type="time" id="sLate" name="LATE_AFTER_TIME"><span class="err"></span></div>
+            <div class="field" data-field="WORK_END_TIME"><label for="sEnd">เวลาเลิกงาน</label><input type="time" id="sEnd" name="WORK_END_TIME"><span class="err"></span></div>
+            <div class="field" data-field="CHECKIN_EARLIEST_TIME"><label for="sEarliest">เปิดให้ลงเวลาเข้าตั้งแต่</label><input type="time" id="sEarliest" name="CHECKIN_EARLIEST_TIME"><span class="err"></span></div>
+          </div>
+          <div class="field" data-field="WORK_DAYS"><span class="field-label">วันทำงานประจำสัปดาห์</span>
+            <div class="days-check" id="sWorkDays">
+              <label><input type="checkbox" value="1">จันทร์</label><label><input type="checkbox" value="2">อังคาร</label><label><input type="checkbox" value="3">พุธ</label>
+              <label><input type="checkbox" value="4">พฤหัสบดี</label><label><input type="checkbox" value="5">ศุกร์</label><label><input type="checkbox" value="6">เสาร์</label><label><input type="checkbox" value="0">อาทิตย์</label>
+            </div><span class="err"></span>
+          </div>
+          <label class="switch"><input type="checkbox" name="ALLOW_HOLIDAY_CHECKIN"><span class="track"></span>อนุญาตให้ลงเวลาในวันหยุด (ปฏิบัติงานวันหยุด)</label>
+        </div>
+        <div class="set-group">
+          <h3><span class="ms">lock</span>ความปลอดภัย</h3>
+          <div class="form-grid two">
+            <div class="field" data-field="SESSION_TIMEOUT_MIN"><label for="sTimeout">ออกจากระบบอัตโนมัติเมื่อไม่ใช้งาน (นาที)</label><input type="number" id="sTimeout" name="SESSION_TIMEOUT_MIN" min="5" max="360"><span class="err"></span></div>
+            <div class="field" data-field="MAX_LOGIN_ATTEMPTS"><label for="sAttempts">ใส่รหัสผ่านผิดได้ (ครั้ง)</label><input type="number" id="sAttempts" name="MAX_LOGIN_ATTEMPTS" min="3" max="20"><span class="err"></span></div>
+            <div class="field" data-field="LOCKOUT_MIN"><label for="sLockout">ระยะเวลาล็อกบัญชี (นาที)</label><input type="number" id="sLockout" name="LOCKOUT_MIN" min="1" max="1440"><span class="err"></span></div>
+          </div>
+          <label class="switch"><input type="checkbox" name="ALLOW_REGISTRATION"><span class="track"></span>เปิดให้บุคลากรสมัครสมาชิกด้วยตนเอง</label>
+        </div>
+        <div class="set-group">
+          <h3><span class="ms">database</span>ข้อมูลและความเป็นส่วนตัว</h3>
+          <div class="form-grid two">
+            <div class="field" data-field="GPS_RETENTION_DAYS"><label for="sRetention">ระยะเวลาเก็บพิกัด GPS (วัน)</label><input type="number" id="sRetention" name="GPS_RETENTION_DAYS" min="30" max="3650"><span class="hint">พ้นกำหนดระบบจะลบพิกัดอัตโนมัติทุกคืน</span><span class="err"></span></div>
+            <div class="field" data-field="CORRECTION_MAX_DAYS"><label for="sCorrDays">ยื่นคำร้องแก้ไขเวลาย้อนหลังได้ (วัน)</label><input type="number" id="sCorrDays" name="CORRECTION_MAX_DAYS" min="1" max="365"><span class="err"></span></div>
+          </div>
+        </div>
+        <div class="set-group">
+          <div class="alert warning" style="margin-bottom:12px"><span class="ms">rule</span><div>ค่าเริ่มต้นเป็น<b>ค่าตัวอย่าง</b> กรุณาตรวจสอบให้ตรงกับระเบียบ/คำสั่งของโรงเรียนก่อนใช้งานจริง</div></div>
+          <div class="field" data-field="SETTINGS_CONFIRMED" style="margin-bottom:12px">
+            <label class="switch"><input type="checkbox" name="SETTINGS_CONFIRMED"><span class="track"></span>ยืนยันว่าได้ตรวจสอบการตั้งค่าตามระเบียบของโรงเรียนแล้ว</label><span class="err"></span>
+          </div>
+          <button type="submit" class="btn lg block"><span class="ms">save</span>บันทึกการตั้งค่า</button>
+        </div>
+      </form>
+      <div class="card" style="margin-top:16px">
+        <div class="card-title"><span class="ms">build</span>งานบำรุงรักษาข้อมูล</div>
+        <div class="toolbar">
+          <div class="field"><label for="mtMonth">เดือน</label><select id="mtMonth"></select></div>
+          <div class="field"><label for="mtYear">ปี (พ.ศ.)</label><select id="mtYear"></select></div>
+          <button type="button" class="btn outline" id="mtRebuildBtn"><span class="ms">sync</span>คำนวณสรุปรายวันใหม่</button>
+        </div>
+        <p class="small muted">ใช้เมื่อมีการแก้ไขข้อมูลในชีตโดยตรง หรือเปลี่ยนเวลาทำงาน/ปฏิทินย้อนหลัง (ไม่แก้ไขรายการลงเวลาต้นฉบับ)</p>
+        <button type="button" class="btn ghost" id="mtRunBtn"><span class="ms">cleaning_services</span>ลบพิกัด GPS ที่เกินระยะเวลาเก็บรักษาทันที</button>
+      </div>
+    </section>
+
+    <!-- ================= Audit Log ================= -->
+    <section data-panel-sec="audit" hidden>
+      <div class="page-head"><h2><span class="ms">policy</span>ประวัติการใช้งานระบบ (Audit Log)</h2></div>
+      <div class="card">
+        <div class="toolbar">
+          <div class="field grow"><label for="auSearch">ค้นหา</label><input type="search" id="auSearch" placeholder="ชื่อ / การกระทำ / รหัส"></div>
+          <div class="field"><label for="auAction">การกระทำ</label><select id="auAction"></select></div>
+          <button type="button" class="btn" id="auRunBtn"><span class="ms">search</span>ค้นหา</button>
+        </div>
+        <div id="auTable"></div>
+      </div>
+    </section>
+  </main>
+</div>
+<script>
+/* ==========================================================================
+   AdminScript.html — Client ของหน้าผู้บริหาร/ผู้ดูแลระบบ (โหลดหลังตรวจสิทธิ์ที่ Server)
+   ทุกปุ่มเรียก api() ซึ่ง Server ตรวจ Role อีกครั้งเสมอ
+   ========================================================================== */
+window.Admin = (function () {
+  'use strict';
+  var A = window.App;
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+  var esc = A.esc, icon = A.icon, badge = A.badge;
+  var st = { role: null, user: null, sec: 'overview', charts: {}, overview: null, members: [], report: null, repType: 'daily', emps: null, lvStatus: 'PENDING', crStatus: 'PENDING', bound: false };
+  var COLORS = { onTime: '#0CA30C', leave: '#2A78D6', late: '#EDA100', absent: '#D03B3B', notYet: '#94A3B8', grid: '#EEF2F7', text: '#334155' };
+  var ROLE_LABEL = { USER: 'บุคลากร', EXECUTIVE: 'ผู้บริหาร', ADMIN: 'ผู้ดูแลระบบ' };
+  var POSITIONS = ['ผู้อำนวยการ', 'ครู', 'บุคลากรทางการศึกษา', 'เจ้าหน้าที่อื่น ๆ'];
+  var ACTIONS = {
+    LOGIN: 'เข้าสู่ระบบ', LOGOUT: 'ออกจากระบบ', LOGIN_LOCKED: 'ล็อกบัญชี (รหัสผิดเกินกำหนด)', REGISTER: 'สมัครสมาชิก',
+    PASSWORD_CHANGED: 'เปลี่ยนรหัสผ่าน', PASSWORD_CHANGE_FAILED: 'เปลี่ยนรหัสผ่านไม่สำเร็จ', PASSWORD_RESET_BY_ADMIN: 'รีเซ็ตรหัสผ่านโดยผู้ดูแล',
+    ACCOUNT_UNLOCK: 'ปลดล็อกบัญชี', ACCESS_DENIED: 'พยายามเข้าถึงโดยไม่มีสิทธิ์', REGISTRATION_APPROVE: 'อนุมัติสมาชิก', REGISTRATION_REJECT: 'ไม่อนุมัติสมาชิก',
+    EMPLOYEE_CREATE: 'เพิ่มบุคลากร', EMPLOYEE_UPDATE: 'แก้ไขข้อมูลบุคลากร', EMPLOYEE_ACTIVATE: 'เปิดใช้งานบัญชี', EMPLOYEE_DEACTIVATE: 'ปิดใช้งานบัญชี',
+    EMPLOYEE_ROLE_CHANGE: 'เปลี่ยนประเภทผู้ใช้', EMPLOYEE_DELETE: 'ลบบัญชี', CHECKIN_REJECTED: 'ลงเวลาเข้าไม่ผ่าน (GPS)', CHECKOUT_REJECTED: 'ลงเวลาออกไม่ผ่าน (GPS)',
+    LEAVE_SUBMIT: 'ยื่นใบลา', LEAVE_CANCEL: 'ยกเลิกใบลา', LEAVE_APPROVE: 'อนุมัติใบลา', LEAVE_REJECT: 'ไม่อนุมัติใบลา', LEAVE_REVOKE: 'ยกเลิกการอนุมัติใบลา',
+    CORRECTION_SUBMIT: 'ยื่นคำร้องแก้ไขเวลา', CORRECTION_CANCEL: 'ยกเลิกคำร้อง', CORRECTION_APPROVE: 'อนุมัติคำร้องแก้ไขเวลา', CORRECTION_REJECT: 'ไม่อนุมัติคำร้อง',
+    SETTINGS_UPDATE: 'แก้ไขการตั้งค่า', CALENDAR_ADD: 'เพิ่มวันในปฏิทิน', CALENDAR_REMOVE: 'ลบวันในปฏิทิน', CALENDAR_ADD_FIXED: 'เพิ่มวันหยุดราชการคงที่',
+    REPORT_EXPORT: 'ส่งออกรายงาน', SUMMARY_REBUILD: 'คำนวณสรุปรายวันใหม่', MAINTENANCE: 'งานบำรุงรักษาข้อมูล',
+    BOOTSTRAP_ADMIN_CREATED: 'สร้างผู้ดูแลระบบคนแรก', FIRST_RUN_SETUP: 'ติดตั้งครั้งแรกผ่านหน้าเว็บ', EMERGENCY_ADMIN_RESET: 'กู้คืนสิทธิ์ผู้ดูแลระบบ'
+  };
+
+  function isAdmin() { return st.role === 'ADMIN'; }
+  function err(e) { if (e && e.code !== 'AUTH') A.toast(e.message, 'error', 5500); }
+  function setOpts(sel, list, value) {
+    sel.innerHTML = list.map(function (o) { return '<option value="' + esc(o[0]) + '">' + esc(o[1]) + '</option>'; }).join('');
+    if (value !== undefined) sel.value = value;
+  }
+  function segValue(id) { var a = $('#' + id + ' .active'); return a ? a.getAttribute('data-val') : null; }
+  function bindSeg(id, cb) {
+    $$('#' + id + ' button').forEach(function (b) {
+      b.addEventListener('click', function () { $$('#' + id + ' button').forEach(function (x) { x.classList.toggle('active', x === b); }); cb(b.getAttribute('data-val')); });
+    });
+  }
+  function debounce(fn, ms) { var t; return function () { clearTimeout(t); t = setTimeout(fn, ms || 300); }; }
+  function statCard(tone, ic, value, unit, label, sec) {
+    return '<div class="stat-card tone-' + tone + (sec ? ' clickable" data-go-sec="' + sec : '') + '"><span class="stat-icon">' + icon(ic) + '</span>' +
+      '<div class="stat-value">' + esc(value) + '<span class="stat-unit">' + esc(unit) + '</span></div><div class="stat-label">' + esc(label) + '</div></div>';
+  }
+  function destroyChart(key) { if (st.charts[key]) { try { st.charts[key].destroy(); } catch (e) { /* ignore */ } delete st.charts[key]; } }
+
+  /* ------------------------------------------------------------------ init / nav */
+  function init(o) {
+    st.role = o.role; st.user = o.user;
+    $('#admRoleText').textContent = o.roleLabel + ' · ' + o.user.fullName;
+    if (!isAdmin()) $$('[data-admin-only]').forEach(function (b) { b.remove(); });
+    $$('#adminNav [data-sec]').forEach(function (b) { b.addEventListener('click', function () { go(b.getAttribute('data-sec')); }); });
+    $('#admBackBtn').addEventListener('click', function () { A.backToUser(); });
+    $('#admLogoutBtn').addEventListener('click', function () { A.doLogout(); });
+    document.getElementById('adminRoot').addEventListener('click', function (e) {
+      var g = e.target.closest('[data-go-sec]'); if (g) go(g.getAttribute('data-go-sec'));
+      var r = e.target.closest('[data-reload]'); if (r) go(r.getAttribute('data-reload'));
+    });
+    bindOverview(); bindMembers(); bindRequests(); bindReports(); bindCalendar(); bindSettings(); bindAudit();
+    go('overview');
+  }
+  function show() { go(st.sec); }
+  function destroy() { Object.keys(st.charts).forEach(destroyChart); }
+  function go(sec) {
+    if (!$('#adminNav [data-sec="' + sec + '"]')) sec = 'overview';
+    st.sec = sec;
+    $$('#adminNav [data-sec]').forEach(function (b) { b.classList.toggle('active', b.getAttribute('data-sec') === sec); });
+    $$('[data-panel-sec]').forEach(function (p) { p.hidden = p.getAttribute('data-panel-sec') !== sec; });
+    window.scrollTo(0, 0);
+    ({ overview: loadOverview, registrations: loadRegistrations, members: loadMembers, leaves: loadLeaves, corrections: loadCorrections,
+      reports: initReports, calendar: loadCalendar, settings: loadSettings, audit: loadAudit })[sec]();
+  }
+  function setCounts(p) {
+    Object.keys(p).forEach(function (k) {
+      var el = $('[data-count="' + k + '"]'); if (!el) return;
+      el.hidden = !p[k]; el.textContent = p[k];
+    });
+  }
+
+  /* ------------------------------------------------------------------ overview */
+  function bindOverview() {
+    $('#ovRefresh').addEventListener('click', loadOverview);
+    $('#ovSearch').addEventListener('input', debounce(renderOverviewTable, 200));
+  }
+  function loadOverview() {
+    A.api('admin.overview', {}, { loadingText: 'กำลังโหลดภาพรวม...' }).then(function (o) {
+      st.overview = o;
+      var c = o.counts;
+      $('#ovDate').textContent = A.thDate(o.date, 'long') + (o.isWorkday ? '' : ' · ' + o.holidayName);
+      $('#ovWarnings').innerHTML = o.warnings.map(function (w) {
+        return '<div class="alert warning">' + icon('warning') + '<div>' + esc(w) + (isAdmin() ? ' <button type="button" class="link-btn" data-go-sec="settings">ไปหน้าตั้งค่า</button>' : '') + '</div></div>';
+      }).join('');
+      $('#ovStats').innerHTML = [
+        statCard('navy', 'groups', o.totalStaff, 'คน', 'บุคลากรทั้งหมด', isAdmin() ? 'members' : null),
+        statCard('success', 'how_to_reg', c.present, 'คน', 'มาปฏิบัติงานวันนี้'),
+        statCard('warning', 'schedule', c.late, 'คน', 'มาสาย'),
+        statCard('sky', 'event_busy', c.leave, 'คน', 'ลา', 'leaves'),
+        statCard('danger', 'person_cancel', c.absent, 'คน', 'ขาดงาน' + (o.isWorkday ? ' (หลัง ' + o.workEnd + ' น.)' : '')),
+        statCard('muted', 'hourglass_empty', c.notYet, 'คน', 'ยังไม่ได้ลงเวลา'),
+        statCard('warning', 'rule', c.incomplete, 'คน', 'ลงเวลาไม่ครบ' + (c.inProgress ? ' (ยังไม่ออก ' + c.inProgress + ')' : '')),
+        statCard('navy', 'person_add', o.pending.registrations, 'คน', 'สมัครสมาชิกรออนุมัติ', isAdmin() ? 'registrations' : null)
+      ].join('');
+      setCounts(o.pending);
+      renderSegbar();
+      renderTrend(o.trend);
+      renderOverviewTable();
+    }).catch(err);
+  }
+  /** สัดส่วนสถานะวันนี้: แถบแบ่งส่วน (อ่านง่ายกว่ากราฟวงกลม) + ป้ายกำกับพร้อมจำนวน */
+  function renderSegbar() {
+    var by = {};
+    (st.overview.today || []).forEach(function (r) { by[r.status] = (by[r.status] || 0) + 1; });
+    var parts = [['ตรงเวลา', by.PRESENT || 0, COLORS.onTime], ['ลา', by.LEAVE || 0, COLORS.leave], ['มาสาย', by.LATE || 0, COLORS.late],
+      ['ขาดงาน', by.ABSENT || 0, COLORS.absent], ['ยังไม่ลงเวลา', by.NOT_YET || 0, COLORS.notYet]];
+    if (by.HOLIDAY_WORK) parts.push(['ปฏิบัติงานวันหยุด', by.HOLIDAY_WORK, '#1B4F8A']);
+    var total = parts.reduce(function (a, p) { return a + p[1]; }, 0);
+    if (!total) { $('#ovSegbar').innerHTML = A.emptyState(st.overview.isWorkday ? 'ยังไม่มีบุคลากรที่ต้องลงเวลาวันนี้' : 'วันนี้เป็นวันหยุด', 'groups'); return; }
+    $('#ovSegbar').innerHTML = '<div class="segbar" role="img" aria-label="สัดส่วนสถานะบุคลากรวันนี้">' +
+      parts.filter(function (p) { return p[1] > 0; }).map(function (p) {
+        return '<div style="flex-grow:' + p[1] + ';background:' + p[2] + '" title="' + esc(p[0]) + ' ' + p[1] + ' คน (' + Math.round(p[1] / total * 100) + '%)"></div>';
+      }).join('') + '</div><div class="segbar-legend">' +
+      parts.map(function (p) {
+        return '<div class="it"><i style="background:' + p[2] + '"></i>' + esc(p[0]) + '<b>' + p[1] + ' คน · ' + Math.round(p[1] / total * 100) + '%</b></div>';
+      }).join('') + '</div>';
+  }
+  function stackedBarConfig(labels, series, opts) {
+    var ds = [['ตรงเวลา', series.onTime, COLORS.onTime], ['ลา', series.leave, COLORS.leave], ['มาสาย', series.late, COLORS.late], ['ขาดงาน', series.absent, COLORS.absent]];
+    return {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: ds.map(function (d) {
+          return { label: d[0], data: d[1], backgroundColor: d[2], borderColor: '#FFFFFF', borderWidth: { top: 2 }, borderSkipped: false, borderRadius: 4, maxBarThickness: 34, stack: 's' };
+        })
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { title: function (it) { return (opts && opts.titlePrefix ? opts.titlePrefix : '') + it[0].label; }, label: function (ctx) { return ' ' + ctx.dataset.label + ': ' + ctx.parsed.y + (opts && opts.unit ? ' ' + opts.unit : ' คน'); } } }
+        },
+        scales: {
+          x: { stacked: true, grid: { display: false }, ticks: { color: COLORS.text } },
+          y: { stacked: true, beginAtZero: true, ticks: { precision: 0, color: COLORS.text }, grid: { color: COLORS.grid }, border: { display: false } }
+        }
+      }
+    };
+  }
+  function legendHtml(items) { return items.map(function (i) { return '<span><i style="background:' + i[1] + '"></i>' + esc(i[0]) + '</span>'; }).join(''); }
+  var STATUS_LEGEND = [['ตรงเวลา', COLORS.onTime], ['ลา', COLORS.leave], ['มาสาย', COLORS.late], ['ขาดงาน', COLORS.absent]];
+  function renderTrend(t) {
+    $('#ovTrendLegend').innerHTML = legendHtml(STATUS_LEGEND);
+    A.loadChartJs().then(function (Chart) {
+      destroyChart('trend');
+      st.charts.trend = new Chart($('#ovTrend'), stackedBarConfig(t.labels, t, {}));
+    }).catch(function () { $('#ovTrend').parentNode.innerHTML = '<div class="alert warning">' + icon('signal_disconnected') + '<div>โหลดกราฟไม่สำเร็จ (ตรวจสอบอินเทอร์เน็ต) — ดูตัวเลขได้จากตารางด้านล่าง</div></div>'; });
+  }
+  function renderOverviewTable() {
+    if (!st.overview) return;
+    var q = $('#ovSearch').value.trim().toLowerCase();
+    var rows = st.overview.today.filter(function (r) { return !q || (r.fullName + ' ' + r.staffCode).toLowerCase().indexOf(q) >= 0; });
+    $('#ovTable').innerHTML = rows.length ? '<div class="table-wrap"><table class="table stack-mobile"><thead><tr><th>รหัส</th><th>ชื่อ-นามสกุล</th><th>ตำแหน่ง</th><th class="c">เข้า</th><th class="c">ออก</th><th class="c">สถานะ</th><th>หมายเหตุ</th></tr></thead><tbody>' +
+      rows.map(function (r) {
+        return '<tr><td data-label="รหัส">' + esc(r.staffCode) + '</td><td data-label="ชื่อ-นามสกุล"><b>' + esc(r.fullName) + '</b></td><td data-label="ตำแหน่ง">' + esc(r.position) + '</td>' +
+          '<td class="c" data-label="เข้า">' + esc(r.checkIn || '-') + '</td><td class="c" data-label="ออก">' + esc(r.checkOut || '-') + '</td>' +
+          '<td class="c" data-label="สถานะ">' + badge(r.status, r.statusLabel + (r.lateMinutes ? ' ' + r.lateMinutes + ' น.' : '')) + '</td><td data-label="หมายเหตุ">' + esc(r.note || '-') + '</td></tr>';
+      }).join('') + '</tbody></table></div>' : A.emptyState('ไม่พบข้อมูล', 'search_off');
+  }
+
+  /* ------------------------------------------------------------------ registrations */
+  function loadRegistrations() {
+    A.api('emp.list', { status: 'PENDING' }, { loadingText: 'กำลังโหลดผู้สมัคร...' }).then(function (list) {
+      setCounts({ registrations: list.length });
+      var host = $('#regList');
+      if (!list.length) { host.innerHTML = A.emptyState('ไม่มีผู้สมัครที่รออนุมัติ', 'task_alt'); return; }
+      host.innerHTML = list.map(function (e) {
+        return '<div class="reg-card"><span class="avatar lg">' + esc(e.fullName.replace(/^(นาย|นางสาว|นาง)\s*/, '').charAt(0)) + '</span>' +
+          '<div class="info"><div style="font-weight:700;font-size:1.05rem">' + esc(e.fullName) + '</div>' +
+          '<div class="small muted">รหัส <b>' + esc(e.staffCode) + '</b> · ' + esc(e.position) + ' · ชื่อผู้ใช้ <b>' + esc(e.username) + '</b></div>' +
+          '<div class="tiny muted">สมัครเมื่อ ' + esc(e.createdLabel) + ' · เลขอ้างอิง ' + esc(e.employeeId) + '</div></div>' +
+          '<div class="actions"><button type="button" class="btn success sm" data-approve="' + esc(e.employeeId) + '">' + icon('check') + 'อนุมัติ</button>' +
+          '<button type="button" class="btn outline sm" data-reject="' + esc(e.employeeId) + '">' + icon('close') + 'ไม่อนุมัติ</button></div></div>';
+      }).join('');
+      $$('[data-approve]', host).forEach(function (b) { b.addEventListener('click', function () { approveDialog(list.filter(function (x) { return x.employeeId === b.getAttribute('data-approve'); })[0]); }); });
+      $$('[data-reject]', host).forEach(function (b) {
+        b.addEventListener('click', function () {
+          A.promptDialog({ title: 'ไม่อนุมัติการสมัคร', label: 'เหตุผล (แจ้งผู้สมัคร)', placeholder: 'เช่น ข้อมูลรหัสบุคลากรไม่ถูกต้อง', confirmText: 'ไม่อนุมัติ', danger: true }).then(function (note) {
+            if (note === null) return;
+            A.api('emp.reject', { employeeId: b.getAttribute('data-reject'), note: note }).then(function (r) { A.toast(r.message, 'success'); loadRegistrations(); }).catch(err);
+          });
+        });
+      });
+    }).catch(err);
+  }
+  function approveDialog(e) {
+    var suggested = e.position === 'ผู้อำนวยการ' ? 'EXECUTIVE' : 'USER';
+    A.modal({
+      title: 'อนุมัติสมาชิก', icon: 'how_to_reg',
+      body: '<dl class="kv" style="margin-bottom:14px"><dt>ชื่อ-นามสกุล</dt><dd>' + esc(e.fullName) + '</dd><dt>รหัสบุคลากร</dt><dd>' + esc(e.staffCode) + '</dd><dt>ตำแหน่ง</dt><dd>' + esc(e.position) + '</dd><dt>ชื่อผู้ใช้</dt><dd>' + esc(e.username) + '</dd></dl>' +
+        '<div class="field"><label for="apRole">ประเภทผู้ใช้งาน</label><select id="apRole"><option value="USER">บุคลากร (ลงเวลา/ยื่นลา)</option><option value="EXECUTIVE">ผู้บริหาร (ดูรายงาน/อนุมัติการลา)</option><option value="ADMIN">ผู้ดูแลระบบ (สิทธิ์ทั้งหมด)</option></select></div>',
+      onOpen: function (root) { $('#apRole', root).value = suggested; },
+      actions: [{ label: 'ยกเลิก', cls: 'outline' }, {
+        label: 'อนุมัติ', cls: 'success', icon: 'check', onClick: function (close, btn, root) {
+          var role = $('#apRole', root).value;
+          A.api('emp.approve', { employeeId: e.employeeId, role: role }).then(function (r) { close(); A.toast(r.message, 'success'); loadRegistrations(); }).catch(err);
+          return false;
+        }
+      }]
+    });
+  }
+
+  /* ------------------------------------------------------------------ members */
+  function bindMembers() {
+    $('#memSearch').addEventListener('input', debounce(renderMembers, 200));
+    $('#memStatus').addEventListener('change', renderMembers);
+    $('#memRole').addEventListener('change', renderMembers);
+    $('#memAddBtn').addEventListener('click', function () { memberForm(null); });
+  }
+  function loadMembers() {
+    A.api('emp.list', {}, { loadingText: 'กำลังโหลดรายชื่อ...' }).then(function (list) { st.members = list; renderMembers(); }).catch(err);
+  }
+  function renderMembers() {
+    var q = $('#memSearch').value.trim().toLowerCase(), s = $('#memStatus').value, r = $('#memRole').value;
+    var rows = st.members.filter(function (e) {
+      return (s === 'ALL' || e.status === s) && (r === 'ALL' || e.role === r) && (!q || (e.fullName + ' ' + e.staffCode + ' ' + e.username).toLowerCase().indexOf(q) >= 0);
+    });
+    $('#memTable').innerHTML = rows.length ? '<p class="small muted">ทั้งหมด ' + rows.length + ' คน</p><div class="table-wrap"><table class="table stack-mobile"><thead><tr><th>รหัส</th><th>ชื่อ-นามสกุล</th><th>ตำแหน่ง</th><th>ชื่อผู้ใช้</th><th>ประเภท</th><th>สถานะ</th><th>เข้าสู่ระบบล่าสุด</th><th></th></tr></thead><tbody>' +
+      rows.map(function (e) {
+        return '<tr><td data-label="รหัส">' + esc(e.staffCode) + '</td><td data-label="ชื่อ-นามสกุล"><b>' + esc(e.fullName) + '</b>' + (e.employeeId === st.user.employeeId ? ' <span class="badge navy">คุณ</span>' : '') + '</td>' +
+          '<td data-label="ตำแหน่ง">' + esc(e.position) + '</td><td data-label="ชื่อผู้ใช้">' + esc(e.username) + '</td>' +
+          '<td data-label="ประเภท"><span class="badge ' + (e.role === 'ADMIN' ? 'navy' : e.role === 'EXECUTIVE' ? 'info' : 'muted') + '">' + esc(e.roleLabel) + '</span></td>' +
+          '<td data-label="สถานะ">' + badge(e.status, e.statusLabel) + (e.locked ? ' <span class="badge danger">' + icon('lock') + 'ถูกล็อก</span>' : '') + (e.mustChangePassword ? ' <span class="badge warning">รอเปลี่ยนรหัส</span>' : '') + '</td>' +
+          '<td data-label="เข้าสู่ระบบล่าสุด" class="small">' + esc(e.lastLoginLabel || '-') + '</td>' +
+          '<td class="actions" data-label="จัดการ"><button type="button" class="btn outline sm" data-manage="' + esc(e.employeeId) + '">' + icon('manage_accounts') + 'จัดการ</button></td></tr>';
+      }).join('') + '</tbody></table></div>' : A.emptyState('ไม่พบบุคลากรตามเงื่อนไข', 'person_search');
+    $$('[data-manage]').forEach(function (b) { b.addEventListener('click', function () { manageMember(b.getAttribute('data-manage')); }); });
+  }
+  function findMember(id) { return st.members.filter(function (e) { return e.employeeId === id; })[0]; }
+  function manageMember(id) {
+    var e = findMember(id); if (!e) return;
+    var self = e.employeeId === st.user.employeeId;
+    var btns = [];
+    btns.push(['history', 'ดูประวัติการลงเวลา', 'outline', function (close) { close(); openIndividual(e.employeeId); }]);
+    if (e.status !== 'PENDING' && e.status !== 'REJECTED') btns.push(['edit', 'แก้ไขข้อมูล', 'outline', function (close) { close(); memberForm(e); }]);
+    if (!self && e.status === 'PENDING') btns.push(['how_to_reg', 'อนุมัติ / ไม่อนุมัติ', 'outline', function (close) { close(); go('registrations'); }]);
+    if (!self && e.status === 'ACTIVE') {
+      btns.push(['badge', 'เปลี่ยนประเภทผู้ใช้', 'outline', function (close) { close(); roleDialog(e); }]);
+      btns.push(['lock_reset', 'รีเซ็ตรหัสผ่าน', 'outline', function (close) { close(); resetPassword(e); }]);
+      if (e.locked) btns.push(['lock_open', 'ปลดล็อกบัญชี', 'outline', function (close) { close(); A.api('emp.unlock', { employeeId: e.employeeId }).then(function (r) { A.toast(r.message, 'success'); loadMembers(); }).catch(err); }]);
+      btns.push(['person_off', 'ปิดใช้งานบัญชี', 'danger', function (close) { close(); setStatus(e, 'INACTIVE'); }]);
+    }
+    if (!self && e.status === 'INACTIVE') btns.push(['person_check', 'เปิดใช้งานบัญชี', 'success', function (close) { close(); setStatus(e, 'ACTIVE'); }]);
+    if (!self) btns.push(['delete', 'ลบบัญชี', 'danger', function (close) { close(); deleteMember(e); }]);
+    var m = A.modal({
+      title: e.fullName, icon: 'manage_accounts',
+      body: '<dl class="kv" style="margin-bottom:14px"><dt>รหัสบุคลากร</dt><dd>' + esc(e.staffCode) + '</dd><dt>ตำแหน่ง</dt><dd>' + esc(e.position) + '</dd><dt>ชื่อผู้ใช้</dt><dd>' + esc(e.username) + '</dd>' +
+        '<dt>ประเภท</dt><dd>' + esc(e.roleLabel) + '</dd><dt>สถานะ</dt><dd>' + esc(e.statusLabel) + '</dd><dt>เริ่มนับสถิติ</dt><dd>' + esc(e.activeFromLabel || '-') + '</dd>' +
+        '<dt>สร้างโดย</dt><dd>' + esc(e.createdBy === 'SELF' ? 'สมัครด้วยตนเอง' : e.createdBy) + ' · ' + esc(e.createdLabel) + '</dd><dt>อนุมัติโดย</dt><dd>' + esc(e.approvedBy || '-') + '</dd></dl>' +
+        (self ? '<div class="alert info">' + icon('info') + '<div>เพื่อความปลอดภัย ไม่สามารถเปลี่ยนสิทธิ์/สถานะ/ลบบัญชีของตนเองได้ (เปลี่ยนรหัสผ่านได้ที่เมนูบัญชีของฉัน)</div></div>' : '') +
+        '<div class="grid" id="mmButtons"></div>'
+    });
+    var host = $('#mmButtons', m.root);
+    btns.forEach(function (b) {
+      var el = document.createElement('button');
+      el.type = 'button'; el.className = 'btn block ' + b[2]; el.innerHTML = icon(b[0]) + esc(b[1]);
+      el.addEventListener('click', function () { b[3](m.close); });
+      host.appendChild(el);
+    });
+  }
+  function memberForm(e) {
+    var isNew = !e;
+    A.modal({
+      title: isNew ? 'เพิ่มบุคลากร' : 'แก้ไขข้อมูลบุคลากร', icon: isNew ? 'person_add' : 'edit',
+      body: '<form id="mfForm" novalidate>' +
+        '<div class="field" data-field="fullName"><label for="mfName">ชื่อ-นามสกุล</label><input id="mfName" name="fullName" maxlength="100" placeholder="เช่น นายสมชาย ใจดี"><span class="err"></span></div>' +
+        '<div class="form-grid two"><div class="field" data-field="staffCode"><label for="mfCode">รหัสประจำตัวบุคลากร</label><input id="mfCode" name="staffCode" maxlength="20"><span class="err"></span></div>' +
+        '<div class="field" data-field="position"><label for="mfPos">ตำแหน่ง</label><select id="mfPos" name="position">' + POSITIONS.map(function (p) { return '<option>' + esc(p) + '</option>'; }).join('') + '</select><span class="err"></span></div></div>' +
+        '<div class="field" data-field="username"><label for="mfUser">ชื่อผู้ใช้</label><input id="mfUser" name="username" maxlength="30" autocapitalize="none" spellcheck="false"><span class="hint">4–30 ตัว a-z 0-9 . _ -</span><span class="err"></span></div>' +
+        (isNew ? '<div class="field" data-field="role"><label for="mfRole">ประเภทผู้ใช้งาน</label><select id="mfRole" name="role"><option value="USER">บุคลากร</option><option value="EXECUTIVE">ผู้บริหาร</option><option value="ADMIN">ผู้ดูแลระบบ</option></select></div>' +
+          '<div class="alert info">' + icon('key') + '<div>ระบบจะสุ่มรหัสผ่านชั่วคราวให้ และบังคับให้ผู้ใช้เปลี่ยนรหัสผ่านเมื่อเข้าสู่ระบบครั้งแรก</div></div>' : '') +
+        '<div class="field" data-field="note" style="margin-top:12px"><label for="mfNote">หมายเหตุ</label><input id="mfNote" name="note" maxlength="200"></div></form>',
+      onOpen: function (root) {
+        if (e) { $('#mfName', root).value = e.fullName; $('#mfCode', root).value = e.staffCode; $('#mfPos', root).value = e.position; $('#mfUser', root).value = e.username; $('#mfNote', root).value = e.note || ''; }
+      },
+      actions: [{ label: 'ยกเลิก', cls: 'outline' }, {
+        label: isNew ? 'เพิ่มบุคลากร' : 'บันทึก', icon: 'save', onClick: function (close, btn, root) {
+          var f = $('#mfForm', root); A.clearFieldErrors(f);
+          var data = { fullName: f.fullName.value.trim(), staffCode: f.staffCode.value.trim(), position: f.position.value, username: f.username.value.trim().toLowerCase(), note: f.note.value.trim() };
+          if (isNew) data.role = f.role.value; else data.employeeId = e.employeeId;
+          A.setBtnLoading(btn, true);
+          A.api(isNew ? 'emp.create' : 'emp.update', data, { silent: true }).then(function (r) {
+            A.setBtnLoading(btn, false); close(); A.toast(r.message, 'success'); loadMembers();
+            if (r.tempPassword) showTempPassword(r.employee.fullName, r.employee.username, r.tempPassword);
+          }).catch(function (x) { A.setBtnLoading(btn, false); A.handleFormError(f, x); });
+          return false;
+        }
+      }]
+    });
+  }
+  function showTempPassword(name, username, pw) {
+    A.modal({
+      title: 'รหัสผ่านชั่วคราว', icon: 'key', noClose: true,
+      body: '<p>แจ้งข้อมูลต่อไปนี้แก่ <b>' + esc(name) + '</b> โดยตรง (ไม่ควรส่งในกลุ่มแชท)</p><dl class="kv" style="margin-bottom:10px"><dt>ชื่อผู้ใช้</dt><dd>' + esc(username) + '</dd></dl>' +
+        '<div class="temp-pass" id="tpValue">' + esc(pw) + '</div>' +
+        '<div class="alert warning" style="margin-top:12px">' + icon('visibility_off') + '<div>รหัสผ่านนี้จะแสดง<b>เพียงครั้งเดียว</b> ระบบไม่ได้เก็บรหัสผ่านจริงไว้ ผู้ใช้ต้องเปลี่ยนรหัสผ่านเมื่อเข้าสู่ระบบ</div></div>',
+      actions: [{ label: 'คัดลอก', cls: 'outline', icon: 'content_copy', keepOpen: true, onClick: function () {
+        if (navigator.clipboard) navigator.clipboard.writeText(pw).then(function () { A.toast('คัดลอกแล้ว', 'success'); }, function () { A.toast('คัดลอกไม่สำเร็จ กรุณาจดด้วยตนเอง', 'warning'); });
+      } }, { label: 'บันทึกแล้ว ปิดหน้าต่าง', icon: 'done' }]
+    });
+  }
+  function roleDialog(e) {
+    A.modal({
+      title: 'เปลี่ยนประเภทผู้ใช้งาน', icon: 'badge',
+      body: '<p><b>' + esc(e.fullName) + '</b> ปัจจุบัน: ' + esc(e.roleLabel) + '</p><div class="field"><label for="rdRole">ประเภทใหม่</label><select id="rdRole"><option value="USER">บุคลากร — ลงเวลา/ยื่นลา/ดูข้อมูลตนเอง</option><option value="EXECUTIVE">ผู้บริหาร — ดูภาพรวม/รายงาน อนุมัติการลาและคำร้อง</option><option value="ADMIN">ผู้ดูแลระบบ — สิทธิ์ทั้งหมด</option></select></div>',
+      onOpen: function (root) { $('#rdRole', root).value = e.role; },
+      actions: [{ label: 'ยกเลิก', cls: 'outline' }, { label: 'บันทึก', icon: 'save', onClick: function (close, b, root) {
+        A.api('emp.setRole', { employeeId: e.employeeId, role: $('#rdRole', root).value }).then(function (r) { close(); A.toast(r.message, 'success'); loadMembers(); }).catch(err);
+        return false;
+      } }]
+    });
+  }
+  function resetPassword(e) {
+    A.confirmDialog({ title: 'รีเซ็ตรหัสผ่าน', html: 'ระบบจะสุ่มรหัสผ่านชั่วคราวใหม่ให้ <b>' + esc(e.fullName) + '</b> และออกจากระบบทุกอุปกรณ์ของผู้ใช้นี้ทันที ดำเนินการต่อหรือไม่', confirmText: 'รีเซ็ตรหัสผ่าน', danger: true }).then(function (y) {
+      if (!y) return;
+      A.api('emp.resetPassword', { employeeId: e.employeeId }).then(function (r) { showTempPassword(e.fullName, e.username, r.tempPassword); loadMembers(); }).catch(err);
+    });
+  }
+  function setStatus(e, status) {
+    var off = status === 'INACTIVE';
+    A.confirmDialog({ title: off ? 'ปิดใช้งานบัญชี' : 'เปิดใช้งานบัญชี', html: off ? 'ปิดใช้งานบัญชี <b>' + esc(e.fullName) + '</b>? ผู้ใช้จะออกจากระบบทันที และไม่ถูกนับสถิติหลังวันนี้ (ประวัติเดิมยังอยู่ครบ)' : 'เปิดใช้งานบัญชี <b>' + esc(e.fullName) + '</b> อีกครั้ง?', confirmText: off ? 'ปิดใช้งาน' : 'เปิดใช้งาน', danger: off }).then(function (y) {
+      if (y) A.api('emp.setStatus', { employeeId: e.employeeId, status: status }).then(function (r) { A.toast(r.message, 'success'); loadMembers(); }).catch(err);
+    });
+  }
+  function deleteMember(e) {
+    A.confirmDialog({ title: 'ลบบัญชี', html: 'ลบบัญชี <b>' + esc(e.fullName) + '</b> ถาวร?<br><span class="small muted">บัญชีที่มีประวัติการลงเวลา/การลา จะลบไม่ได้เพื่อรักษาความโปร่งใส ให้ใช้ “ปิดใช้งาน” แทน</span>', confirmText: 'ลบบัญชี', danger: true }).then(function (y) {
+      if (y) A.api('emp.delete', { employeeId: e.employeeId }).then(function (r) { A.toast(r.message, 'success'); loadMembers(); }).catch(err);
+    });
+  }
+
+  /* ------------------------------------------------------------------ leaves & corrections */
+  function bindRequests() {
+    bindSeg('lvStatusSeg', function (v) { st.lvStatus = v; loadLeaves(); });
+    bindSeg('crStatusSeg', function (v) { st.crStatus = v; loadCorrections(); });
+    $('#lvSearch').addEventListener('input', debounce(loadLeaves, 400));
+    $('#crSearch').addEventListener('input', debounce(loadCorrections, 400));
+  }
+  function loadLeaves() {
+    A.api('leave.adminList', { status: st.lvStatus, q: $('#lvSearch').value.trim() }, { loadingText: 'กำลังโหลดใบลา...' }).then(function (list) {
+      if (st.lvStatus === 'PENDING') setCounts({ leaves: list.length });
+      var host = $('#lvList');
+      host.innerHTML = list.length ? list.map(function (l) {
+        var mine = l.employeeId === st.user.employeeId;
+        var actions = (l.status === 'PENDING' && !mine ? '<button type="button" class="btn success sm" data-lv="APPROVE" data-id="' + esc(l.leaveId) + '">' + icon('check') + 'อนุมัติ</button><button type="button" class="btn danger sm" data-lv="REJECT" data-id="' + esc(l.leaveId) + '">' + icon('close') + 'ไม่อนุมัติ</button>' : '') +
+          (l.status === 'APPROVED' && !mine ? '<button type="button" class="btn ghost sm" data-lv="REVOKE" data-id="' + esc(l.leaveId) + '">' + icon('undo') + 'ยกเลิกการอนุมัติ</button>' : '') +
+          (mine && l.status === 'PENDING' ? '<span class="small muted">ใบลาของท่าน — ต้องให้ผู้บริหาร/ผู้ดูแลท่านอื่นพิจารณา</span>' : '');
+        return A.leaveCard(l, false).replace(/<div class="actions">/, '<div class="actions">' + actions);
+      }).join('') : A.emptyState('ไม่มีรายการ', 'event_available');
+      bindAttachmentButtons(host);
+      $$('[data-lv]', host).forEach(function (b) { b.addEventListener('click', function () { reviewLeave(b.getAttribute('data-id'), b.getAttribute('data-lv')); }); });
+    }).catch(err);
+  }
+  function bindAttachmentButtons(host) {
+    $$('[data-view-att]', host).forEach(function (b) { b.addEventListener('click', function () { A.viewAttachment(b.getAttribute('data-view-att'), b.getAttribute('data-id')); }); });
+  }
+  function reviewLeave(id, decision) {
+    var p = decision === 'APPROVE'
+      ? A.promptDialog({ title: 'อนุมัติใบลา', label: 'ความเห็น (ไม่บังคับ)', confirmText: 'อนุมัติ' })
+      : A.promptDialog({ title: decision === 'REJECT' ? 'ไม่อนุมัติใบลา' : 'ยกเลิกการอนุมัติใบลา', label: 'เหตุผล', required: true, confirmText: decision === 'REJECT' ? 'ไม่อนุมัติ' : 'ยกเลิกการอนุมัติ', danger: true });
+    p.then(function (note) {
+      if (note === null) return;
+      A.api('leave.review', { leaveId: id, decision: decision, note: note }).then(function (r) { A.toast(r.message, 'success'); loadLeaves(); }).catch(err);
+    });
+  }
+  function loadCorrections() {
+    A.api('corr.adminList', { status: st.crStatus, q: $('#crSearch').value.trim() }, { loadingText: 'กำลังโหลดคำร้อง...' }).then(function (list) {
+      if (st.crStatus === 'PENDING') setCounts({ corrections: list.length });
+      var host = $('#crList');
+      host.innerHTML = list.length ? list.map(function (c) {
+        var mine = c.employeeId === st.user.employeeId;
+        var actions = c.status === 'PENDING' && !mine ? '<button type="button" class="btn success sm" data-cr="APPROVE" data-id="' + esc(c.requestId) + '">' + icon('check') + 'อนุมัติและปรับเวลา</button><button type="button" class="btn danger sm" data-cr="REJECT" data-id="' + esc(c.requestId) + '">' + icon('close') + 'ไม่อนุมัติ</button>'
+          : (mine && c.status === 'PENDING' ? '<span class="small muted">คำร้องของท่าน — ต้องให้ผู้บริหาร/ผู้ดูแลท่านอื่นพิจารณา</span>' : '');
+        return A.corrCard(c, false).replace(/<div class="actions">/, '<div class="actions">' + actions);
+      }).join('') : A.emptyState('ไม่มีรายการ', 'fact_check');
+      bindAttachmentButtons(host);
+      $$('[data-cr]', host).forEach(function (b) {
+        b.addEventListener('click', function () {
+          var dec = b.getAttribute('data-cr');
+          (dec === 'APPROVE' ? A.promptDialog({ title: 'อนุมัติคำร้องแก้ไขเวลา', message: 'ระบบจะบันทึกเวลาใหม่ และเก็บรายการเดิมไว้เป็นประวัติ', label: 'ความเห็น (ไม่บังคับ)', confirmText: 'อนุมัติ' })
+            : A.promptDialog({ title: 'ไม่อนุมัติคำร้อง', label: 'เหตุผล', required: true, confirmText: 'ไม่อนุมัติ', danger: true })).then(function (note) {
+            if (note === null) return;
+            A.api('corr.review', { requestId: b.getAttribute('data-id'), decision: dec, note: note }).then(function (r) { A.toast(r.message, 'success'); loadCorrections(); }).catch(err);
+          });
+        });
+      });
+    }).catch(err);
+  }
+
+  /* ------------------------------------------------------------------ reports */
+  function bindReports() {
+    bindSeg('repTypeSeg', function (v) { st.repType = v; syncRepControls(); });
+    $('#repRunBtn').addEventListener('click', runReport);
+    $$('#repExportBar [data-export]').forEach(function (b) { b.addEventListener('click', function () { exportReport(b.getAttribute('data-export'), b); }); });
+    $('#repPrintBtn').addEventListener('click', printReport);
+  }
+  function syncRepControls() {
+    $$('[data-rep]').forEach(function (el) { el.hidden = el.getAttribute('data-rep').split(' ').indexOf(st.repType) < 0; });
+  }
+  function initReports() {
+    A.fillMonthYear($('#repMonth'), $('#repYear'), 4);
+    var today = A.bkkToday();
+    if (!$('#repDate').value) $('#repDate').value = today;
+    $('#repDate').max = today;
+    if (!$('#repFrom').value) { $('#repFrom').value = today.substr(0, 8) + '01'; $('#repTo').value = today; }
+    syncRepControls();
+    return loadEmployeesForSelect();
+  }
+  function loadEmployeesForSelect() {
+    if (st.emps) return Promise.resolve(st.emps);
+    return A.api('emp.basicList', {}, { silent: true }).then(function (list) {
+      st.emps = list;
+      setOpts($('#repEmp'), [['', '— เลือกบุคลากร —']].concat(list.map(function (e) { return [e.employeeId, e.staffCode + ' · ' + e.fullName + (e.status === 'INACTIVE' ? ' (ปิดใช้งาน)' : '')]; })));
+      return list;
+    }).catch(err);
+  }
+  function openIndividual(id) {
+    go('reports');
+    $$('#repTypeSeg button').forEach(function (b) { b.classList.toggle('active', b.getAttribute('data-val') === 'individual'); });
+    st.repType = 'individual'; syncRepControls();
+    Promise.resolve(loadEmployeesForSelect()).then(function () { $('#repEmp').value = id; runReport(); });
+  }
+  function repParams() {
+    if (st.repType === 'daily') return { date: $('#repDate').value };
+    if (st.repType === 'monthly') return { year: +$('#repYear').value, month: +$('#repMonth').value };
+    if (st.repType === 'yearly') return { year: +$('#repYear').value };
+    return { employeeId: $('#repEmp').value, from: $('#repFrom').value, to: $('#repTo').value };
+  }
+  function runReport() {
+    var p = repParams();
+    if (st.repType === 'individual' && !p.employeeId) { A.toast('กรุณาเลือกบุคลากร', 'warning'); return; }
+    A.api('report.' + st.repType, p, { loadingText: 'กำลังประมวลผลรายงาน...' }).then(function (rep) {
+      st.report = rep; st.reportType = st.repType; st.reportParams = p;
+      renderReport(rep);
+      $('#repExportBar').hidden = false;
+    }).catch(err);
+  }
+  function cellHtml(col, row) {
+    var v = row[col.key];
+    if (col.key === 'status' && row.statusCode) return badge(row.statusCode, v);
+    if (col.key === 'note' && (row.inMaps || row.outMaps)) {
+      return esc(v || '') + ' ' + (row.inMaps ? '<a class="mini-link" target="_blank" rel="noopener" href="' + esc(row.inMaps.google) + '" title="ตำแหน่งตอนเข้างาน">' + icon('pin_drop') + 'เข้า</a> ' : '') +
+        (row.outMaps ? '<a class="mini-link" target="_blank" rel="noopener" href="' + esc(row.outMaps.google) + '" title="ตำแหน่งตอนออกงาน">' + icon('pin_drop') + 'ออก</a>' : '');
+    }
+    if (col.key === 'fullName') return '<b>' + esc(v) + '</b>';
+    return esc(v === null || v === undefined || v === '' ? '-' : v);
+  }
+  function tableHtml(t) {
+    return (t.title ? '<h3 style="margin-top:18px">' + esc(t.title) + '</h3>' : '') +
+      (t.rows.length ? '<div class="table-wrap"><table class="table stack-mobile"><thead><tr>' + t.columns.map(function (c) { return '<th class="' + (c.align === 'center' ? 'c' : '') + '">' + esc(c.label) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+        t.rows.map(function (r) {
+          return '<tr>' + t.columns.map(function (c) { return '<td data-label="' + esc(c.label) + '" class="' + (c.align === 'center' ? 'c' : '') + (c.key === 'note' ? ' full' : '') + '">' + cellHtml(c, r) + '</td>'; }).join('') + '</tr>';
+        }).join('') + '</tbody></table></div>' : A.emptyState('ไม่มีข้อมูล', 'inbox'));
+  }
+  function renderReport(rep) {
+    Object.keys(st.charts).forEach(function (k) { if (k !== 'trend') destroyChart(k); });
+    var charts = '';
+    if (rep.chart && rep.chart.kind === 'doughnut') {
+      charts = '<div class="card" style="margin-top:16px"><div class="card-title">' + icon('donut_large') + 'สัดส่วนสถานะ</div><div id="repSeg"></div></div>';
+    } else if (rep.chart && rep.chart.kind === 'stackedBar') {
+      charts = '<div class="card" style="margin-top:16px"><div class="card-title">' + icon('bar_chart') + 'การมาปฏิบัติงานรายวัน (จำนวนคน)</div><div class="chart-box tall"><canvas id="repChart1" role="img" aria-label="กราฟการมาปฏิบัติงานรายวัน"></canvas></div><div class="legend">' + legendHtml(STATUS_LEGEND) + '</div></div>';
+    } else if (rep.chart && rep.chart.kind === 'yearTrend') {
+      charts = '<div class="admin-grid-2"><div class="card"><div class="card-title">' + icon('show_chart') + 'แนวโน้มร้อยละการมาปฏิบัติงานรายเดือน</div><div class="chart-box"><canvas id="repChart2" role="img" aria-label="กราฟเส้นร้อยละการมาปฏิบัติงาน"></canvas></div></div>' +
+        '<div class="card"><div class="card-title">' + icon('bar_chart') + 'เปรียบเทียบรายเดือน (คน-วัน)</div><div class="chart-box"><canvas id="repChart1" role="img" aria-label="กราฟแท่งเปรียบเทียบรายเดือน"></canvas></div><div class="legend">' + legendHtml(STATUS_LEGEND) + '</div></div></div>';
+    }
+    var person = rep.person ? '<dl class="kv" style="margin-bottom:12px"><dt>ชื่อ-นามสกุล</dt><dd>' + esc(rep.person.fullName) + '</dd><dt>รหัส / ตำแหน่ง</dt><dd>' + esc(rep.person.staffCode) + ' · ' + esc(rep.person.position) + '</dd><dt>สถานะบัญชี</dt><dd>' + esc(rep.person.statusLabel) + '</dd></dl>' : '';
+    $('#repResult').innerHTML = '<div class="report-doc"><div class="report-head"><div class="r-school">' + esc(rep.school) + '</div><div class="r-title">' + esc(rep.title) + '</div>' +
+      '<div class="r-meta">ช่วงวันที่: ' + esc(rep.periodLabel) + '</div><div class="r-meta">วันที่จัดทำรายงาน: ' + esc(rep.generatedAt) + ' · ผู้จัดทำ: ' + esc(rep.generatedBy) + '</div></div>' + person +
+      '<h3>' + icon('summarize') + ' สรุปผล</h3><div class="grid grid-stats">' + rep.summary.map(function (s) {
+        return statCard(s.tone || 'navy', toneIcon(s.tone), s.value, s.unit || '', s.label);
+      }).join('') + '</div>' + charts + rep.tables.map(tableHtml).join('') + '</div>';
+    if (!rep.chart) return;
+    if (rep.chart.kind === 'doughnut') {
+      var d = rep.chart.data, parts = [['ตรงเวลา', d[0], COLORS.onTime], ['ลา', d[2], COLORS.leave], ['มาสาย', d[1], COLORS.late], ['ขาดงาน', d[3], COLORS.absent], ['ยังไม่ลงเวลา', d[4], COLORS.notYet]];
+      var total = parts.reduce(function (a, p) { return a + p[1]; }, 0);
+      $('#repSeg').innerHTML = total ? '<div class="segbar">' + parts.filter(function (p) { return p[1] > 0; }).map(function (p) { return '<div style="flex-grow:' + p[1] + ';background:' + p[2] + '" title="' + esc(p[0]) + ' ' + p[1] + ' คน"></div>'; }).join('') + '</div>' +
+        '<div class="segbar-legend">' + parts.map(function (p) { return '<div class="it"><i style="background:' + p[2] + '"></i>' + esc(p[0]) + '<b>' + p[1] + ' คน</b></div>'; }).join('') + '</div>' : A.emptyState('ไม่มีข้อมูล', 'inbox');
+      return;
+    }
+    A.loadChartJs().then(function (Chart) {
+      if (rep.chart.kind === 'stackedBar') {
+        st.charts.rep1 = new Chart($('#repChart1'), stackedBarConfig(rep.chart.series.labels, rep.chart.series, { titlePrefix: 'วันที่ ' }));
+      } else if (rep.chart.kind === 'yearTrend') {
+        st.charts.rep1 = new Chart($('#repChart1'), stackedBarConfig(rep.chart.labels, { onTime: rep.chart.present.map(function (v, i) { return v - rep.chart.late[i]; }), late: rep.chart.late, leave: rep.chart.leave, absent: rep.chart.absent }, { unit: 'คน-วัน' }));
+        st.charts.rep2 = new Chart($('#repChart2'), {
+          type: 'line',
+          data: { labels: rep.chart.labels, datasets: [{ label: 'ร้อยละการมาปฏิบัติงาน', data: rep.chart.rate, borderColor: '#1B4F8A', backgroundColor: '#1B4F8A', borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, spanGaps: false, tension: 0.25 }] },
+          options: {
+            responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+            plugins: { legend: { display: false }, tooltip: { callbacks: { label: function (c) { return c.parsed.y === null ? ' ไม่มีข้อมูล' : ' ' + c.parsed.y + '%'; } } } },
+            scales: { y: { min: 0, max: 100, ticks: { callback: function (v) { return v + '%'; }, color: COLORS.text }, grid: { color: COLORS.grid }, border: { display: false } }, x: { grid: { display: false }, ticks: { color: COLORS.text } } }
+          }
+        });
+      }
+    }).catch(function () { A.toast('โหลดกราฟไม่สำเร็จ — ตารางข้อมูลยังแสดงครบ', 'warning'); });
+  }
+  function toneIcon(t) { return { success: 'check_circle', warning: 'schedule', danger: 'cancel', sky: 'event_busy', muted: 'hourglass_empty', navy: 'insights' }[t] || 'insights'; }
+  function exportReport(format, btn) {
+    if (!st.report) return;
+    A.setBtnLoading(btn, true);
+    A.api('report.export', { reportType: st.reportType, params: st.reportParams, format: format }, { silent: true }).then(function (f) {
+      A.setBtnLoading(btn, false);
+      A.downloadBase64(f.base64, f.mimeType, f.fileName);
+      A.toast('ส่งออก ' + f.fileName + ' เรียบร้อย', 'success');
+    }).catch(function (e) { A.setBtnLoading(btn, false); err(e); });
+  }
+  function printReport() {
+    var rep = st.report; if (!rep) return;
+    var area = document.getElementById('printArea');
+    area.innerHTML = '<div class="print-doc"><div class="p-school">' + esc(rep.school) + '</div><div class="p-title">' + esc(rep.title) + '</div>' +
+      '<div class="p-meta">ช่วงวันที่: ' + esc(rep.periodLabel) + '</div><div class="p-meta">วันที่จัดทำรายงาน: ' + esc(rep.generatedAt) + '  ผู้จัดทำ: ' + esc(rep.generatedBy) + '</div>' +
+      rep.tables.map(function (t) {
+        return (t.title ? '<h4>' + esc(t.title) + '</h4>' : '') + '<table><thead><tr>' + t.columns.map(function (c) { return '<th>' + esc(c.label) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+          (t.rows.length ? t.rows.map(function (r) { return '<tr>' + t.columns.map(function (c) { var v = r[c.key]; return '<td class="' + (c.align === 'center' ? 'c' : '') + '">' + esc(v === null || v === undefined || v === '' ? '-' : v) + '</td>'; }).join('') + '</tr>'; }).join('')
+            : '<tr><td colspan="' + t.columns.length + '" class="c">ไม่มีข้อมูล</td></tr>') + '</tbody></table>';
+      }).join('') +
+      '<h4>สรุปผล</h4><div class="p-summary">' + rep.summary.map(function (s) { return '<div>• ' + esc(s.label) + ': <b>' + esc(s.value) + '</b> ' + esc(s.unit || '') + '</div>'; }).join('') + '</div>' +
+      '<div class="p-sign"><div>ลงชื่อ ......................................................<br>( ' + esc(rep.generatedBy) + ' )<br>ผู้จัดทำรายงาน</div>' +
+      '<div>ลงชื่อ ......................................................<br>( ...................................................... )<br>ผู้อำนวยการโรงเรียน</div></div></div>';
+    document.body.classList.add('printing');
+    var cleanup = function () { document.body.classList.remove('printing'); area.innerHTML = ''; window.removeEventListener('afterprint', cleanup); };
+    window.addEventListener('afterprint', cleanup);
+    setTimeout(function () { window.print(); setTimeout(cleanup, 1500); }, 100);
+  }
+
+  /* ------------------------------------------------------------------ calendar */
+  function bindCalendar() {
+    var p = A.bkkParts(A.serverNow());
+    setOpts($('#calYear'), [p.y - 1, p.y, p.y + 1].map(function (y) { return [y, 'ปี พ.ศ. ' + (y + 543)]; }), p.y);
+    $('#calYear').addEventListener('change', loadCalendar);
+    $('#calStart').addEventListener('change', function () { if (!$('#calEnd').value || $('#calEnd').value < $('#calStart').value) $('#calEnd').value = $('#calStart').value; });
+    $('#calForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      A.api('cal.add', { startDate: $('#calStart').value, endDate: $('#calEnd').value, type: $('#calType').value, title: $('#calTitle').value.trim() })
+        .then(function (r) { A.toast(r.message, 'success'); $('#calTitle').value = ''; loadCalendar(); }).catch(err);
+    });
+    $('#calFixedBtn').addEventListener('click', function () {
+      var y = +$('#calYear').value;
+      A.confirmDialog({ title: 'เพิ่มวันหยุดราชการ', html: 'เพิ่มวันหยุดราชการที่มีวันที่คงที่ (เช่น วันขึ้นปีใหม่ วันสงกรานต์ วันพ่อ วันแม่) ของปี พ.ศ. ' + (y + 543) + '<br><span class="small muted">วันที่มีอยู่แล้วจะไม่ถูกเพิ่มซ้ำ กรุณาตรวจสอบกับประกาศของทางราชการ</span>', confirmText: 'เพิ่ม' }).then(function (ok) {
+        if (ok) A.api('cal.addFixed', { year: y }).then(function (r) { A.toast(r.message, 'success', 6500); loadCalendar(); }).catch(err);
+      });
+    });
+  }
+  function loadCalendar() {
+    A.api('cal.list', { year: +$('#calYear').value }, { loadingText: 'กำลังโหลดปฏิทิน...' }).then(function (c) {
+      $('#calWorkdaysInfo').textContent = 'วันทำงานประจำสัปดาห์: ' + c.workDayNames.join(', ') + (c.canEdit ? ' (แก้ไขได้ที่หน้าตั้งค่าระบบ)' : '');
+      $('#calFormCard').hidden = !c.canEdit;
+      $('#calList').innerHTML = c.entries.length ? '<div class="table-wrap"><table class="table stack-mobile"><thead><tr><th>วันที่</th><th>ประเภท</th><th>รายละเอียด</th>' + (c.canEdit ? '<th></th>' : '') + '</tr></thead><tbody>' +
+        c.entries.map(function (e) {
+          return '<tr><td data-label="วันที่">' + esc(e.dateLabel) + '</td><td data-label="ประเภท"><span class="badge ' + (e.type === 'SPECIAL_WORKDAY' ? 'success' : 'info') + '">' + esc(e.typeLabel) + '</span></td><td data-label="รายละเอียด">' + esc(e.title) + '</td>' +
+            (c.canEdit ? '<td class="actions" data-label="ลบ"><button type="button" class="btn ghost sm" data-del-cal="' + esc(e.date) + '" aria-label="ลบ">' + icon('delete') + '</button></td>' : '') + '</tr>';
+        }).join('') + '</tbody></table></div>' : A.emptyState('ยังไม่มีวันหยุดที่บันทึกในปีนี้', 'event_note');
+      $$('[data-del-cal]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          A.confirmDialog({ title: 'ลบรายการ', message: 'ลบรายการวันที่ ' + A.thDate(b.getAttribute('data-del-cal')) + ' ใช่หรือไม่', confirmText: 'ลบ', danger: true }).then(function (y) {
+            if (y) A.api('cal.remove', { date: b.getAttribute('data-del-cal') }).then(function (r) { A.toast(r.message, 'success'); loadCalendar(); }).catch(err);
+          });
+        });
+      });
+    }).catch(err);
+  }
+
+  /* ------------------------------------------------------------------ settings */
+  function bindSettings() {
+    if (!isAdmin()) return;
+    A.fillMonthYear($('#mtMonth'), $('#mtYear'), 3);
+    $('#setForm').addEventListener('submit', saveSettings);
+    ['#sLat', '#sLng'].forEach(function (s) { $(s).addEventListener('input', updateMapLink); });
+    $('#sUseMyLoc').addEventListener('click', function () {
+      var b = $('#sUseMyLoc');
+      A.setBtnLoading(b, true);
+      $('#sLocNote').textContent = 'กำลังอ่านตำแหน่ง...';
+      A.acquirePosition(15, function (best) { $('#sLocNote').textContent = 'ความแม่นยำ ±' + Math.round(best.accuracy) + ' ม.'; }).then(function (p) {
+        $('#sLat').value = p.lat.toFixed(6); $('#sLng').value = p.lng.toFixed(6); updateMapLink();
+        $('#sLocNote').textContent = 'ได้ตำแหน่งแล้ว (±' + Math.round(p.accuracy) + ' ม.) ตรวจสอบบนแผนที่ก่อนบันทึก';
+      }, function (e) { $('#sLocNote').textContent = ''; A.showGeoHelp(e); }).then(function () { A.setBtnLoading(b, false); });
+    });
+    $('#mtRebuildBtn').addEventListener('click', function () {
+      var y = +$('#mtYear').value, m = +$('#mtMonth').value;
+      A.confirmDialog({ title: 'คำนวณสรุปรายวันใหม่', message: 'คำนวณสรุปของเดือน' + A.TH_M[m - 1] + ' ' + (y + 543) + ' ใหม่จากรายการลงเวลาต้นฉบับ ด้วยการตั้งค่าเวลาปัจจุบัน?', confirmText: 'ดำเนินการ' }).then(function (ok) {
+        if (ok) A.api('sys.rebuildSummary', { year: y, month: m }).then(function (r) { A.toast(r.message, 'success'); }).catch(err);
+      });
+    });
+    $('#mtRunBtn').addEventListener('click', function () {
+      A.api('sys.runMaintenance', {}).then(function (r) { A.toast(r.message, 'success', 6000); }).catch(err);
+    });
+  }
+  function updateMapLink() {
+    var lat = parseFloat($('#sLat').value), lng = parseFloat($('#sLng').value), a = $('#sMapLink');
+    if (isFinite(lat) && isFinite(lng)) { a.href = 'https://www.openstreetmap.org/?mlat=' + lat + '&mlon=' + lng + '#map=18/' + lat + '/' + lng; a.hidden = false; } else a.hidden = true;
+  }
+  function loadSettings() {
+    A.api('settings.get', {}, { loadingText: 'กำลังโหลดการตั้งค่า...' }).then(function (s) {
+      var f = $('#setForm'), v = s.values;
+      A.clearFieldErrors(f);
+      $('#setServerTime').textContent = 'เวลาเซิร์ฟเวอร์: ' + s.serverTime;
+      ['SCHOOL_LAT', 'SCHOOL_LNG', 'GEOFENCE_RADIUS_M', 'MAX_GPS_ACCURACY_M', 'WORK_START_TIME', 'LATE_AFTER_TIME', 'WORK_END_TIME', 'CHECKIN_EARLIEST_TIME',
+        'SESSION_TIMEOUT_MIN', 'MAX_LOGIN_ATTEMPTS', 'LOCKOUT_MIN', 'GPS_RETENTION_DAYS', 'CORRECTION_MAX_DAYS'].forEach(function (k) { if (f[k]) f[k].value = v[k] || ''; });
+      ['ALLOW_HOLIDAY_CHECKIN', 'ALLOW_REGISTRATION', 'SETTINGS_CONFIRMED'].forEach(function (k) { f[k].checked = String(v[k]).toUpperCase() === 'TRUE'; });
+      var days = String(v.WORK_DAYS || '').split(',');
+      $$('#sWorkDays input').forEach(function (c) { c.checked = days.indexOf(c.value) >= 0; });
+      updateMapLink();
+    }).catch(err);
+  }
+  function saveSettings(e) {
+    e.preventDefault();
+    var f = $('#setForm'); A.clearFieldErrors(f);
+    var values = {};
+    ['SCHOOL_LAT', 'SCHOOL_LNG', 'GEOFENCE_RADIUS_M', 'MAX_GPS_ACCURACY_M', 'WORK_START_TIME', 'LATE_AFTER_TIME', 'WORK_END_TIME', 'CHECKIN_EARLIEST_TIME',
+      'SESSION_TIMEOUT_MIN', 'MAX_LOGIN_ATTEMPTS', 'LOCKOUT_MIN', 'GPS_RETENTION_DAYS', 'CORRECTION_MAX_DAYS'].forEach(function (k) { values[k] = f[k].value.trim(); });
+    ['ALLOW_HOLIDAY_CHECKIN', 'ALLOW_REGISTRATION', 'SETTINGS_CONFIRMED'].forEach(function (k) { values[k] = f[k].checked; });
+    values.WORK_DAYS = $$('#sWorkDays input:checked').map(function (c) { return c.value; }).join(',');
+    var btn = $('button[type=submit]', f);
+    A.setBtnLoading(btn, true);
+    A.api('settings.save', { values: values }, { silent: true }).then(function (r) {
+      A.setBtnLoading(btn, false); A.toast(r.message, 'success'); loadSettings();
+    }).catch(function (x) { A.setBtnLoading(btn, false); A.handleFormError(f, x); });
+  }
+
+  /* ------------------------------------------------------------------ audit */
+  function bindAudit() {
+    if (!isAdmin()) return;
+    setOpts($('#auAction'), [['', 'ทั้งหมด']].concat(Object.keys(ACTIONS).map(function (k) { return [k, ACTIONS[k]]; })));
+    $('#auRunBtn').addEventListener('click', loadAudit);
+    $('#auSearch').addEventListener('keydown', function (e) { if (e.key === 'Enter') loadAudit(); });
+  }
+  function loadAudit() {
+    A.api('audit.list', { q: $('#auSearch').value.trim(), action: $('#auAction').value, limit: 300 }, { loadingText: 'กำลังโหลดประวัติ...' }).then(function (rows) {
+      $('#auTable').innerHTML = rows.length ? '<p class="small muted">แสดงล่าสุด ' + rows.length + ' รายการ (บันทึกแบบเพิ่มต่อท้ายเท่านั้น แก้ไขย้อนหลังผ่านระบบไม่ได้)</p><div class="table-wrap"><table class="table stack-mobile"><thead><tr><th>เวลา</th><th>ผู้กระทำ</th><th>การกระทำ</th><th>เป้าหมาย</th><th>รายละเอียด</th></tr></thead><tbody>' +
+        rows.map(function (r) {
+          var danger = /DENIED|LOCKED|REJECTED$|FAILED/.test(r.action);
+          return '<tr><td data-label="เวลา" class="nowrap">' + esc(r.time) + '</td><td data-label="ผู้กระทำ">' + esc(r.actor) + ' <span class="tiny muted">' + esc(ROLE_LABEL[r.role] || r.role) + '</span></td>' +
+            '<td data-label="การกระทำ"><span class="badge ' + (danger ? 'danger' : 'navy') + '">' + esc(ACTIONS[r.action] || r.action) + '</span></td>' +
+            '<td data-label="เป้าหมาย" class="small">' + esc(r.targetType) + ' ' + esc(r.targetId) + '</td>' +
+            '<td data-label="รายละเอียด" class="full"><div class="audit-details">' + esc(prettyDetails(r.details)) + '</div></td></tr>';
+        }).join('') + '</tbody></table></div>' : A.emptyState('ไม่พบรายการ', 'search_off');
+    }).catch(err);
+  }
+  function prettyDetails(d) {
+    if (!d) return '-';
+    try { var o = JSON.parse(d); return JSON.stringify(o, null, 1).slice(0, 600); } catch (e) { return String(d).slice(0, 600); }
+  }
+
+  return { init: init, show: show, destroy: destroy };
+})();
+</script>

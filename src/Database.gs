@@ -655,6 +655,16 @@ function writeAudit_(ctx, action, targetType, targetId, details) {
  */
 function SetupSystem() {
   assertOwnerContext_();
+  var text = setupCore_();
+  Logger.log(text);
+  return text;
+}
+
+/**
+ * ขั้นตอนติดตั้งจริง (เรียกซ้ำได้อย่างปลอดภัย) — ใช้โดย SetupSystem() จาก Editor
+ * และโดยการติดตั้งอัตโนมัติเมื่อมีผู้เปิดเว็บแอปครั้งแรก (งานที่ทำไม่เปิดเผยข้อมูลลับใด ๆ)
+ */
+function setupCore_() {
   resetMemo_();
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
@@ -671,7 +681,7 @@ function SetupSystem() {
       if (ss) {
         log.push('ใช้ Spreadsheet ที่ผูกกับสคริปต์: ' + ss.getName());
       } else {
-        ss = SpreadsheetApp.create('ฐานข้อมูลระบบลงเวลา โรงเรียนวัดเสาหิน');
+        ss = SpreadsheetApp.create(DB_FILE_NAME_);
         log.push('สร้าง Spreadsheet ใหม่: ' + ss.getName());
       }
       props.setProperty('SPREADSHEET_ID', ss.getId());
@@ -697,23 +707,79 @@ function SetupSystem() {
     }
     if (!props.getProperty('PBKDF2_ITERATIONS')) props.setProperty('PBKDF2_ITERATIONS', String(CRYPTO_.DEFAULT_ITERATIONS));
 
-    log = log.concat(ensureDriveFolders_());
-    log = log.concat(ensureTriggers_());
+    try { log = log.concat(ensureDriveFolders_()); } catch (e1) { log.push('⚠ สร้างโฟลเดอร์ Drive ไม่สำเร็จ: ' + e1.message); }
+    try { log = log.concat(ensureTriggers_()); } catch (e2) { log.push('⚠ ติดตั้ง Trigger ไม่สำเร็จ (รัน SetupSystem จาก Editor ภายหลังได้): ' + e2.message); }
 
     SpreadsheetApp.flush();
     MEMO_.dirty = { Employees: true, Settings: true, WorkCalendar: true };
     commitDirtyTables_();
     resetMemo_();
-    var hasAdmin = getEmployees_().some(function (e) { return e.Role === ROLES.ADMIN && e.Status === EMP_STATUS.ACTIVE; });
-    log.push(hasAdmin ? '• มีผู้ดูแลระบบแล้ว' :
-      '➜ ขั้นต่อไป: ตั้งค่า Script Properties BOOTSTRAP_ADMIN_* แล้วรัน CreateFirstAdmin()');
+    MEMO_.ss = ss;
+    if (hasActiveAdmin_()) {
+      removeSetupCode_();
+      log.push('• มีผู้ดูแลระบบแล้ว');
+    } else {
+      var code = ensureSetupCode_();
+      log.push('➜ ขั้นต่อไป: เปิด URL เว็บแอป แล้วกรอกรหัสติดตั้ง ' + code +
+        ' (ดูได้ในชีต "' + SETUP_SHEET_ + '") เพื่อสร้างผู้ดูแลระบบคนแรก — หรือใช้ CreateFirstAdmin() แบบเดิม');
+    }
+    SpreadsheetApp.flush();
     log.push('ติดตั้งระบบเสร็จสมบูรณ์ ✔');
   } finally {
     lock.releaseLock();
   }
-  var text = log.join('\n');
-  Logger.log(text);
-  return text;
+  return log.join('\n');
+}
+
+var DB_FILE_NAME_ = 'ฐานข้อมูลระบบลงเวลา โรงเรียนวัดเสาหิน';
+var SETUP_SHEET_ = 'เริ่มต้นใช้งาน';
+
+function hasActiveAdmin_() {
+  return getEmployees_().some(function (e) { return e.Role === ROLES.ADMIN && e.Status === EMP_STATUS.ACTIVE; });
+}
+
+/**
+ * รหัสติดตั้งครั้งแรก (ใช้ครั้งเดียว): เก็บใน Script Properties และแสดงในชีต "เริ่มต้นใช้งาน"
+ * ของไฟล์ฐานข้อมูล — มีเพียงเจ้าของบัญชี Google ที่ติดตั้งระบบเท่านั้นที่เปิดดูได้
+ */
+function ensureSetupCode_() {
+  var props = PropertiesService.getScriptProperties();
+  var code = props.getProperty('SETUP_CODE');
+  if (!code) {
+    var alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+    var bytes = randomBytes_(12);
+    var chars = bytes.map(function (b) { return alphabet[b % alphabet.length]; }).join('');
+    code = chars.substr(0, 4) + '-' + chars.substr(4, 4) + '-' + chars.substr(8, 4);
+    props.setProperty('SETUP_CODE', code);
+    if (MEMO_.props) MEMO_.props.SETUP_CODE = code;
+  }
+  var ss = getSpreadsheet_();
+  var sh = ss.getSheetByName(SETUP_SHEET_) || ss.insertSheet(SETUP_SHEET_);
+  sh.clear();
+  sh.getRange(1, 1, 7, 1).setValues([
+    ["'ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน — ติดตั้งครั้งแรก"],
+    ["'รหัสติดตั้ง (ใช้ครั้งเดียว):"],
+    ["'" + code],
+    ["'1) เปิด URL ของเว็บแอป (ลงท้ายด้วย /exec)"],
+    ["'2) กรอกรหัสติดตั้งด้านบน + ข้อมูลผู้ดูแลระบบ แล้วกด “เริ่มใช้งานระบบ”"],
+    ["'3) เมื่อสร้างผู้ดูแลระบบสำเร็จ ชีตนี้จะถูกลบอัตโนมัติ"],
+    ["'ห้ามส่งรหัสนี้ให้ผู้อื่น — ผู้ที่มีรหัสสามารถสร้างบัญชีผู้ดูแลระบบได้"]
+  ]);
+  sh.setColumnWidth(1, 640);
+  sh.getRange(1, 1).setFontWeight('bold').setFontSize(14).setFontColor('#0B2545');
+  sh.getRange(3, 1).setFontWeight('bold').setFontSize(28).setFontColor('#B91C1C').setBackground('#FEF3C7');
+  try { ss.setActiveSheet(sh); ss.moveActiveSheet(1); } catch (e) { /* ignore */ }
+  return code;
+}
+
+function removeSetupCode_() {
+  PropertiesService.getScriptProperties().deleteProperty('SETUP_CODE');
+  if (MEMO_.props) delete MEMO_.props.SETUP_CODE;
+  try {
+    var ss = getSpreadsheet_();
+    var sh = ss.getSheetByName(SETUP_SHEET_);
+    if (sh && ss.getSheets().length > 1) ss.deleteSheet(sh);
+  } catch (e) { console.error('removeSetupCode_: ' + e); }
 }
 
 function ensureSheet_(ss, name, schema) {

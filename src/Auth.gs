@@ -426,12 +426,81 @@ function CreateFirstAdmin() {
     return r;
   });
   props.deleteProperty('BOOTSTRAP_ADMIN_PASSWORD');
+  removeSetupCode_();
   writeAudit_(null, 'BOOTSTRAP_ADMIN_CREATED', 'Employee', rec.EmployeeID, { username: rec.Username });
   var msg = '✔ สร้างผู้ดูแลระบบ "' + rec.Username + '" เรียบร้อย\n' +
     '✔ ลบ BOOTSTRAP_ADMIN_PASSWORD ออกจาก Script Properties แล้ว\n' +
     '➜ เข้าสู่ระบบผ่านเว็บแอปด้วยรหัสผ่านที่ตั้งไว้ ระบบจะบังคับให้เปลี่ยนรหัสผ่านทันที';
   Logger.log(msg);
   return msg;
+}
+
+/**
+ * ติดตั้งครั้งแรกผ่านหน้าเว็บ (ไม่ต้องใช้ Script Properties):
+ * ผู้ติดตั้งนำ "รหัสติดตั้ง" จากชีต "เริ่มต้นใช้งาน" ในไฟล์ฐานข้อมูล (เห็นได้เฉพาะเจ้าของบัญชี Google)
+ * มากรอกพร้อมข้อมูลผู้ดูแลระบบคนแรก และ (ถ้ามี) พิกัดโรงเรียน/เวลาทำงาน
+ * ใช้ได้ครั้งเดียว และเฉพาะเมื่อยังไม่มีผู้ดูแลระบบ
+ */
+function firstRunSetup(form) {
+  resetMemo_();
+  try {
+    ensureReady_();
+    form = sanitizeParams_(form);
+    var cache = CacheService.getScriptCache();
+    var rateKey = 'setup_try_' + fmt_(now_(), 'yyyyMMddHH');
+    var tries = parseInt(cache.get(rateKey) || '0', 10);
+    if (tries >= 20) throw appError_('กรอกรหัสติดตั้งผิดหลายครั้ง กรุณารอประมาณ 1 ชั่วโมงแล้วลองใหม่', 'LOCKED');
+    if (hasActiveAdmin_()) throw appError_('ระบบมีผู้ดูแลระบบแล้ว กรุณาเข้าสู่ระบบตามปกติ', 'ALREADY_SETUP');
+    var expected = String(scriptProps_().SETUP_CODE || '').replace(/[^A-Z0-9]/g, '');
+    var given = String(form.setupCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!expected || !given || !constantTimeEquals_(given, expected)) {
+      cache.put(rateKey, String(tries + 1), 3700);
+      throw appError_('รหัสติดตั้งไม่ถูกต้อง กรุณาคัดลอกจากชีต "' + SETUP_SHEET_ + '" ในไฟล์ฐานข้อมูลอีกครั้ง', 'VALIDATION', { field: 'setupCode' });
+    }
+    var data = validateEmployeeInput_(form, { requirePassword: true });
+    // การตั้งค่าเริ่มต้น (ไม่บังคับ) — ปรับภายหลังได้ในหน้าตั้งค่าระบบ
+    var input = form.settings || {};
+    var next = {};
+    ['SCHOOL_LAT', 'SCHOOL_LNG', 'WORK_START_TIME', 'LATE_AFTER_TIME', 'WORK_END_TIME'].forEach(function (k) {
+      if (input[k] !== undefined && input[k] !== null && String(input[k]).trim() !== '') next[k] = normalizeSetting_(k, input[k]);
+    });
+    if (input.SETTINGS_CONFIRMED === true) next.SETTINGS_CONFIRMED = 'TRUE';
+    var current = getSettings_().raw;
+    var merged = {};
+    Object.keys(SETTING_RULES_).forEach(function (k) { merged[k] = k in next ? next[k] : String(current[k] === undefined ? '' : current[k]); });
+    validateSettingRelations_(merged);
+
+    var hash = hashPassword_(data.password);
+    var emp = withLock_(function () {
+      var exists = readAll_('Employees').some(function (e) { return e.Role === ROLES.ADMIN && e.Status === EMP_STATUS.ACTIVE; });
+      if (exists) throw appError_('ระบบมีผู้ดูแลระบบแล้ว กรุณาเข้าสู่ระบบตามปกติ', 'ALREADY_SETUP');
+      assertUniqueEmployee_(data.username, data.staffCode, null);
+      var r = {
+        EmployeeID: newId_('EMP'), StaffCode: data.staffCode, FullName: data.fullName, Position: data.position,
+        Username: data.username, PasswordHash: hash, Role: ROLES.ADMIN, Status: EMP_STATUS.ACTIVE,
+        MustChangePassword: false, SessionVersion: 1, ActiveFrom: todayStr_(), ActiveTo: '', CreatedAt: nowStamp_(),
+        CreatedBy: 'FIRST_RUN', UpdatedAt: nowStamp_(), ApprovedBy: 'FIRST_RUN', ApprovedAt: nowStamp_(),
+        LastLoginAt: nowStamp_(), Note: 'ผู้ดูแลระบบคนแรก (ติดตั้งผ่านหน้าเว็บ)'
+      };
+      appendRecord_('Employees', r);
+      r.settingChanges = writeSettingValues_(next, current, r.FullName);
+      return r;
+    });
+    removeSetupCode_();
+    writeAudit_({ user: emp }, 'FIRST_RUN_SETUP', 'Employee', emp.EmployeeID, { username: emp.Username, settings: emp.settingChanges });
+    resetMemo_();
+    var token = createSession_(emp, form.clientInfo || {});
+    return {
+      ok: true,
+      data: {
+        token: token, user: publicUser_(emp), mustChangePassword: false,
+        sessionTimeoutMin: getSettings_().sessionTimeoutMin,
+        message: 'ติดตั้งระบบสำเร็จ ยินดีต้อนรับผู้ดูแลระบบ'
+      }
+    };
+  } catch (err) {
+    return toErrorResponse_(err, 'firstRunSetup');
+  }
 }
 
 /**

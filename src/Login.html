@@ -58,3 +58,70 @@
     </div>
   </div>
 </section>
+
+<!-- ======================= ติดตั้งครั้งแรก (สร้างผู้ดูแลระบบคนแรก) ======================= -->
+<section id="view-setup" class="view" hidden aria-labelledby="setupTitle">
+  <header class="auth-hero" style="padding-bottom:88px">
+    <div class="brand-mark"><span class="ms fill">rocket_launch</span></div>
+    <h1 id="setupTitle">เริ่มต้นใช้งานระบบ</h1>
+    <div class="school" data-meta="school">โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่</div>
+    <div class="en">ขั้นตอนเดียว: สร้างผู้ดูแลระบบคนแรก</div>
+  </header>
+  <div class="auth-wrap" style="max-width:640px">
+    <div class="card auth-card">
+      <div class="alert info" style="margin-bottom:16px"><span class="ms">key</span>
+        <div><b>หารหัสติดตั้งได้ที่ไหน?</b><br>
+          เปิด <b>Google Drive</b> ของบัญชีที่ใช้ติดตั้งระบบ → เปิดไฟล์ Google Sheet <b id="setupDbName">ฐานข้อมูลระบบลงเวลา โรงเรียนวัดเสาหิน</b>
+          (หรือ Google Sheet ที่คุณสร้างไว้) → ชีต <b id="setupSheetName">เริ่มต้นใช้งาน</b> → คัดลอกรหัสตัวใหญ่สีแดง<br>
+          <span class="small">มีเพียงเจ้าของบัญชีเท่านั้นที่เห็นรหัสนี้ คนอื่นจึงสร้างผู้ดูแลระบบแทนไม่ได้</span></div>
+      </div>
+      <div id="setupAlert" class="alert danger" hidden role="alert"><span class="ms">error</span><div id="setupAlertText"></div></div>
+      <form id="setupForm" novalidate autocomplete="off">
+        <div class="field" data-field="setupCode">
+          <label for="suCode">รหัสติดตั้ง</label>
+          <input id="suCode" name="setupCode" type="text" maxlength="20" placeholder="XXXX-XXXX-XXXX" autocapitalize="characters" spellcheck="false"
+            style="font-family:'Courier New',monospace;font-size:1.25rem;letter-spacing:.08em;text-transform:uppercase">
+          <span class="err"></span>
+        </div>
+
+        <h3 style="margin-top:8px"><span class="ms" style="color:var(--sky-500)">admin_panel_settings</span> ข้อมูลผู้ดูแลระบบ</h3>
+        <div class="field" data-field="fullName"><label for="suName">ชื่อ-นามสกุล</label><input id="suName" name="fullName" maxlength="100" placeholder="เช่น นายสมชาย ใจดี"><span class="err"></span></div>
+        <div class="form-grid two">
+          <div class="field" data-field="staffCode"><label for="suCode2">รหัสประจำตัวบุคลากร</label><input id="suCode2" name="staffCode" maxlength="20"><span class="err"></span></div>
+          <div class="field" data-field="position"><label for="suPos">ตำแหน่ง</label>
+            <select id="suPos" name="position"><option>ผู้อำนวยการ</option><option selected>ครู</option><option>บุคลากรทางการศึกษา</option><option>เจ้าหน้าที่อื่น ๆ</option></select><span class="err"></span></div>
+        </div>
+        <div class="field" data-field="username"><label for="suUser">ชื่อผู้ใช้ (Username)</label><input id="suUser" name="username" maxlength="30" placeholder="เช่น admin.saohin" autocapitalize="none" spellcheck="false"><span class="hint">4–30 ตัว ขึ้นต้นด้วย a-z ใช้ได้ a-z 0-9 . _ -</span><span class="err"></span></div>
+        <div class="form-grid two">
+          <div class="field" data-field="password"><label for="suPw">รหัสผ่าน</label>
+            <div class="input-icon has-toggle"><span class="ms">lock</span><input id="suPw" name="password" type="password" maxlength="64" autocomplete="new-password">
+              <button type="button" class="toggle-pw" data-toggle-pw="suPw" aria-label="แสดงรหัสผ่าน"><span class="ms">visibility</span></button></div>
+            <span class="hint">อย่างน้อย 8 ตัว มีตัวอักษรอังกฤษและตัวเลข</span><span class="err"></span></div>
+          <div class="field" data-field="confirmPassword"><label for="suPw2">ยืนยันรหัสผ่าน</label>
+            <div class="input-icon has-toggle"><span class="ms">lock_reset</span><input id="suPw2" name="confirmPassword" type="password" maxlength="64" autocomplete="new-password">
+              <button type="button" class="toggle-pw" data-toggle-pw="suPw2" aria-label="แสดงรหัสผ่าน"><span class="ms">visibility</span></button></div><span class="err"></span></div>
+        </div>
+
+        <h3 style="margin-top:8px"><span class="ms" style="color:var(--sky-500)">location_on</span> พิกัดโรงเรียน <span class="small muted">(ทำภายหลังได้)</span></h3>
+        <p class="small muted">ถ้าตอนนี้อยู่ที่โรงเรียน ให้ยืนกลางโรงเรียนในที่โล่งแล้วกดปุ่มด้านล่าง</p>
+        <div class="form-grid two">
+          <div class="field" data-field="SCHOOL_LAT"><label for="suLat">ละติจูด</label><input id="suLat" type="text" inputmode="decimal" placeholder="เช่น 18.788300"><span class="err"></span></div>
+          <div class="field" data-field="SCHOOL_LNG"><label for="suLng">ลองจิจูด</label><input id="suLng" type="text" inputmode="decimal" placeholder="เช่น 98.985300"><span class="err"></span></div>
+        </div>
+        <div class="row" style="margin-bottom:14px">
+          <button type="button" class="btn outline sm" id="suMyLoc"><span class="ms">my_location</span>ใช้ตำแหน่งปัจจุบันของฉัน</button>
+          <span class="small muted" id="suLocNote"></span>
+        </div>
+
+        <h3 style="margin-top:8px"><span class="ms" style="color:var(--sky-500)">schedule</span> เวลาปฏิบัติงาน</h3>
+        <div class="form-grid two">
+          <div class="field" data-field="WORK_START_TIME"><label for="suStart">เวลาเริ่มปฏิบัติงาน</label><input id="suStart" type="time" value="08:00"><span class="err"></span></div>
+          <div class="field" data-field="LATE_AFTER_TIME"><label for="suLate">ถือว่ามาสายเมื่อลงเวลาหลัง</label><input id="suLate" type="time" value="08:30"><span class="err"></span></div>
+          <div class="field" data-field="WORK_END_TIME"><label for="suEnd">เวลาเลิกงาน</label><input id="suEnd" type="time" value="16:30"><span class="err"></span></div>
+        </div>
+        <label class="check" style="margin-bottom:16px"><input type="checkbox" id="suConfirm"> เวลาด้านบนตรงตามระเบียบของโรงเรียนแล้ว (ถ้ายังไม่แน่ใจ ไม่ต้องติ๊ก — แก้ได้ภายหลังในหน้าตั้งค่าระบบ)</label>
+        <button type="submit" class="btn lg block" id="setupBtn"><span class="ms">rocket_launch</span>เริ่มใช้งานระบบ</button>
+      </form>
+    </div>
+  </div>
+</section>

@@ -221,7 +221,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .field .err { font-size: .82rem; color: var(--danger); display: none; }
 .field.has-error .err { display: block; }
 .field.has-error .input, .field.has-error input, .field.has-error select, .field.has-error textarea { border-color: var(--danger-500); background: #FFF7F7; }
-.input, .field input[type=text], .field input[type=password], .field input[type=date], .field input[type=time], .field input[type=number],
+.input, .field input:not([type]), .field input[type=text], .field input[type=password], .field input[type=date], .field input[type=time], .field input[type=number],
 .field input[type=search], .field select, .field textarea {
   width: 100%; min-height: 48px; padding: 10px 14px; border: 1.5px solid var(--border-strong); border-radius: 12px; background: #fff;
   font-size: 16px; transition: border-color .15s ease, box-shadow .15s ease; -webkit-appearance: none; appearance: none;

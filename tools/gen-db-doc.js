@@ -43,6 +43,9 @@ out.push('', '## Script Properties (เก็บนอก Google Sheets — ไ�
   '| `PBKDF2_ITERATIONS` | SetupSystem | จำนวนรอบ PBKDF2 (ค่าเริ่มต้น 100000) ปรับได้ |',
   '| `DRIVE_ROOT_FOLDER_ID`, `ATTACHMENT_FOLDER_ID`, `EXPORT_FOLDER_ID` | SetupSystem | โฟลเดอร์ Google Drive สำหรับเอกสารแนบ/ไฟล์รายงานชั่วคราว |',
   '| `CACHE_VER_*` | ระบบ | เวอร์ชันแคชของตาราง (เปลี่ยนอัตโนมัติเมื่อข้อมูลเปลี่ยน) |',
-  '| `BOOTSTRAP_ADMIN_*` | ผู้พัฒนา | ข้อมูลสร้าง Admin คนแรก (`BOOTSTRAP_ADMIN_PASSWORD` ถูกลบอัตโนมัติหลังใช้) |', '');
+  '| `SETUP_CODE` | ติดตั้งอัตโนมัติ/SetupSystem | รหัสติดตั้งครั้งแรก (ใช้ครั้งเดียว) แสดงในชีตชั่วคราว `เริ่มต้นใช้งาน` — ลบอัตโนมัติเมื่อสร้างผู้ดูแลระบบแล้ว |',
+  '| `BOOTSTRAP_ADMIN_*` | ผู้พัฒนา | (ทางเลือก) ข้อมูลสร้าง Admin คนแรกด้วย `CreateFirstAdmin()` (`BOOTSTRAP_ADMIN_PASSWORD` ถูกลบอัตโนมัติหลังใช้) |', '',
+  '## ชีตชั่วคราว `เริ่มต้นใช้งาน`', '',
+  'สร้างขึ้นเมื่อระบบยังไม่มีผู้ดูแลระบบ แสดงรหัสติดตั้งสำหรับหน้า “เริ่มต้นใช้งานระบบ” และถูกลบอัตโนมัติเมื่อสร้างผู้ดูแลระบบคนแรกสำเร็จ (ไม่ใช่ส่วนหนึ่งของฐานข้อมูลถาวร)', '');
 fs.writeFileSync(path.join(__dirname, '..', 'docs', '02-database.md'), out.join('\n'));
 console.log('written docs/02-database.md');

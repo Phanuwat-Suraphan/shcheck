@@ -327,7 +327,7 @@
 
   /* ------------------------------------------------------------------ views */
   function showView(name) {
-    ['login', 'register', 'app', 'admin', 'force-password'].forEach(function (v) {
+    ['login', 'register', 'app', 'admin', 'force-password', 'setup'].forEach(function (v) {
       var el = $('#view-' + v); if (el) el.hidden = v !== name;
     });
     $('#bootScreen').hidden = true;
@@ -367,6 +367,7 @@
       applyMeta(S.cfg);
       $('#setupNotice').hidden = !!S.cfg.setupComplete;
       $('#registerArea').hidden = !S.cfg.allowRegistration;
+      if (S.cfg.needsFirstAdmin) { showSetup(); return; }
       var token = session.get('wsh_token');
       if (token && S.cfg.setupComplete) {
         S.token = token;
@@ -419,6 +420,8 @@
       });
     });
     $('#registerForm').addEventListener('submit', doRegister);
+    $('#setupForm').addEventListener('submit', doFirstRun);
+    $('#suMyLoc').addEventListener('click', setupUseMyLocation);
     ['#regPassword', '#regConfirm', '#regUsername'].forEach(function (s) { $(s).addEventListener('input', updatePwRules); });
     $('#forcePwForm').addEventListener('submit', function (e) { submitPasswordChange(e, true); });
     $('#pwForm').addEventListener('submit', function (e) { submitPasswordChange(e, false); });
@@ -504,6 +507,58 @@
     clearSession();
     showLogin();
     showLoginAlert(msg || 'หมดเวลาการใช้งาน กรุณาเข้าสู่ระบบใหม่');
+  }
+
+  /* ---------- ติดตั้งครั้งแรก ---------- */
+  function showSetup() {
+    if (S.cfg.dbFileName) $('#setupDbName').textContent = S.cfg.dbFileName;
+    if (S.cfg.setupSheetName) $('#setupSheetName').textContent = S.cfg.setupSheetName;
+    showView('setup');
+  }
+  function doFirstRun(e) {
+    e.preventDefault();
+    var f = $('#setupForm');
+    clearFieldErrors(f);
+    $('#setupAlert').hidden = true;
+    var data = {
+      setupCode: $('#suCode').value.trim(), fullName: $('#suName').value.trim(), staffCode: $('#suCode2').value.trim(),
+      position: $('#suPos').value, username: $('#suUser').value.trim().toLowerCase(),
+      password: $('#suPw').value, confirmPassword: $('#suPw2').value,
+      settings: {
+        SCHOOL_LAT: $('#suLat').value.trim(), SCHOOL_LNG: $('#suLng').value.trim(),
+        WORK_START_TIME: $('#suStart').value, LATE_AFTER_TIME: $('#suLate').value, WORK_END_TIME: $('#suEnd').value,
+        SETTINGS_CONFIRMED: $('#suConfirm').checked && !!$('#suLat').value.trim()
+      },
+      clientInfo: { ua: navigator.userAgent.substr(0, 240) }
+    };
+    if (data.setupCode.replace(/[^A-Za-z0-9]/g, '').length < 12) return showFieldError(f, 'setupCode', 'กรุณากรอกรหัสติดตั้ง 12 ตัวจากชีต "เริ่มต้นใช้งาน"');
+    if (data.password !== data.confirmPassword) return showFieldError(f, 'confirmPassword', 'การยืนยันรหัสผ่านไม่ตรงกัน');
+    var btn = $('#setupBtn');
+    setBtnLoading(btn, true);
+    run('firstRunSetup', [data]).then(function (res) {
+      setBtnLoading(btn, false);
+      if (!res || !res.ok) {
+        var err = appErr(res ? res.error : 'ติดตั้งไม่สำเร็จ', res && res.code, res && res.data);
+        if (err.code === 'ALREADY_SETUP') { S.cfg.needsFirstAdmin = false; showLogin(); showLoginAlert(err.message); return; }
+        if (!(err.data && err.data.field && showFieldError(f, err.data.field, err.message))) { $('#setupAlertText').textContent = err.message; $('#setupAlert').hidden = false; window.scrollTo(0, 0); }
+        return;
+      }
+      S.cfg.needsFirstAdmin = false;
+      S.token = res.data.token;
+      session.set('wsh_token', S.token);
+      f.reset();
+      toast(res.data.message, 'success', 5000);
+      enterApp(res.data);
+    }).catch(function (err) { setBtnLoading(btn, false); $('#setupAlertText').textContent = err.message; $('#setupAlert').hidden = false; });
+  }
+  function setupUseMyLocation() {
+    var b = $('#suMyLoc');
+    setBtnLoading(b, true);
+    $('#suLocNote').textContent = 'กำลังอ่านตำแหน่ง...';
+    acquirePosition(15, function (best) { $('#suLocNote').textContent = 'ความแม่นยำ ±' + Math.round(best.accuracy) + ' ม.'; }).then(function (p) {
+      $('#suLat').value = p.lat.toFixed(6); $('#suLng').value = p.lng.toFixed(6);
+      $('#suLocNote').textContent = 'ได้ตำแหน่งแล้ว (±' + Math.round(p.accuracy) + ' ม.)';
+    }, function (err) { $('#suLocNote').textContent = ''; showGeoHelp(err); }).then(function () { setBtnLoading(b, false); });
   }
 
   function doLogout() {
@@ -1095,10 +1150,15 @@
     if (S.adminLoaded && window.Admin) { showView('admin'); window.Admin.show(); return; }
     api('admin.view', {}, { loadingText: 'กำลังโหลดหน้าผู้ดูแลระบบ...' }).then(function (v) {
       $('#adminRoot').innerHTML = v.html;
-      var code = String(v.script).replace(/^\s*<script>/, '').replace(/<\/script>\s*$/, '');
-      var s = document.createElement('script');
-      s.text = code;
-      document.body.appendChild(s);
+      // สคริปต์ของหน้า Admin: แยกไฟล์ (v.script) หรือฝังใน HTML (ชุดติดตั้งแบบง่าย)
+      var codes = [];
+      $$('#adminRoot script').forEach(function (el) { codes.push(el.textContent); el.remove(); });
+      if (v.script) codes.push(String(v.script).replace(/^\s*<script>/, '').replace(/<\/script>\s*$/, ''));
+      codes.forEach(function (code) {
+        var s = document.createElement('script');
+        s.text = code;
+        document.body.appendChild(s);
+      });
       S.adminLoaded = true;
       showView('admin');
       window.Admin.init({ role: v.role, roleLabel: v.roleLabel, user: S.user });
