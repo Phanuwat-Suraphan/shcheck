@@ -503,6 +503,21 @@ test('T05', 'อยู่นอกรัศมี → ไม่บันทึ�
   assert.ok(aud && !/18\.79/.test(aud.Details));
 });
 
+test('T05b', 'ลงเวลาออกงานก็ตรวจ GPS: นอกรัศมีหรือสัญญาณไม่แม่นยำ → ไม่บันทึก', () => {
+  const sys = newSystem();
+  const t = addTeacher(sys, 1);
+  sys.at('2026-11-09 07:45:00'); ok(sys.api(t.token, 'att.checkIn', INSIDE));
+  sys.at('2026-11-09 16:40:00');
+  const r = expectErr(sys.api(t.token, 'att.checkOut', OUTSIDE), 'OUT_OF_ZONE');
+  assert.ok(r.data.distanceM > 250);
+  expectErr(sys.api(t.token, 'att.checkOut', Object.assign({}, INSIDE, { accuracy: 200 })), 'GPS_ACCURACY');
+  expectErr(sys.api(t.token, 'att.checkOut', {}), 'GPS_INVALID');
+  assert.strictEqual(records(sys, 'AttendanceLogs').filter(l => l.Type === 'OUT').length, 0);
+  assert.ok(records(sys, 'AuditLogs').some(l => l.Action === 'CHECKOUT_REJECTED'));
+  const out = ok(sys.api(t.token, 'att.checkOut', INSIDE));
+  assert.strictEqual(out.type, 'OUT'); assert.ok(out.distanceM >= 43 && out.distanceM <= 46);
+});
+
 test('T06', 'ค่าความแม่นยำ GPS เกินเกณฑ์ (50 ม.) → ไม่บันทึก', () => {
   const sys = newSystem();
   const t = addTeacher(sys, 1);
