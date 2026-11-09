@@ -704,6 +704,11 @@ function setupCore_() {
 
     var addedSettings = ensureDefaultSettings_();
     log.push(addedSettings.length ? '✔ เพิ่มการตั้งค่าเริ่มต้น: ' + addedSettings.join(', ') : '• การตั้งค่าครบแล้ว');
+    try {
+      var yNow = +todayStr_().substr(0, 4);
+      var seeded = seedThaiHolidays_([yNow, yNow + 1]);
+      log.push(seeded ? '✔ เพิ่มวันหยุดราชการไทยลงปฏิทิน ' + seeded + ' วัน (ปี พ.ศ. ' + (yNow + 543) + '–' + (yNow + 544) + ')' : '• ปฏิทินวันหยุดราชการไทยเป็นปัจจุบัน');
+    } catch (eh) { log.push('⚠ เพิ่มวันหยุดราชการไทยไม่สำเร็จ: ' + eh.message); }
 
     if (!props.getProperty('PASSWORD_PEPPER')) {
       props.setProperty('PASSWORD_PEPPER', randomHex_(32));
@@ -936,6 +941,9 @@ function runMaintenanceNow_(ctx) {
 function runMaintenance_(ctx) {
   var s = getSettings_();
   var cutoff = addDays_(todayStr_(), -s.gpsRetentionDays);
+  var yNow = +todayStr_().substr(0, 4);
+  var holidaysAdded = 0;
+  try { holidaysAdded = withLock_(function () { return seedThaiHolidays_([yNow, yNow + 1]); }); } catch (eh) { console.error('seed holidays: ' + eh); }
   var purged = withLock_(function () {
     var t = getTable_('AttendanceLogs');
     var last = t.sheet.getLastRow();
@@ -956,8 +964,9 @@ function runMaintenance_(ctx) {
     return count;
   });
   var cleaned = cleanupTempExports_();
-  var msg = 'ลบพิกัด GPS ที่เก่ากว่า ' + thaiDate_(cutoff) + ' จำนวน ' + purged + ' รายการ, ลบไฟล์รายงานชั่วคราว ' + cleaned + ' ไฟล์';
-  if (purged || ctx) writeAudit_(ctx, 'MAINTENANCE', 'SYSTEM', '', { gpsPurged: purged, cutoff: cutoff, tempFilesRemoved: cleaned });
+  var msg = 'ลบพิกัด GPS ที่เก่ากว่า ' + thaiDate_(cutoff) + ' จำนวน ' + purged + ' รายการ, ลบไฟล์รายงานชั่วคราว ' + cleaned + ' ไฟล์' +
+    (holidaysAdded ? ', เพิ่มวันหยุดราชการไทย ' + holidaysAdded + ' วัน' : '');
+  if (purged || holidaysAdded || ctx) writeAudit_(ctx, 'MAINTENANCE', 'SYSTEM', '', { gpsPurged: purged, cutoff: cutoff, tempFilesRemoved: cleaned, holidaysAdded: holidaysAdded });
   return msg;
 }
 

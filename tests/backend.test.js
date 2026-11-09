@@ -883,10 +883,9 @@ test('M05', 'ปฏิทิน: เพิ่มช่วงวันหยุ�
   const t = addTeacher(sys, 1);
   ok(sys.api(sys.admin, 'cal.add', { startDate: '2026-11-11', endDate: '2026-11-12', type: 'SPECIAL_HOLIDAY', title: 'หยุดกีฬาสี' }));
   const fx = ok(sys.api(sys.admin, 'cal.addFixed', { year: 2027 }));
-  assert.ok(/14 วัน/.test(fx.message), fx.message);
-  ok(sys.api(sys.admin, 'cal.addFixed', { year: 2027 }));
+  assert.strictEqual(fx.added, 0, fx.message); // ระบบเพิ่มให้อัตโนมัติตอนติดตั้งแล้ว
   const cal = ok(sys.api(sys.admin, 'cal.list', { year: 2027 }));
-  assert.strictEqual(cal.entries.length, 14);
+  assert.strictEqual(cal.entries.length, 22);
   sys.at('2026-11-13 18:00:00');
   const m = ok(sys.api(sys.admin, 'report.monthly', { year: 2026, month: 11 }));
   const row = m.tables[0].rows.find(r => r.employeeId === t.id);
@@ -894,6 +893,43 @@ test('M05', 'ปฏิทิน: เพิ่มช่วงวันหยุ�
   ok(sys.api(sys.admin, 'cal.remove', { date: '2026-11-12' }));
   const m2 = ok(sys.api(sys.admin, 'report.monthly', { year: 2026, month: 11 }));
   assert.strictEqual(m2.tables[0].rows.find(r => r.employeeId === t.id).absent, 4);
+});
+
+test('M08', 'วันหยุดราชการไทย: เพิ่มอัตโนมัติปีปัจจุบัน+ปีหน้า (รวมวันหยุดทางพุทธศาสนา/ชดเชย), ลบแล้วไม่เพิ่มกลับเอง, ปีอื่นคำนวณวันหยุดชดเชยให้', () => {
+  const sys = newSystem();
+  const t = addTeacher(sys, 1);
+  const y26 = ok(sys.api(sys.admin, 'cal.list', { year: 2026 }));
+  assert.strictEqual(y26.entries.length, 21); assert.strictEqual(y26.holidayDataComplete, true);
+  const byDate = Object.fromEntries(y26.entries.map(e => [e.date, e.title]));
+  assert.strictEqual(byDate['2026-03-03'], 'วันมาฆบูชา');
+  assert.strictEqual(byDate['2026-06-01'], 'วันหยุดชดเชยวันวิสาขบูชา');
+  assert.strictEqual(byDate['2026-07-30'], 'วันเข้าพรรษา');
+  assert.strictEqual(byDate['2026-12-07'], 'วันหยุดชดเชยวันชาติและวันพ่อแห่งชาติ');
+  const y27 = ok(sys.api(sys.admin, 'cal.list', { year: 2027 }));
+  assert.ok(y27.entries.some(e => e.date === '2027-10-25' && /ชดเชยวันปิยมหาราช/.test(e.title)));
+  assert.ok(/รอมติ ครม/.test(y27.holidayNote));
+  // ผู้ดูแลลบวันหยุดออก (เช่น โรงเรียนเปิดสอน) → งานรายคืนไม่เพิ่มกลับมาเอง
+  ok(sys.api(sys.admin, 'cal.remove', { date: '2026-12-31' }));
+  ok(sys.api(sys.admin, 'sys.runMaintenance', {}));
+  assert.ok(!ok(sys.api(sys.admin, 'cal.list', { year: 2026 })).entries.some(e => e.date === '2026-12-31'));
+  // แต่กดปุ่มเพิ่มวันหยุดราชการไทยเองได้
+  assert.strictEqual(ok(sys.api(sys.admin, 'cal.addFixed', { year: 2026 })).added, 1);
+  // ปีที่ยังไม่มีข้อมูลครบ: วันที่คงที่ + วันหยุดชดเชยที่คำนวณ (2030: 6 และ 13 เม.ย. ตรงวันเสาร์)
+  const r30 = ok(sys.api(sys.admin, 'cal.addFixed', { year: 2030 }));
+  assert.strictEqual(r30.complete, false); assert.ok(/วันหยุดทางพุทธศาสนา/.test(r30.message));
+  const d30 = Object.fromEntries(ok(sys.api(sys.admin, 'cal.list', { year: 2030 })).entries.map(e => [e.date, e.title]));
+  assert.strictEqual(d30['2030-04-08'], 'วันหยุดชดเชยวันจักรี');
+  assert.strictEqual(d30['2030-04-16'], 'วันหยุดชดเชยวันสงกรานต์');
+  assert.strictEqual(d30['2030-04-17'], 'วันหยุดชดเชยวันสงกรานต์');
+  // วันหยุดมีผลกับการนับวันทำงาน/ขาดงาน: 7 ธ.ค. 2569 (ชดเชยวันพ่อ) ไม่นับว่าขาดงาน
+  sys.at('2026-12-07 17:00:00');
+  const rep = ok(sys.api(sys.admin, 'report.daily', { date: '2026-12-07' }));
+  assert.strictEqual(rep.tables[0].rows.find(r => r.employeeId === t.id).statusCode, 'HOLIDAY');
+  // ผู้ดูแลเพิ่มวันหยุดของโรงเรียนเองเป็นช่วง และแก้ไขชื่อได้
+  ok(sys.api(sys.admin, 'cal.add', { startDate: '2026-12-28', endDate: '2026-12-30', type: 'SPECIAL_HOLIDAY', title: 'ปิดภาคเรียน' }));
+  ok(sys.api(sys.admin, 'cal.add', { startDate: '2026-12-30', endDate: '2026-12-30', type: 'SPECIAL_HOLIDAY', title: 'กิจกรรมส่งท้ายปี' }));
+  const dec = Object.fromEntries(ok(sys.api(sys.admin, 'cal.list', { year: 2026 })).entries.map(e => [e.date, e.title]));
+  assert.strictEqual(dec['2026-12-28'], 'ปิดภาคเรียน'); assert.strictEqual(dec['2026-12-30'], 'กิจกรรมส่งท้ายปี');
 });
 
 test('M06', 'Admin Overview: จำนวนรวม/มา/สาย/ลา/ขาด/ยังไม่ลงเวลา/ไม่ครบ/รออนุมัติ', () => {

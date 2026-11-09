@@ -1,5 +1,5 @@
 /*
- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.3.0
+ * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.4.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Code.gs (โค้ดฝั่ง Server ทั้งหมด)
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่
  */
@@ -34,7 +34,7 @@ var APP = {
   SCHOOL_FULL: 'โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่',
   NAME_EN: 'Wat Sao Hin School Attendance System',
   SLOGAN: 'ระบบลงเวลาอัจฉริยะ สะดวก โปร่งใส ตรวจสอบได้',
-  VERSION: '1.3.0',
+  VERSION: '1.4.0',
   TZ: 'Asia/Bangkok'
 };
 
@@ -67,6 +67,7 @@ var THAI_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'ม�
   'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
 var THAI_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 var THAI_DAYS = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
+var THAI_DAYS_SHORT = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
 
 /* ========================================================================== */
 /*  Web App entry points                                                      */
@@ -1164,6 +1165,11 @@ function setupCore_() {
 
     var addedSettings = ensureDefaultSettings_();
     log.push(addedSettings.length ? '✔ เพิ่มการตั้งค่าเริ่มต้น: ' + addedSettings.join(', ') : '• การตั้งค่าครบแล้ว');
+    try {
+      var yNow = +todayStr_().substr(0, 4);
+      var seeded = seedThaiHolidays_([yNow, yNow + 1]);
+      log.push(seeded ? '✔ เพิ่มวันหยุดราชการไทยลงปฏิทิน ' + seeded + ' วัน (ปี พ.ศ. ' + (yNow + 543) + '–' + (yNow + 544) + ')' : '• ปฏิทินวันหยุดราชการไทยเป็นปัจจุบัน');
+    } catch (eh) { log.push('⚠ เพิ่มวันหยุดราชการไทยไม่สำเร็จ: ' + eh.message); }
 
     if (!props.getProperty('PASSWORD_PEPPER')) {
       props.setProperty('PASSWORD_PEPPER', randomHex_(32));
@@ -1396,6 +1402,9 @@ function runMaintenanceNow_(ctx) {
 function runMaintenance_(ctx) {
   var s = getSettings_();
   var cutoff = addDays_(todayStr_(), -s.gpsRetentionDays);
+  var yNow = +todayStr_().substr(0, 4);
+  var holidaysAdded = 0;
+  try { holidaysAdded = withLock_(function () { return seedThaiHolidays_([yNow, yNow + 1]); }); } catch (eh) { console.error('seed holidays: ' + eh); }
   var purged = withLock_(function () {
     var t = getTable_('AttendanceLogs');
     var last = t.sheet.getLastRow();
@@ -1416,8 +1425,9 @@ function runMaintenance_(ctx) {
     return count;
   });
   var cleaned = cleanupTempExports_();
-  var msg = 'ลบพิกัด GPS ที่เก่ากว่า ' + thaiDate_(cutoff) + ' จำนวน ' + purged + ' รายการ, ลบไฟล์รายงานชั่วคราว ' + cleaned + ' ไฟล์';
-  if (purged || ctx) writeAudit_(ctx, 'MAINTENANCE', 'SYSTEM', '', { gpsPurged: purged, cutoff: cutoff, tempFilesRemoved: cleaned });
+  var msg = 'ลบพิกัด GPS ที่เก่ากว่า ' + thaiDate_(cutoff) + ' จำนวน ' + purged + ' รายการ, ลบไฟล์รายงานชั่วคราว ' + cleaned + ' ไฟล์' +
+    (holidaysAdded ? ', เพิ่มวันหยุดราชการไทย ' + holidaysAdded + ' วัน' : '');
+  if (purged || holidaysAdded || ctx) writeAudit_(ctx, 'MAINTENANCE', 'SYSTEM', '', { gpsPurged: purged, cutoff: cutoff, tempFilesRemoved: cleaned, holidaysAdded: holidaysAdded });
   return msg;
 }
 
@@ -3515,7 +3525,7 @@ function saveSettings_(ctx, p) {
 /*  Work calendar                                                             */
 /* ========================================================================== */
 
-/** วันหยุดราชการที่มีวันที่คงที่ทุกปี (ตัวอย่าง — ต้องตรวจสอบกับประกาศของทางราชการแต่ละปี) */
+/** วันหยุดราชการที่มีวันที่คงที่ทุกปี */
 var FIXED_HOLIDAYS_ = [
   ['01-01', 'วันขึ้นปีใหม่'],
   ['04-06', 'วันจักรี'],
@@ -3533,10 +3543,104 @@ var FIXED_HOLIDAYS_ = [
   ['12-31', 'วันสิ้นปี']
 ];
 
+/**
+ * วันหยุดราชการไทยรายปีที่ครบทุกวัน (รวมวันหยุดทางพุทธศาสนา วันหยุดพิเศษ และวันหยุดชดเชย)
+ * วันหยุดทางพุทธศาสนาเปลี่ยนตามปฏิทินจันทรคติทุกปี จึงบันทึกเป็นรายปีจากประกาศ/ปฏิทินวันหยุดราชการที่เผยแพร่
+ * ปีที่ไม่มีในรายการ ระบบใช้วันที่คงที่ + คำนวณวันหยุดชดเชยอัตโนมัติ และให้ผู้ดูแลเพิ่มวันหยุดทางพุทธศาสนาเอง
+ */
+var THAI_HOLIDAY_DATA_ = {
+  2026: {
+    note: 'วันหยุดราชการ พ.ศ. 2569 ตามปฏิทินวันหยุดราชการที่เผยแพร่ (รวมวันหยุดพิเศษ 2 ม.ค. ตามมติ ครม.)',
+    days: [
+      ['01-01', 'วันขึ้นปีใหม่'], ['01-02', 'วันหยุดพิเศษ (ต่อเนื่องวันขึ้นปีใหม่)'], ['03-03', 'วันมาฆบูชา'],
+      ['04-06', 'วันจักรี'], ['04-13', 'วันสงกรานต์'], ['04-14', 'วันสงกรานต์'], ['04-15', 'วันสงกรานต์'],
+      ['05-04', 'วันฉัตรมงคล'], ['05-31', 'วันวิสาขบูชา'], ['06-01', 'วันหยุดชดเชยวันวิสาขบูชา'],
+      ['06-03', 'วันเฉลิมพระชนมพรรษาสมเด็จพระนางเจ้าฯ พระบรมราชินี'],
+      ['07-28', 'วันเฉลิมพระชนมพรรษาพระบาทสมเด็จพระเจ้าอยู่หัว'], ['07-29', 'วันอาสาฬหบูชา'], ['07-30', 'วันเข้าพรรษา'],
+      ['08-12', 'วันแม่แห่งชาติ'], ['10-13', 'วันนวมินทรมหาราช'], ['10-23', 'วันปิยมหาราช'],
+      ['12-05', 'วันชาติ และวันพ่อแห่งชาติ'], ['12-07', 'วันหยุดชดเชยวันชาติและวันพ่อแห่งชาติ'],
+      ['12-10', 'วันรัฐธรรมนูญ'], ['12-31', 'วันสิ้นปี']
+    ]
+  },
+  2027: {
+    note: 'วันหยุดราชการ พ.ศ. 2570 (ร่าง) ตามปฏิทินวันหยุดที่เผยแพร่ — ยังรอมติ ครม. กรุณาตรวจสอบอีกครั้งเมื่อประกาศ',
+    days: [
+      ['01-01', 'วันขึ้นปีใหม่'], ['02-21', 'วันมาฆบูชา'], ['02-22', 'วันหยุดชดเชยวันมาฆบูชา'],
+      ['04-06', 'วันจักรี'], ['04-13', 'วันสงกรานต์'], ['04-14', 'วันสงกรานต์'], ['04-15', 'วันสงกรานต์'],
+      ['05-04', 'วันฉัตรมงคล'], ['05-20', 'วันวิสาขบูชา'], ['06-03', 'วันเฉลิมพระชนมพรรษาสมเด็จพระนางเจ้าฯ พระบรมราชินี'],
+      ['07-18', 'วันอาสาฬหบูชา'], ['07-19', 'วันเข้าพรรษา'], ['07-20', 'วันหยุดชดเชยวันอาสาฬหบูชา'],
+      ['07-28', 'วันเฉลิมพระชนมพรรษาพระบาทสมเด็จพระเจ้าอยู่หัว'], ['08-12', 'วันแม่แห่งชาติ'],
+      ['10-13', 'วันนวมินทรมหาราช'], ['10-23', 'วันปิยมหาราช'], ['10-25', 'วันหยุดชดเชยวันปิยมหาราช'],
+      ['12-05', 'วันชาติ และวันพ่อแห่งชาติ'], ['12-06', 'วันหยุดชดเชยวันชาติและวันพ่อแห่งชาติ'],
+      ['12-10', 'วันรัฐธรรมนูญ'], ['12-31', 'วันสิ้นปี']
+    ]
+  }
+};
+
+/** รายการวันหยุดราชการไทยของปี y → {complete, note, days: [{date, title}]} */
+function thaiHolidaysForYear_(y) {
+  var data = THAI_HOLIDAY_DATA_[y];
+  if (data) {
+    return { complete: true, note: data.note, days: data.days.map(function (d) { return { date: y + '-' + d[0], title: d[1] }; }) };
+  }
+  var days = FIXED_HOLIDAYS_.map(function (h) { return { date: y + '-' + h[0], title: h[1] }; });
+  var taken = {};
+  days.forEach(function (h) { taken[h.date] = true; });
+  var subs = [];
+  days.forEach(function (h) {
+    var dow = dayOfWeek_(h.date);
+    if (dow !== 0 && dow !== 6) return;
+    // ตรงกับวันเสาร์/อาทิตย์ → หยุดชดเชยวันทำการถัดไปที่ยังไม่เป็นวันหยุด
+    var d = h.date;
+    do { d = addDays_(d, 1); } while (dayOfWeek_(d) === 0 || dayOfWeek_(d) === 6 || taken[d]);
+    taken[d] = true;
+    subs.push({ date: d, title: 'วันหยุดชดเชย' + h.title });
+  });
+  return {
+    complete: false,
+    note: 'ปี พ.ศ. ' + (y + 543) + ': เพิ่มวันหยุดที่มีวันที่คงที่และวันหยุดชดเชยที่คำนวณอัตโนมัติ — วันหยุดทางพุทธศาสนา (มาฆบูชา วิสาขบูชา อาสาฬหบูชา เข้าพรรษา) และวันหยุดพิเศษตามมติ ครม. กรุณาเพิ่มเองตามประกาศ',
+    days: days.concat(subs).sort(function (a, b) { return a.date < b.date ? -1 : 1; })
+  };
+}
+
+/**
+ * เพิ่มวันหยุดราชการไทยลงปฏิทินอัตโนมัติ (เรียกตอนติดตั้ง/อัปเดตเวอร์ชัน/งานรายคืน ภายใต้ Lock)
+ * จดจำวันที่เคยเพิ่มให้แล้วใน Script Properties → ถ้าผู้ดูแลลบวันใดออก ระบบจะไม่เพิ่มกลับมาเอง
+ */
+function seedThaiHolidays_(years) {
+  var props = PropertiesService.getScriptProperties();
+  var existing = {};
+  readAll_('WorkCalendar').forEach(function (r) { existing[r.Date] = true; });
+  var add = [];
+  years.forEach(function (y) {
+    var key = 'HOLIDAYS_OFFERED_' + y;
+    var offered = [];
+    try { offered = JSON.parse(props.getProperty(key) || '[]'); } catch (e) { offered = []; }
+    var changed = false;
+    thaiHolidaysForYear_(y).days.forEach(function (h) {
+      if (offered.indexOf(h.date) >= 0) return;
+      offered.push(h.date); changed = true;
+      if (existing[h.date]) return;
+      existing[h.date] = true;
+      add.push({ Date: h.date, Type: 'OFFICIAL_HOLIDAY', Title: h.title, CreatedBy: 'ระบบ (วันหยุดราชการไทย)', CreatedAt: nowStamp_() });
+    });
+    if (changed) props.setProperty(key, JSON.stringify(offered));
+  });
+  if (add.length) appendRecords_('WorkCalendar', add);
+  return add.length;
+}
+
+/** 'yyyy-MM-dd' → '1 ม.ค. 2569 (พฤ.)' */
+function calendarDateLabel_(ymd) {
+  var p = parseYmd_(ymd);
+  if (!p) return String(ymd || '');
+  return p.d + ' ' + THAI_MONTHS_SHORT[p.m - 1] + ' ' + (p.y + 543) + ' (' + THAI_DAYS_SHORT[dayOfWeek_(ymd)] + ')';
+}
+
 function calendarView_(r) {
   return {
-    date: r.Date, dateLabel: thaiDate_(r.Date, 'long'), type: r.Type, typeLabel: CALENDAR_TYPES[r.Type] || r.Type,
-    title: r.Title, createdBy: r.CreatedBy
+    date: r.Date, dateLabel: calendarDateLabel_(r.Date), type: r.Type, typeLabel: CALENDAR_TYPES[r.Type] || r.Type,
+    title: r.Title, createdBy: r.CreatedBy, weekend: dayOfWeek_(r.Date) === 0 || dayOfWeek_(r.Date) === 6
   };
 }
 
@@ -3544,11 +3648,13 @@ function listCalendar_(ctx, p) {
   var y = parseInt(p.year, 10);
   if (!isFinite(y) || y < 2000 || y > 2200) y = +todayStr_().substr(0, 4);
   var s = getSettings_();
+  var info = thaiHolidaysForYear_(y);
   var entries = readAll_('WorkCalendar').filter(function (r) { return String(r.Date).substr(0, 4) === String(y); })
     .sort(function (a, b) { return a.Date < b.Date ? -1 : 1; }).map(calendarView_);
   return {
     year: y, entries: entries,
     workDays: s.workDays, workDayNames: s.workDays.map(function (d) { return THAI_DAYS[d]; }),
+    holidayDataComplete: info.complete, holidayNote: info.note,
     canEdit: ctx.user.Role === ROLES.ADMIN
   };
 }
@@ -3596,24 +3702,31 @@ function removeCalendarEntry_(ctx, p) {
   return { message: 'ลบรายการวันที่ ' + thaiDate_(date) + ' แล้ว' };
 }
 
+/** ปุ่ม "เพิ่มวันหยุดราชการไทย" ของปีที่เลือก (เพิ่มเฉพาะวันที่ยังไม่มีในปฏิทิน) */
 function addFixedHolidays_(ctx, p) {
   var y = parseInt(p.year, 10);
   if (!isFinite(y) || y < 2000 || y > 2200) throw appError_('ปีไม่ถูกต้อง', 'VALIDATION');
+  var info = thaiHolidaysForYear_(y);
   var res = withLock_(function () {
     var existing = {};
     readAll_('WorkCalendar').forEach(function (r) { existing[r.Date] = true; });
     var add = [];
-    FIXED_HOLIDAYS_.forEach(function (h) {
-      var d = y + '-' + h[0];
-      if (!existing[d]) add.push({ Date: d, Type: 'OFFICIAL_HOLIDAY', Title: h[1], CreatedBy: ctx.user.FullName, CreatedAt: nowStamp_() });
+    info.days.forEach(function (h) {
+      if (!existing[h.date]) add.push({ Date: h.date, Type: 'OFFICIAL_HOLIDAY', Title: h.title, CreatedBy: ctx.user.FullName, CreatedAt: nowStamp_() });
     });
     appendRecords_('WorkCalendar', add);
+    var key = 'HOLIDAYS_OFFERED_' + y;
+    var offered = [];
+    try { offered = JSON.parse(PropertiesService.getScriptProperties().getProperty(key) || '[]'); } catch (e) { offered = []; }
+    info.days.forEach(function (h) { if (offered.indexOf(h.date) < 0) offered.push(h.date); });
+    PropertiesService.getScriptProperties().setProperty(key, JSON.stringify(offered));
     return add.length;
   });
-  writeAudit_(ctx, 'CALENDAR_ADD_FIXED', 'WorkCalendar', String(y), { added: res });
+  writeAudit_(ctx, 'CALENDAR_ADD_FIXED', 'WorkCalendar', String(y), { added: res, complete: info.complete });
   return {
-    message: 'เพิ่มวันหยุดราชการ (วันที่คงที่) ปี พ.ศ. ' + (y + 543) + ' จำนวน ' + res + ' วัน ' +
-      'กรุณาเพิ่มวันหยุดทางพุทธศาสนา วันหยุดชดเชย และวันหยุดพิเศษตามประกาศของทางราชการเอง'
+    added: res, complete: info.complete,
+    message: 'เพิ่มวันหยุดราชการไทยปี พ.ศ. ' + (y + 543) + ' จำนวน ' + res + ' วัน' +
+      (res ? '' : ' (มีครบแล้ว)') + ' — ' + info.note
   };
 }
 

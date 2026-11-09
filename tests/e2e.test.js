@@ -398,8 +398,13 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
     assert.strictEqual(rows.find(r => r.Key === 'GEOFENCE_RADIUS_M').Value, '200');
   });
 
-  await step('E18', 'ปฏิทินวันหยุด: เพิ่มวันหยุดพิเศษ และแสดงในรายการ', async () => {
+  await step('E18', 'ปฏิทินวันหยุด: มีวันหยุดราชการไทยให้อัตโนมัติ, ผู้ดูแลเพิ่ม/แก้ไขวันหยุดของโรงเรียนได้', async () => {
     await admin.click('#adminNav [data-sec="calendar"]');
+    await admin.locator('#calList', { hasText: 'วันหยุดชดเชยวันชาติและวันพ่อแห่งชาติ' }).waitFor();
+    assert.ok((await admin.textContent('#calList')).includes('วันเข้าพรรษา'));
+    await admin.locator('#calList tr', { hasText: 'วันสิ้นปี' }).locator('[data-edit-cal]').click();
+    assert.strictEqual(await admin.inputValue('#calStart'), '2026-12-31');
+    assert.strictEqual(await admin.inputValue('#calTitle'), 'วันสิ้นปี');
     await admin.fill('#calStart', '2026-12-28');
     await admin.dispatchEvent('#calStart', 'change');
     await admin.fill('#calTitle', 'ปิดภาคเรียน (ทดสอบ)');
@@ -407,6 +412,17 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
     await admin.click('#calForm button[type=submit]');
     await toast(admin, /บันทึกปฏิทินแล้ว/);
     await admin.locator('#calList', { hasText: 'ปิดภาคเรียน (ทดสอบ)' }).waitFor();
+  });
+
+  await step('E23', 'ภาพหน้าจอปฏิทินวันหยุด (เดสก์ท็อป)', async () => {
+    const desk = await newPage({ desktop: true });
+    await login(desk, DEFAULTS.adminUser, ADMIN_NEW_PW);
+    await desk.waitForSelector('#view-app:not([hidden])');
+    await desk.click('#toAdminBtn');
+    await desk.waitForSelector('#ovStats .stat-card');
+    await desk.click('#adminNav [data-sec="calendar"]');
+    await desk.locator('#calList', { hasText: 'วันมาฆบูชา' }).waitFor();
+    await shot(desk, '13-calendar-desktop.png');
   });
 
   await step('E19', 'ภาพหน้าจอ Dashboard ผู้ดูแลระบบ (เดสก์ท็อป) และรายงานรายเดือน', async () => {

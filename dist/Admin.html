@@ -1,4 +1,4 @@
-<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.3.0
+<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.4.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Admin.html (หน้าผู้บริหาร/ผู้ดูแลระบบ)
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่ -->
 <!-- =====================================================================
@@ -19,6 +19,7 @@
   .admin-nav .count { min-width: 20px; height: 20px; border-radius: 10px; background: var(--danger-500); color: #fff; font-size: .72rem; display: inline-flex; align-items: center; justify-content: center; padding: 0 6px; }
   .admin-main { min-width: 0; }
   .admin-grid-2 { display: grid; grid-template-columns: 1fr; gap: 16px; margin-top: 16px; align-items: start; }
+  .admin-grid-2 > * { min-width: 0; }
   .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 14px; }
   .toolbar .field { margin-bottom: 0; flex: 1 1 160px; }
   .toolbar .field.grow { flex: 2 1 240px; }
@@ -186,6 +187,7 @@
       <div class="admin-grid-2" style="margin-top:0">
         <div class="card" id="calFormCard">
           <div class="card-title"><span class="ms">add_circle</span>เพิ่มวันหยุด / วันทำงานพิเศษ</div>
+          <p class="small muted">ใช้เพิ่มวันหยุดของโรงเรียนเอง เช่น ปิดภาคเรียน กีฬาสี วันหยุดพิเศษตามประกาศ หรือวันทำงานชดเชย (เลือกช่วงหลายวันได้) · เลือกวันที่มีอยู่แล้วเพื่อแก้ไขชื่อ/ประเภท</p>
           <form id="calForm" novalidate>
             <div class="form-grid two">
               <div class="field"><label for="calStart">ตั้งแต่วันที่</label><input type="date" id="calStart" required></div>
@@ -197,8 +199,8 @@
             <button type="submit" class="btn block"><span class="ms">save</span>บันทึก</button>
           </form>
           <div class="divider">หรือ</div>
-          <button type="button" class="btn outline block" id="calFixedBtn"><span class="ms">auto_awesome</span>เพิ่มวันหยุดราชการที่มีวันที่คงที่ของปีนี้</button>
-          <p class="tiny muted" style="margin-top:8px">วันหยุดทางพุทธศาสนา (มาฆบูชา วิสาขบูชา อาสาฬหบูชา เข้าพรรษา) วันหยุดชดเชย และวันหยุดพิเศษตามมติ ครม. เปลี่ยนแปลงทุกปี กรุณาเพิ่มเองตามประกาศของทางราชการ</p>
+          <button type="button" class="btn outline block" id="calFixedBtn"><span class="ms">auto_awesome</span>เพิ่มวันหยุดราชการไทยของปีที่เลือก</button>
+          <p class="tiny muted" id="calHolidayNote" style="margin-top:8px"></p>
         </div>
         <div class="card">
           <div class="card-title"><span class="ms">list</span>รายการในปีที่เลือก</div>
@@ -916,20 +918,33 @@ window.Admin = (function () {
     });
     $('#calFixedBtn').addEventListener('click', function () {
       var y = +$('#calYear').value;
-      A.confirmDialog({ title: 'เพิ่มวันหยุดราชการ', html: 'เพิ่มวันหยุดราชการที่มีวันที่คงที่ (เช่น วันขึ้นปีใหม่ วันสงกรานต์ วันพ่อ วันแม่) ของปี พ.ศ. ' + (y + 543) + '<br><span class="small muted">วันที่มีอยู่แล้วจะไม่ถูกเพิ่มซ้ำ กรุณาตรวจสอบกับประกาศของทางราชการ</span>', confirmText: 'เพิ่ม' }).then(function (ok) {
-        if (ok) A.api('cal.addFixed', { year: y }).then(function (r) { A.toast(r.message, 'success', 6500); loadCalendar(); }).catch(err);
+      A.confirmDialog({ title: 'เพิ่มวันหยุดราชการไทย', html: 'เพิ่มวันหยุดราชการไทยของปี พ.ศ. ' + (y + 543) + ' ลงปฏิทิน (รวมวันหยุดชดเชย)<br><span class="small muted">วันที่มีอยู่แล้วจะไม่ถูกเพิ่มซ้ำหรือแก้ไข</span>', confirmText: 'เพิ่ม' }).then(function (ok) {
+        if (ok) A.api('cal.addFixed', { year: y }).then(function (r) { A.toast(r.message, 'success', 8000); loadCalendar(); }).catch(err);
       });
     });
   }
   function loadCalendar() {
     A.api('cal.list', { year: +$('#calYear').value }, { loadingText: 'กำลังโหลดปฏิทิน...' }).then(function (c) {
-      $('#calWorkdaysInfo').textContent = 'วันทำงานประจำสัปดาห์: ' + c.workDayNames.join(', ') + (c.canEdit ? ' (แก้ไขได้ที่หน้าตั้งค่าระบบ)' : '');
+      $('#calWorkdaysInfo').textContent = 'วันทำงานประจำสัปดาห์: ' + c.workDayNames.join(', ') + (c.canEdit ? ' (แก้ไขได้ที่หน้าตั้งค่าระบบ)' : '') +
+        ' · วันหยุดราชการไทยถูกเพิ่มให้อัตโนมัติทุกปี';
       $('#calFormCard').hidden = !c.canEdit;
-      $('#calList').innerHTML = c.entries.length ? '<div class="table-wrap"><table class="table stack-mobile"><thead><tr><th>วันที่</th><th>ประเภท</th><th>รายละเอียด</th>' + (c.canEdit ? '<th></th>' : '') + '</tr></thead><tbody>' +
+      $('#calHolidayNote').textContent = c.holidayNote;
+      $('#calList').innerHTML = c.entries.length ? '<div class="table-wrap"><table class="table stack-mobile"><thead><tr><th>วันที่</th><th>รายละเอียด</th>' + (c.canEdit ? '<th></th>' : '') + '</tr></thead><tbody>' +
         c.entries.map(function (e) {
-          return '<tr><td data-label="วันที่">' + esc(e.dateLabel) + '</td><td data-label="ประเภท"><span class="badge ' + (e.type === 'SPECIAL_WORKDAY' ? 'success' : 'info') + '">' + esc(e.typeLabel) + '</span></td><td data-label="รายละเอียด">' + esc(e.title) + '</td>' +
-            (c.canEdit ? '<td class="actions" data-label="ลบ"><button type="button" class="btn ghost sm" data-del-cal="' + esc(e.date) + '" aria-label="ลบ">' + icon('delete') + '</button></td>' : '') + '</tr>';
+          return '<tr><td data-label="วันที่" class="nowrap">' + esc(e.dateLabel) + (e.weekend ? '<div class="tiny muted">ตรงกับเสาร์-อาทิตย์</div>' : '') + '</td>' +
+            '<td data-label="รายละเอียด">' + esc(e.title) + '<div><span class="badge ' + (e.type === 'SPECIAL_WORKDAY' ? 'success' : (e.type === 'SPECIAL_HOLIDAY' ? 'warning' : 'info')) + '">' + esc(e.typeLabel) + '</span></div></td>' +
+            (c.canEdit ? '<td class="actions" data-label="จัดการ"><button type="button" class="btn ghost sm" data-edit-cal="' + esc(e.date) + '" aria-label="แก้ไข">' + icon('edit') + '</button>' +
+              '<button type="button" class="btn ghost sm" data-del-cal="' + esc(e.date) + '" aria-label="ลบ">' + icon('delete') + '</button></td>' : '') + '</tr>';
         }).join('') + '</tbody></table></div>' : A.emptyState('ยังไม่มีวันหยุดที่บันทึกในปีนี้', 'event_note');
+      $$('[data-edit-cal]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          var e = c.entries.filter(function (x) { return x.date === b.getAttribute('data-edit-cal'); })[0];
+          $('#calStart').value = e.date; $('#calEnd').value = e.date; $('#calType').value = e.type; $('#calTitle').value = e.title;
+          $('#calFormCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+          $('#calTitle').focus();
+          A.toast('แก้ไขชื่อ/ประเภท แล้วกด “บันทึก”', 'info');
+        });
+      });
       $$('[data-del-cal]').forEach(function (b) {
         b.addEventListener('click', function () {
           A.confirmDialog({ title: 'ลบรายการ', message: 'ลบรายการวันที่ ' + A.thDate(b.getAttribute('data-del-cal')) + ' ใช่หรือไม่', confirmText: 'ลบ', danger: true }).then(function (y) {

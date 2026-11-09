@@ -16,6 +16,7 @@
   .admin-nav .count { min-width: 20px; height: 20px; border-radius: 10px; background: var(--danger-500); color: #fff; font-size: .72rem; display: inline-flex; align-items: center; justify-content: center; padding: 0 6px; }
   .admin-main { min-width: 0; }
   .admin-grid-2 { display: grid; grid-template-columns: 1fr; gap: 16px; margin-top: 16px; align-items: start; }
+  .admin-grid-2 > * { min-width: 0; }
   .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 14px; }
   .toolbar .field { margin-bottom: 0; flex: 1 1 160px; }
   .toolbar .field.grow { flex: 2 1 240px; }
@@ -183,6 +184,7 @@
       <div class="admin-grid-2" style="margin-top:0">
         <div class="card" id="calFormCard">
           <div class="card-title"><span class="ms">add_circle</span>เพิ่มวันหยุด / วันทำงานพิเศษ</div>
+          <p class="small muted">ใช้เพิ่มวันหยุดของโรงเรียนเอง เช่น ปิดภาคเรียน กีฬาสี วันหยุดพิเศษตามประกาศ หรือวันทำงานชดเชย (เลือกช่วงหลายวันได้) · เลือกวันที่มีอยู่แล้วเพื่อแก้ไขชื่อ/ประเภท</p>
           <form id="calForm" novalidate>
             <div class="form-grid two">
               <div class="field"><label for="calStart">ตั้งแต่วันที่</label><input type="date" id="calStart" required></div>
@@ -194,8 +196,8 @@
             <button type="submit" class="btn block"><span class="ms">save</span>บันทึก</button>
           </form>
           <div class="divider">หรือ</div>
-          <button type="button" class="btn outline block" id="calFixedBtn"><span class="ms">auto_awesome</span>เพิ่มวันหยุดราชการที่มีวันที่คงที่ของปีนี้</button>
-          <p class="tiny muted" style="margin-top:8px">วันหยุดทางพุทธศาสนา (มาฆบูชา วิสาขบูชา อาสาฬหบูชา เข้าพรรษา) วันหยุดชดเชย และวันหยุดพิเศษตามมติ ครม. เปลี่ยนแปลงทุกปี กรุณาเพิ่มเองตามประกาศของทางราชการ</p>
+          <button type="button" class="btn outline block" id="calFixedBtn"><span class="ms">auto_awesome</span>เพิ่มวันหยุดราชการไทยของปีที่เลือก</button>
+          <p class="tiny muted" id="calHolidayNote" style="margin-top:8px"></p>
         </div>
         <div class="card">
           <div class="card-title"><span class="ms">list</span>รายการในปีที่เลือก</div>
