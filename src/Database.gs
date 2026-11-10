@@ -36,7 +36,9 @@ var SCHEMA_ = {
       ['ApprovedBy', 'str', 'ผู้อนุมัติ'],
       ['ApprovedAt', 'datetime', 'วันเวลาที่อนุมัติ'],
       ['LastLoginAt', 'datetime', 'เข้าสู่ระบบล่าสุด'],
-      ['Note', 'str', 'หมายเหตุ']
+      ['Note', 'str', 'หมายเหตุ'],
+      ['ResetRequestedAt', 'datetime', 'เวลาที่ขอรีเซ็ตรหัสผ่าน (ว่าง = ไม่มีคำขอ)'],
+      ['ResetRequestNote', 'str', 'ข้อความ/ช่องทางติดต่อที่ผู้ขอรีเซ็ตรหัสผ่านแจ้งไว้']
     ]
   },
   AttendanceLogs: {

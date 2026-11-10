@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.4.0
+<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.5.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Index.html
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่ -->
 <html lang="th">
@@ -1556,17 +1556,7 @@ table.table { width: 100%; border-collapse: collapse; font-size: .9rem; }
     });
     $('#loginForm').addEventListener('submit', doLogin);
     $('#goRegisterBtn').addEventListener('click', function () { resetRegister(); showView('register'); });
-    $('#forgotBtn').addEventListener('click', function () {
-      modal({
-        title: 'ลืมรหัสผ่าน', icon: 'lock_reset',
-        body: '<p>เพื่อความปลอดภัย ระบบไม่มีการส่งรหัสผ่านทางอีเมลหรือข้อความ</p><ol class="help-list">' +
-          '<li>ติดต่อ<b>ผู้ดูแลระบบของโรงเรียน</b> พร้อมแสดงตัวตน</li>' +
-          '<li>ผู้ดูแลระบบจะสั่ง “รีเซ็ตรหัสผ่าน” และแจ้งรหัสผ่านชั่วคราวแก่ท่านโดยตรง (ระบบแสดงรหัสชั่วคราวเพียงครั้งเดียว)</li>' +
-          '<li>เข้าสู่ระบบด้วยรหัสผ่านชั่วคราว ระบบจะบังคับให้ตั้งรหัสผ่านใหม่ทันที</li></ol>' +
-          '<p class="small muted">หากใส่รหัสผ่านผิดหลายครั้ง บัญชีจะถูกล็อกชั่วคราว ผู้ดูแลระบบสามารถปลดล็อกให้ได้</p>',
-        actions: [{ label: 'เข้าใจแล้ว' }]
-      });
-    });
+    $('#forgotBtn').addEventListener('click', openForgotPassword);
     $('#registerForm').addEventListener('submit', doRegister);
     $('#setupForm').addEventListener('submit', doFirstRun);
     $('#suMyLoc').addEventListener('click', setupUseMyLocation);
@@ -1655,6 +1645,46 @@ table.table { width: 100%; border-collapse: collapse; font-size: .9rem; }
     clearSession();
     showLogin();
     showLoginAlert(msg || 'หมดเวลาการใช้งาน กรุณาเข้าสู่ระบบใหม่');
+  }
+
+  /* ---------- ลืมรหัสผ่าน: ส่งคำขอให้ผู้ดูแลระบบ ---------- */
+  function openForgotPassword() {
+    var sent = false;
+    modal({
+      title: 'ลืมรหัสผ่าน', icon: 'lock_reset',
+      body: '<p class="small">ส่งคำขอให้ <b>ผู้ดูแลระบบ</b> รีเซ็ตรหัสผ่าน (ระบบไม่ส่งรหัสผ่านทางอีเมลหรือข้อความเพื่อความปลอดภัย)</p>' +
+        '<div id="fpForm"><div class="field" data-field="identifier"><label for="fpIdent">ชื่อผู้ใช้ หรือรหัสประจำตัวบุคลากร</label>' +
+        '<input id="fpIdent" type="text" maxlength="60" autocapitalize="none" spellcheck="false" placeholder="เช่น somsri.j หรือ 1001"><span class="err"></span></div>' +
+        '<div class="field" data-field="note"><label for="fpNote">ช่องทางติดต่อกลับ / ข้อความถึงผู้ดูแล <span class="muted">(ไม่บังคับ)</span></label>' +
+        '<input id="fpNote" type="text" maxlength="200" placeholder="เช่น เบอร์โทร หรือ อยู่ห้องพักครู ป.4"></div></div>' +
+        '<div id="fpDone" hidden><div class="alert success">' + icon('mark_email_read') + '<div id="fpDoneText"></div></div></div>' +
+        '<ol class="help-list small" style="margin-top:12px"><li>ผู้ดูแลระบบจะเห็นคำขอในระบบ และยืนยันตัวตนท่าน</li>' +
+        '<li>ผู้ดูแลระบบกด “รีเซ็ตรหัสผ่าน” แล้วแจ้ง <b>รหัสผ่านชั่วคราว</b> แก่ท่านโดยตรง</li>' +
+        '<li>เข้าสู่ระบบด้วยรหัสผ่านชั่วคราว ระบบจะให้ตั้งรหัสผ่านใหม่ทันที</li></ol>',
+      onOpen: function (root) {
+        var u = $('#loginUsername').value.trim();
+        if (u) $('#fpIdent', root).value = u;
+      },
+      actions: [{ label: 'ปิด', cls: 'outline' }, {
+        label: 'ส่งคำขอ', icon: 'send', onClick: function (close, btn, root) {
+          if (sent) { close(); return false; }
+          clearFieldErrors(root);
+          var ident = $('#fpIdent', root).value.trim();
+          if (!ident) { showFieldError(root, 'identifier', 'กรุณากรอกชื่อผู้ใช้ หรือรหัสประจำตัวบุคลากร'); return false; }
+          setBtnLoading(btn, true);
+          run('requestPasswordReset', [{ identifier: ident, note: $('#fpNote', root).value.trim() }]).then(function (res) {
+            setBtnLoading(btn, false);
+            if (!res || !res.ok) { toast(res ? res.error : 'ส่งคำขอไม่สำเร็จ', 'error', 6000); return; }
+            sent = true;
+            $('#fpForm', root).hidden = true;
+            $('#fpDone', root).hidden = false;
+            $('#fpDoneText', root).textContent = res.data.message;
+            btn.innerHTML = icon('done') + 'เสร็จสิ้น';
+          }).catch(function (e) { setBtnLoading(btn, false); toast(e.message, 'error'); });
+          return false;
+        }
+      }]
+    });
   }
 
   /* ---------- ติดตั้งครั้งแรก ---------- */

@@ -10,7 +10,7 @@
  *   - ฟังก์ชันระดับบนสุดที่ "ไม่" ลงท้ายด้วย "_" สามารถถูกเรียกจาก Browser ผ่าน
  *     google.script.run ได้ทั้งหมด
  *   - ระบบนี้จึงเปิดเฉพาะฟังก์ชันสาธารณะที่จำเป็น ได้แก่
- *       doGet, include, getPublicConfig, login, register, firstRunSetup, api
+ *       doGet, include, getPublicConfig, login, register, firstRunSetup, requestPasswordReset, api
  *       และฟังก์ชันสำหรับผู้พัฒนา (SetupSystem, CreateFirstAdmin, EmergencyResetAdmin,
  *       BenchmarkPasswordHashing, DailyMaintenance) ซึ่งตรวจสอบว่าเรียกจาก
  *       Apps Script Editor โดยเจ้าของโปรเจกต์เท่านั้น
@@ -26,7 +26,7 @@ var APP = {
   SCHOOL_FULL: 'โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่',
   NAME_EN: 'Wat Sao Hin School Attendance System',
   SLOGAN: 'ระบบลงเวลาอัจฉริยะ สะดวก โปร่งใส ตรวจสอบได้',
-  VERSION: '1.4.0',
+  VERSION: '1.5.0',
   TZ: 'Asia/Bangkok'
 };
 
@@ -216,6 +216,7 @@ function getRoutes_() {
     'emp.delete': { fn: deleteEmployee_, roles: A },
     'emp.resetPassword': { fn: resetEmployeePassword_, roles: A },
     'emp.unlock': { fn: unlockEmployee_, roles: A },
+    'emp.dismissReset': { fn: dismissResetRequest_, roles: A },
     'settings.get': { fn: getSettingsForAdmin_, roles: A },
     'settings.save': { fn: saveSettings_, roles: A },
     'cal.add': { fn: addCalendarEntries_, roles: A },

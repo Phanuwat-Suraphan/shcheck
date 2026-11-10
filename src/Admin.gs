@@ -101,7 +101,8 @@ function getAdminOverview_(ctx) {
     pending: {
       registrations: allEmps.filter(function (e) { return e.Status === EMP_STATUS.PENDING; }).length,
       leaves: readAll_('LeaveRequests').filter(function (r) { return r.Status === 'PENDING'; }).length,
-      corrections: readAll_('CorrectionRequests').filter(function (r) { return r.Status === 'PENDING'; }).length
+      corrections: readAll_('CorrectionRequests').filter(function (r) { return r.Status === 'PENDING'; }).length,
+      passwordResets: ctx.user.Role === ROLES.ADMIN ? allEmps.filter(function (e) { return e.Status === EMP_STATUS.ACTIVE && e.ResetRequestedAt; }).length : 0
     },
     totalStaff: allEmps.filter(function (e) { return e.Status === EMP_STATUS.ACTIVE; }).length,
     trend: trend,
@@ -137,6 +138,7 @@ function employeeView_(e, locked) {
     createdLabel: thaiStamp_(e.CreatedAt), createdBy: e.CreatedBy,
     approvedBy: e.ApprovedBy, approvedLabel: thaiStamp_(e.ApprovedAt),
     lastLoginLabel: thaiStamp_(e.LastLoginAt), note: e.Note,
+    resetRequested: !!e.ResetRequestedAt, resetRequestedLabel: thaiStamp_(e.ResetRequestedAt), resetNote: e.ResetRequestNote || '',
     locked: !!locked
   };
 }
@@ -340,7 +342,8 @@ function resetEmployeePassword_(ctx, p) {
     assertNotSelf_(ctx, t, 'รีเซ็ตรหัสผ่าน (กรุณาใช้เมนูเปลี่ยนรหัสผ่าน) ของ');
     return updateRecord_('Employees', t._row, {
       PasswordHash: hash, MustChangePassword: true,
-      SessionVersion: (Number(t.SessionVersion) || 0) + 1, UpdatedAt: nowStamp_()
+      SessionVersion: (Number(t.SessionVersion) || 0) + 1, UpdatedAt: nowStamp_(),
+      ResetRequestedAt: '', ResetRequestNote: ''
     });
   });
   clearLoginFailures_(normalizeUsername_(e.Username));
@@ -350,6 +353,16 @@ function resetEmployeePassword_(ctx, p) {
     employee: employeeView_(e, false),
     message: 'รีเซ็ตรหัสผ่านแล้ว กรุณาแจ้งรหัสผ่านชั่วคราวแก่ ' + e.FullName + ' โดยตรง ผู้ใช้จะต้องเปลี่ยนรหัสผ่านเมื่อเข้าสู่ระบบ'
   };
+}
+
+/** ยกเลิกคำขอรีเซ็ตรหัสผ่าน (เช่น ไม่ใช่เจ้าของบัญชีเป็นผู้ขอ) */
+function dismissResetRequest_(ctx, p) {
+  var e = withLock_(function () {
+    var t = requireTargetEmployee_(p.employeeId);
+    return updateRecord_('Employees', t._row, { ResetRequestedAt: '', ResetRequestNote: '' });
+  });
+  writeAudit_(ctx, 'PASSWORD_RESET_REQUEST_DISMISS', 'Employee', e.EmployeeID, { fullName: e.FullName });
+  return { message: 'ยกเลิกคำขอรีเซ็ตรหัสผ่านของ ' + e.FullName + ' แล้ว' };
 }
 
 function unlockEmployee_(ctx, p) {

@@ -482,6 +482,35 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
     } finally { fresh.server.close(); }
   });
 
+  await step('E24', 'ลืมรหัสผ่าน: ครูส่งคำขอจากหน้าเข้าสู่ระบบ → Admin เห็นคำขอ → รีเซ็ต → ครูเข้าด้วยรหัสชั่วคราวและตั้งรหัสใหม่', async () => {
+    const p = await newPage();
+    await p.fill('#loginUsername', 'somsri.j');
+    await p.click('#forgotBtn');
+    assert.strictEqual(await p.inputValue('#fpIdent'), 'somsri.j');
+    await p.fill('#fpNote', 'อยู่ห้องพักครู ป.4');
+    await modalAction(p, 'ส่งคำขอ');
+    await p.waitForSelector('#fpDone:not([hidden])');
+    assert.ok(/ส่งคำขอแล้ว/.test(await p.textContent('#fpDoneText')));
+    await modalAction(p, 'เสร็จสิ้น');
+    await admin.click('#adminNav [data-sec="overview"]');
+    await admin.locator('#ovWarnings', { hasText: 'คำขอรีเซ็ตรหัสผ่าน 1 รายการ' }).waitFor();
+    await admin.click('#adminNav [data-sec="members"]');
+    await admin.locator('#memResetRequests', { hasText: 'อยู่ห้องพักครู ป.4' }).waitFor();
+    await admin.click('#memResetRequests [data-reset-req]');
+    await modalAction(admin, 'รีเซ็ตรหัสผ่าน');
+    await admin.waitForSelector('.modal .temp-pass');
+    const temp = (await admin.textContent('.modal .temp-pass')).trim();
+    await modalAction(admin, 'บันทึกแล้ว');
+    await admin.waitForFunction(() => document.querySelector('#memResetRequests').textContent.trim() === '');
+    await login(p, 'somsri.j', temp);
+    await p.waitForSelector('#view-force-password:not([hidden])');
+    await p.fill('#fpCurrent', temp);
+    await p.fill('#fpNew', 'SomsriNew2026');
+    await p.fill('#fpConfirm', 'SomsriNew2026');
+    await p.click('#forcePwForm button[type=submit]');
+    await p.waitForSelector('#view-app:not([hidden])');
+  });
+
   await step('E20', 'ไม่มี JavaScript error ในทุกหน้าที่ทดสอบ', async () => {
     assert.deepStrictEqual(pageErrors, []);
   });

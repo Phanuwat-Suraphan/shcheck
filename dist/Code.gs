@@ -1,5 +1,5 @@
 /*
- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.4.0
+ * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.5.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Code.gs (โค้ดฝั่ง Server ทั้งหมด)
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่
  */
@@ -18,7 +18,7 @@
  *   - ฟังก์ชันระดับบนสุดที่ "ไม่" ลงท้ายด้วย "_" สามารถถูกเรียกจาก Browser ผ่าน
  *     google.script.run ได้ทั้งหมด
  *   - ระบบนี้จึงเปิดเฉพาะฟังก์ชันสาธารณะที่จำเป็น ได้แก่
- *       doGet, include, getPublicConfig, login, register, firstRunSetup, api
+ *       doGet, include, getPublicConfig, login, register, firstRunSetup, requestPasswordReset, api
  *       และฟังก์ชันสำหรับผู้พัฒนา (SetupSystem, CreateFirstAdmin, EmergencyResetAdmin,
  *       BenchmarkPasswordHashing, DailyMaintenance) ซึ่งตรวจสอบว่าเรียกจาก
  *       Apps Script Editor โดยเจ้าของโปรเจกต์เท่านั้น
@@ -34,7 +34,7 @@ var APP = {
   SCHOOL_FULL: 'โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่',
   NAME_EN: 'Wat Sao Hin School Attendance System',
   SLOGAN: 'ระบบลงเวลาอัจฉริยะ สะดวก โปร่งใส ตรวจสอบได้',
-  VERSION: '1.4.0',
+  VERSION: '1.5.0',
   TZ: 'Asia/Bangkok'
 };
 
@@ -224,6 +224,7 @@ function getRoutes_() {
     'emp.delete': { fn: deleteEmployee_, roles: A },
     'emp.resetPassword': { fn: resetEmployeePassword_, roles: A },
     'emp.unlock': { fn: unlockEmployee_, roles: A },
+    'emp.dismissReset': { fn: dismissResetRequest_, roles: A },
     'settings.get': { fn: getSettingsForAdmin_, roles: A },
     'settings.save': { fn: saveSettings_, roles: A },
     'cal.add': { fn: addCalendarEntries_, roles: A },
@@ -497,7 +498,9 @@ var SCHEMA_ = {
       ['ApprovedBy', 'str', 'ผู้อนุมัติ'],
       ['ApprovedAt', 'datetime', 'วันเวลาที่อนุมัติ'],
       ['LastLoginAt', 'datetime', 'เข้าสู่ระบบล่าสุด'],
-      ['Note', 'str', 'หมายเหตุ']
+      ['Note', 'str', 'หมายเหตุ'],
+      ['ResetRequestedAt', 'datetime', 'เวลาที่ขอรีเซ็ตรหัสผ่าน (ว่าง = ไม่มีคำขอ)'],
+      ['ResetRequestNote', 'str', 'ข้อความ/ช่องทางติดต่อที่ผู้ขอรีเซ็ตรหัสผ่านแจ้งไว้']
     ]
   },
   AttendanceLogs: {
@@ -2009,6 +2012,55 @@ function login(username, password, clientInfo) {
 }
 
 /* ========================================================================== */
+/*  ลืมรหัสผ่าน: ส่งคำขอให้ผู้ดูแลระบบรีเซ็ต (public)                          */
+/* ========================================================================== */
+
+/**
+ * บุคลากรที่ลืมรหัสผ่านส่งคำขอด้วย "ชื่อผู้ใช้" หรือ "รหัสประจำตัวบุคลากร"
+ * - ตอบข้อความเดียวกันเสมอ ไม่ว่าจะพบบัญชีหรือไม่ (ป้องกันการเดาชื่อผู้ใช้)
+ * - ไม่เปลี่ยนรหัสผ่านใด ๆ: ผู้ดูแลระบบต้องยืนยันตัวตนแล้วกด "รีเซ็ตรหัสผ่าน" เอง
+ * - จำกัดความถี่: บัญชีละ 1 ครั้ง/10 นาที และรวมทั้งระบบไม่เกิน 60 ครั้ง/ชั่วโมง
+ */
+function requestPasswordReset(form) {
+  resetMemo_();
+  var generic = {
+    ok: true,
+    data: {
+      message: 'ส่งคำขอแล้ว หากข้อมูลตรงกับบัญชีในระบบ ผู้ดูแลระบบจะเห็นคำขอของท่าน ' +
+        'กรุณาติดต่อผู้ดูแลระบบเพื่อยืนยันตัวตนและรับรหัสผ่านชั่วคราว'
+    }
+  };
+  try {
+    ensureReady_();
+    form = sanitizeParams_(form);
+    var ident = cleanLine_(form.identifier, 60);
+    if (ident.length < 1) throw appError_('กรุณากรอกชื่อผู้ใช้ หรือรหัสประจำตัวบุคลากร', 'VALIDATION', { field: 'identifier' });
+    var note = cleanLine_(form.note, 200);
+    var cache = CacheService.getScriptCache();
+    var hourKey = 'pwreq_' + fmt_(now_(), 'yyyyMMddHH');
+    var hourCount = parseInt(cache.get(hourKey) || '0', 10);
+    if (hourCount >= 60) throw appError_('มีคำขอจำนวนมากในขณะนี้ กรุณาลองใหม่ภายหลัง หรือติดต่อผู้ดูแลระบบโดยตรง', 'BUSY');
+    cache.put(hourKey, String(hourCount + 1), 3700);
+
+    var uname = normalizeUsername_(ident), code = normalizeStaffCode_(ident);
+    var emp = getEmployees_().filter(function (e) {
+      return e.Status === EMP_STATUS.ACTIVE && (normalizeUsername_(e.Username) === uname || normalizeStaffCode_(e.StaffCode) === code);
+    })[0];
+    if (!emp) return generic; // ไม่บอกว่าไม่พบบัญชี
+    var accKey = 'pwreq_acc_' + emp.EmployeeID;
+    if (cache.get(accKey)) return generic; // ส่งซ้ำถี่เกินไป: ไม่บันทึกเพิ่ม
+    cache.put(accKey, '1', 600);
+    withLock_(function () {
+      updateById_('Employees', 'EmployeeID', emp.EmployeeID, { ResetRequestedAt: nowStamp_(), ResetRequestNote: note });
+    });
+    writeAudit_(null, 'PASSWORD_RESET_REQUEST', 'Employee', emp.EmployeeID, { fullName: emp.FullName, note: note });
+    return generic;
+  } catch (err) {
+    return toErrorResponse_(err, 'requestPasswordReset');
+  }
+}
+
+/* ========================================================================== */
 /*  Sessions                                                                  */
 /* ========================================================================== */
 
@@ -3138,7 +3190,8 @@ function getAdminOverview_(ctx) {
     pending: {
       registrations: allEmps.filter(function (e) { return e.Status === EMP_STATUS.PENDING; }).length,
       leaves: readAll_('LeaveRequests').filter(function (r) { return r.Status === 'PENDING'; }).length,
-      corrections: readAll_('CorrectionRequests').filter(function (r) { return r.Status === 'PENDING'; }).length
+      corrections: readAll_('CorrectionRequests').filter(function (r) { return r.Status === 'PENDING'; }).length,
+      passwordResets: ctx.user.Role === ROLES.ADMIN ? allEmps.filter(function (e) { return e.Status === EMP_STATUS.ACTIVE && e.ResetRequestedAt; }).length : 0
     },
     totalStaff: allEmps.filter(function (e) { return e.Status === EMP_STATUS.ACTIVE; }).length,
     trend: trend,
@@ -3174,6 +3227,7 @@ function employeeView_(e, locked) {
     createdLabel: thaiStamp_(e.CreatedAt), createdBy: e.CreatedBy,
     approvedBy: e.ApprovedBy, approvedLabel: thaiStamp_(e.ApprovedAt),
     lastLoginLabel: thaiStamp_(e.LastLoginAt), note: e.Note,
+    resetRequested: !!e.ResetRequestedAt, resetRequestedLabel: thaiStamp_(e.ResetRequestedAt), resetNote: e.ResetRequestNote || '',
     locked: !!locked
   };
 }
@@ -3377,7 +3431,8 @@ function resetEmployeePassword_(ctx, p) {
     assertNotSelf_(ctx, t, 'รีเซ็ตรหัสผ่าน (กรุณาใช้เมนูเปลี่ยนรหัสผ่าน) ของ');
     return updateRecord_('Employees', t._row, {
       PasswordHash: hash, MustChangePassword: true,
-      SessionVersion: (Number(t.SessionVersion) || 0) + 1, UpdatedAt: nowStamp_()
+      SessionVersion: (Number(t.SessionVersion) || 0) + 1, UpdatedAt: nowStamp_(),
+      ResetRequestedAt: '', ResetRequestNote: ''
     });
   });
   clearLoginFailures_(normalizeUsername_(e.Username));
@@ -3387,6 +3442,16 @@ function resetEmployeePassword_(ctx, p) {
     employee: employeeView_(e, false),
     message: 'รีเซ็ตรหัสผ่านแล้ว กรุณาแจ้งรหัสผ่านชั่วคราวแก่ ' + e.FullName + ' โดยตรง ผู้ใช้จะต้องเปลี่ยนรหัสผ่านเมื่อเข้าสู่ระบบ'
   };
+}
+
+/** ยกเลิกคำขอรีเซ็ตรหัสผ่าน (เช่น ไม่ใช่เจ้าของบัญชีเป็นผู้ขอ) */
+function dismissResetRequest_(ctx, p) {
+  var e = withLock_(function () {
+    var t = requireTargetEmployee_(p.employeeId);
+    return updateRecord_('Employees', t._row, { ResetRequestedAt: '', ResetRequestNote: '' });
+  });
+  writeAudit_(ctx, 'PASSWORD_RESET_REQUEST_DISMISS', 'Employee', e.EmployeeID, { fullName: e.FullName });
+  return { message: 'ยกเลิกคำขอรีเซ็ตรหัสผ่านของ ' + e.FullName + ' แล้ว' };
 }
 
 function unlockEmployee_(ctx, p) {

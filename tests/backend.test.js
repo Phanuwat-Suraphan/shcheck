@@ -333,6 +333,45 @@ test('L02', 'ล็อกบัญชีชั่วคราวเมื่อ�
   assert.ok(records(sys, 'AuditLogs').some(l => l.Action === 'LOGIN_LOCKED'));
 });
 
+test('L07', 'ลืมรหัสผ่าน: ส่งคำขอด้วยชื่อผู้ใช้/รหัสบุคลากร → ผู้ดูแลเห็นคำขอ → รีเซ็ตแล้วคำขอหายไป; ไม่เปิดเผยว่ามีบัญชีหรือไม่', () => {
+  const sys = newSystem();
+  const t = addTeacher(sys, 1), u = addTeacher(sys, 2);
+  const a = ok(sys.env.call('requestPasswordReset', { identifier: 'TEACHER1', note: 'โทร 081-xxx' }));
+  const b = ok(sys.env.call('requestPasswordReset', { identifier: 'no.such.user' }));
+  assert.strictEqual(a.message, b.message); // ข้อความเดียวกันทุกกรณี
+  ok(sys.env.call('requestPasswordReset', { identifier: 't002' })); // รหัสบุคลากร (ไม่สนตัวพิมพ์)
+  expectErr(sys.env.call('requestPasswordReset', { identifier: '' }), 'VALIDATION');
+  const emp = records(sys, 'Employees').find(e => e.Username === 'teacher1');
+  assert.ok(emp.ResetRequestedAt); assert.strictEqual(emp.ResetRequestNote, 'โทร 081-xxx');
+  assert.strictEqual(emp.PasswordHash.length > 20, true);
+  ok(sys.login('teacher1', 'Teach3rPass1')); // คำขอไม่เปลี่ยนรหัสผ่าน: ผู้ขอปลอมทำให้ใครเข้าไม่ได้ไม่ได้
+  const list = ok(sys.api(sys.admin, 'emp.list', {}));
+  assert.strictEqual(list.filter(e => e.resetRequested).length, 2);
+  assert.strictEqual(ok(sys.api(sys.admin, 'admin.overview', {})).pending.passwordResets, 2);
+  const rp = ok(sys.api(sys.admin, 'emp.resetPassword', { employeeId: t.id }));
+  ok(sys.api(sys.admin, 'emp.dismissReset', { employeeId: u.id }));
+  assert.strictEqual(ok(sys.api(sys.admin, 'emp.list', {})).filter(e => e.resetRequested).length, 0);
+  const d = ok(sys.login('teacher1', rp.tempPassword));
+  assert.strictEqual(d.mustChangePassword, true);
+  assert.ok(records(sys, 'AuditLogs').some(l => l.Action === 'PASSWORD_RESET_REQUEST'));
+  expectErr(sys.api(t.token, 'emp.dismissReset', { employeeId: u.id }), 'AUTH'); // token เดิมถูกยกเลิกหลังรีเซ็ต
+  expectErr(sys.api(sys.login('teacher2', 'Teach3rPass2').data.token, 'emp.dismissReset', { employeeId: u.id }), 'FORBIDDEN');
+});
+
+test('L08', 'คำขอรีเซ็ตรหัสผ่านจำกัดความถี่ (บัญชีละ 1 ครั้ง/10 นาที, ทั้งระบบ 60 ครั้ง/ชม.) และไม่รับบัญชีที่ไม่ได้ใช้งาน', () => {
+  const sys = newSystem();
+  const t = addTeacher(sys, 1);
+  ok(sys.env.call('requestPasswordReset', { identifier: 'teacher1', note: 'ครั้งแรก' }));
+  ok(sys.env.call('requestPasswordReset', { identifier: 'teacher1', note: 'ครั้งที่สอง' }));
+  assert.strictEqual(records(sys, 'Employees').find(e => e.Username === 'teacher1').ResetRequestNote, 'ครั้งแรก');
+  const pend = ok(sys.register(regForm(2))).reference;
+  ok(sys.env.call('requestPasswordReset', { identifier: 'teacher2' }));
+  assert.strictEqual(records(sys, 'Employees').find(e => e.EmployeeID === pend).ResetRequestedAt, '');
+  for (let i = 0; i < 57; i++) sys.env.call('requestPasswordReset', { identifier: 'x' + i }); // รวม 60 คำขอในชั่วโมงนี้
+  expectErr(sys.env.call('requestPasswordReset', { identifier: 'teacher1' }), 'BUSY');
+  void t;
+});
+
 test('L03', 'Token ปลอม/ว่าง/รูปแบบผิด ถูกปฏิเสธ', () => {
   const sys = newSystem();
   for (const tk of ['', null, 'abc', 'a'.repeat(64), sys.admin.slice(0, 63) + 'x', { x: 1 }]) {
@@ -405,7 +444,7 @@ test('A03', 'ฟังก์ชันที่ Browser เรียกได้ 
   const injected = ['Date', 'Intl']; // global ที่ simulator ใส่ให้ ไม่ใช่โค้ดของระบบ
   const publicFns = Object.keys(c).filter(k => typeof c[k] === 'function' && !k.endsWith('_') && !injected.includes(k)).sort();
   assert.deepStrictEqual(publicFns, ['BenchmarkPasswordHashing', 'CreateFirstAdmin', 'DailyMaintenance', 'EmergencyResetAdmin',
-    'SetupSystem', 'api', 'doGet', 'firstRunSetup', 'getPublicConfig', 'include', 'login', 'register'].sort());
+    'SetupSystem', 'api', 'doGet', 'firstRunSetup', 'getPublicConfig', 'include', 'login', 'register', 'requestPasswordReset'].sort());
   assert.throws(() => sys.env.call('recordAttendance_'), /Private/);
 });
 

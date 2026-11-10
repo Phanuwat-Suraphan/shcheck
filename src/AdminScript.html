@@ -15,7 +15,7 @@ window.Admin = (function () {
   var POSITIONS = ['ผู้อำนวยการ', 'ครู', 'บุคลากรทางการศึกษา', 'เจ้าหน้าที่อื่น ๆ'];
   var ACTIONS = {
     LOGIN: 'เข้าสู่ระบบ', LOGOUT: 'ออกจากระบบ', LOGIN_LOCKED: 'ล็อกบัญชี (รหัสผิดเกินกำหนด)', REGISTER: 'สมัครสมาชิก',
-    PASSWORD_CHANGED: 'เปลี่ยนรหัสผ่าน', PASSWORD_CHANGE_FAILED: 'เปลี่ยนรหัสผ่านไม่สำเร็จ', PASSWORD_RESET_BY_ADMIN: 'รีเซ็ตรหัสผ่านโดยผู้ดูแล',
+    PASSWORD_CHANGED: 'เปลี่ยนรหัสผ่าน', PASSWORD_RESET_REQUEST: 'ขอรีเซ็ตรหัสผ่าน (ลืมรหัสผ่าน)', PASSWORD_RESET_REQUEST_DISMISS: 'ยกเลิกคำขอรีเซ็ตรหัสผ่าน', PASSWORD_CHANGE_FAILED: 'เปลี่ยนรหัสผ่านไม่สำเร็จ', PASSWORD_RESET_BY_ADMIN: 'รีเซ็ตรหัสผ่านโดยผู้ดูแล',
     ACCOUNT_UNLOCK: 'ปลดล็อกบัญชี', ACCESS_DENIED: 'พยายามเข้าถึงโดยไม่มีสิทธิ์', REGISTRATION_APPROVE: 'อนุมัติสมาชิก', REGISTRATION_REJECT: 'ไม่อนุมัติสมาชิก',
     EMPLOYEE_CREATE: 'เพิ่มบุคลากร', EMPLOYEE_UPDATE: 'แก้ไขข้อมูลบุคลากร', EMPLOYEE_ACTIVATE: 'เปิดใช้งานบัญชี', EMPLOYEE_DEACTIVATE: 'ปิดใช้งานบัญชี',
     EMPLOYEE_ROLE_CHANGE: 'เปลี่ยนประเภทผู้ใช้', EMPLOYEE_DELETE: 'ลบบัญชี', CHECKIN_REJECTED: 'ลงเวลาเข้าไม่ผ่าน (GPS)', CHECKOUT_REJECTED: 'ลงเวลาออกไม่ผ่าน (GPS)',
@@ -88,9 +88,11 @@ window.Admin = (function () {
       st.overview = o;
       var c = o.counts;
       $('#ovDate').textContent = A.thDate(o.date, 'long') + (o.isWorkday ? '' : ' · ' + o.holidayName);
-      $('#ovWarnings').innerHTML = o.warnings.map(function (w) {
-        return '<div class="alert warning">' + icon('warning') + '<div>' + esc(w) + (isAdmin() ? ' <button type="button" class="link-btn" data-go-sec="settings">ไปหน้าตั้งค่า</button>' : '') + '</div></div>';
-      }).join('');
+      $('#ovWarnings').innerHTML = (o.pending.passwordResets ? '<div class="alert info">' + icon('lock_reset') + '<div>มีคำขอรีเซ็ตรหัสผ่าน ' + o.pending.passwordResets +
+        ' รายการ <button type="button" class="link-btn" data-go-sec="members">ไปจัดการ</button></div></div>' : '') +
+        o.warnings.map(function (w) {
+          return '<div class="alert warning">' + icon('warning') + '<div>' + esc(w) + (isAdmin() ? ' <button type="button" class="link-btn" data-go-sec="settings">ไปหน้าตั้งค่า</button>' : '') + '</div></div>';
+        }).join('');
       $('#ovStats').innerHTML = [
         statCard('navy', 'groups', o.totalStaff, 'คน', 'บุคลากรทั้งหมด', isAdmin() ? 'members' : null),
         statCard('success', 'how_to_reg', c.present, 'คน', 'มาปฏิบัติงานวันนี้'),
@@ -221,7 +223,28 @@ window.Admin = (function () {
   function loadMembers() {
     A.api('emp.list', {}, { loadingText: 'กำลังโหลดรายชื่อ...' }).then(function (list) { st.members = list; renderMembers(); }).catch(err);
   }
+  /** คำขอรีเซ็ตรหัสผ่านจากหน้าเข้าสู่ระบบ */
+  function renderResetRequests() {
+    var reqs = st.members.filter(function (e) { return e.resetRequested && e.status === 'ACTIVE'; });
+    setCounts({ passwordResets: reqs.length });
+    $('#memResetRequests').innerHTML = reqs.length ? '<div class="alert warning" style="margin-bottom:14px;display:block">' +
+      '<div style="font-weight:700;margin-bottom:8px">' + icon('lock_reset') + ' คำขอรีเซ็ตรหัสผ่าน (' + reqs.length + ')</div>' +
+      '<div class="small" style="margin-bottom:10px">ยืนยันตัวตนผู้ขอก่อน (พบตัว/โทรศัพท์) แล้วกด “รีเซ็ตรหัสผ่าน” — ระบบจะแสดงรหัสผ่านชั่วคราวให้แจ้งแก่เจ้าของบัญชีโดยตรง</div>' +
+      reqs.map(function (e) {
+        return '<div class="reg-card" style="margin-bottom:8px"><div class="info"><b>' + esc(e.fullName) + '</b> <span class="small muted">(' + esc(e.staffCode) + ' · ' + esc(e.username) + ')</span>' +
+          '<div class="tiny muted">ขอเมื่อ ' + esc(e.resetRequestedLabel) + (e.resetNote ? ' · ข้อความ: ' + esc(e.resetNote) : '') + '</div></div>' +
+          '<div class="actions"><button type="button" class="btn sm" data-reset-req="' + esc(e.employeeId) + '">' + icon('lock_reset') + 'รีเซ็ตรหัสผ่าน</button>' +
+          '<button type="button" class="btn ghost sm" data-dismiss-req="' + esc(e.employeeId) + '">' + icon('close') + 'ยกเลิกคำขอ</button></div></div>';
+      }).join('') + '</div>' : '';
+    $$('[data-reset-req]').forEach(function (b) { b.addEventListener('click', function () { resetPassword(findMember(b.getAttribute('data-reset-req'))); }); });
+    $$('[data-dismiss-req]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        A.api('emp.dismissReset', { employeeId: b.getAttribute('data-dismiss-req') }).then(function (r) { A.toast(r.message, 'success'); loadMembers(); }).catch(err);
+      });
+    });
+  }
   function renderMembers() {
+    renderResetRequests();
     var q = $('#memSearch').value.trim().toLowerCase(), s = $('#memStatus').value, r = $('#memRole').value;
     var rows = st.members.filter(function (e) {
       return (s === 'ALL' || e.status === s) && (r === 'ALL' || e.role === r) && (!q || (e.fullName + ' ' + e.staffCode + ' ' + e.username).toLowerCase().indexOf(q) >= 0);
@@ -231,7 +254,7 @@ window.Admin = (function () {
         return '<tr><td data-label="รหัส">' + esc(e.staffCode) + '</td><td data-label="ชื่อ-นามสกุล"><b>' + esc(e.fullName) + '</b>' + (e.employeeId === st.user.employeeId ? ' <span class="badge navy">คุณ</span>' : '') + '</td>' +
           '<td data-label="ตำแหน่ง">' + esc(e.position) + '</td><td data-label="ชื่อผู้ใช้">' + esc(e.username) + '</td>' +
           '<td data-label="ประเภท"><span class="badge ' + (e.role === 'ADMIN' ? 'navy' : e.role === 'EXECUTIVE' ? 'info' : 'muted') + '">' + esc(e.roleLabel) + '</span></td>' +
-          '<td data-label="สถานะ">' + badge(e.status, e.statusLabel) + (e.locked ? ' <span class="badge danger">' + icon('lock') + 'ถูกล็อก</span>' : '') + (e.mustChangePassword ? ' <span class="badge warning">รอเปลี่ยนรหัส</span>' : '') + '</td>' +
+          '<td data-label="สถานะ">' + badge(e.status, e.statusLabel) + (e.locked ? ' <span class="badge danger">' + icon('lock') + 'ถูกล็อก</span>' : '') + (e.mustChangePassword ? ' <span class="badge warning">รอเปลี่ยนรหัส</span>' : '') + (e.resetRequested ? ' <span class="badge warning">' + icon('lock_reset') + 'ขอรีเซ็ตรหัส</span>' : '') + '</td>' +
           '<td data-label="เข้าสู่ระบบล่าสุด" class="small">' + esc(e.lastLoginLabel || '-') + '</td>' +
           '<td class="actions" data-label="จัดการ"><button type="button" class="btn outline sm" data-manage="' + esc(e.employeeId) + '">' + icon('manage_accounts') + 'จัดการ</button></td></tr>';
       }).join('') + '</tbody></table></div>' : A.emptyState('ไม่พบบุคลากรตามเงื่อนไข', 'person_search');

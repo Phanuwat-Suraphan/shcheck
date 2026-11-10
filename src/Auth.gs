@@ -258,6 +258,55 @@ function login(username, password, clientInfo) {
 }
 
 /* ========================================================================== */
+/*  ลืมรหัสผ่าน: ส่งคำขอให้ผู้ดูแลระบบรีเซ็ต (public)                          */
+/* ========================================================================== */
+
+/**
+ * บุคลากรที่ลืมรหัสผ่านส่งคำขอด้วย "ชื่อผู้ใช้" หรือ "รหัสประจำตัวบุคลากร"
+ * - ตอบข้อความเดียวกันเสมอ ไม่ว่าจะพบบัญชีหรือไม่ (ป้องกันการเดาชื่อผู้ใช้)
+ * - ไม่เปลี่ยนรหัสผ่านใด ๆ: ผู้ดูแลระบบต้องยืนยันตัวตนแล้วกด "รีเซ็ตรหัสผ่าน" เอง
+ * - จำกัดความถี่: บัญชีละ 1 ครั้ง/10 นาที และรวมทั้งระบบไม่เกิน 60 ครั้ง/ชั่วโมง
+ */
+function requestPasswordReset(form) {
+  resetMemo_();
+  var generic = {
+    ok: true,
+    data: {
+      message: 'ส่งคำขอแล้ว หากข้อมูลตรงกับบัญชีในระบบ ผู้ดูแลระบบจะเห็นคำขอของท่าน ' +
+        'กรุณาติดต่อผู้ดูแลระบบเพื่อยืนยันตัวตนและรับรหัสผ่านชั่วคราว'
+    }
+  };
+  try {
+    ensureReady_();
+    form = sanitizeParams_(form);
+    var ident = cleanLine_(form.identifier, 60);
+    if (ident.length < 1) throw appError_('กรุณากรอกชื่อผู้ใช้ หรือรหัสประจำตัวบุคลากร', 'VALIDATION', { field: 'identifier' });
+    var note = cleanLine_(form.note, 200);
+    var cache = CacheService.getScriptCache();
+    var hourKey = 'pwreq_' + fmt_(now_(), 'yyyyMMddHH');
+    var hourCount = parseInt(cache.get(hourKey) || '0', 10);
+    if (hourCount >= 60) throw appError_('มีคำขอจำนวนมากในขณะนี้ กรุณาลองใหม่ภายหลัง หรือติดต่อผู้ดูแลระบบโดยตรง', 'BUSY');
+    cache.put(hourKey, String(hourCount + 1), 3700);
+
+    var uname = normalizeUsername_(ident), code = normalizeStaffCode_(ident);
+    var emp = getEmployees_().filter(function (e) {
+      return e.Status === EMP_STATUS.ACTIVE && (normalizeUsername_(e.Username) === uname || normalizeStaffCode_(e.StaffCode) === code);
+    })[0];
+    if (!emp) return generic; // ไม่บอกว่าไม่พบบัญชี
+    var accKey = 'pwreq_acc_' + emp.EmployeeID;
+    if (cache.get(accKey)) return generic; // ส่งซ้ำถี่เกินไป: ไม่บันทึกเพิ่ม
+    cache.put(accKey, '1', 600);
+    withLock_(function () {
+      updateById_('Employees', 'EmployeeID', emp.EmployeeID, { ResetRequestedAt: nowStamp_(), ResetRequestNote: note });
+    });
+    writeAudit_(null, 'PASSWORD_RESET_REQUEST', 'Employee', emp.EmployeeID, { fullName: emp.FullName, note: note });
+    return generic;
+  } catch (err) {
+    return toErrorResponse_(err, 'requestPasswordReset');
+  }
+}
+
+/* ========================================================================== */
 /*  Sessions                                                                  */
 /* ========================================================================== */
 

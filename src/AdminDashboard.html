@@ -68,7 +68,7 @@
   <nav class="admin-nav" id="adminNav" aria-label="เมนูผู้ดูแลระบบ">
     <button type="button" data-sec="overview" class="active"><span class="ms">dashboard</span>ภาพรวม</button>
     <button type="button" data-sec="registrations" data-admin-only><span class="ms">how_to_reg</span>อนุมัติสมาชิก<span class="count" data-count="registrations" hidden></span></button>
-    <button type="button" data-sec="members" data-admin-only><span class="ms">groups</span>จัดการสมาชิก</button>
+    <button type="button" data-sec="members" data-admin-only><span class="ms">groups</span>จัดการสมาชิก<span class="count" data-count="passwordResets" hidden></span></button>
     <button type="button" data-sec="leaves"><span class="ms">event_busy</span>อนุมัติการลา<span class="count" data-count="leaves" hidden></span></button>
     <button type="button" data-sec="corrections"><span class="ms">edit_calendar</span>คำร้องแก้ไขเวลา<span class="count" data-count="corrections" hidden></span></button>
     <button type="button" data-sec="reports"><span class="ms">analytics</span>รายงานและสถิติ</button>
@@ -124,6 +124,7 @@
           <div class="field"><label for="memStatus">สถานะ</label><select id="memStatus"><option value="ALL">ทั้งหมด</option><option value="ACTIVE">ใช้งาน</option><option value="PENDING">รออนุมัติ</option><option value="INACTIVE">ปิดใช้งาน</option><option value="REJECTED">ไม่อนุมัติ</option></select></div>
           <div class="field"><label for="memRole">ประเภทผู้ใช้</label><select id="memRole"><option value="ALL">ทั้งหมด</option><option value="USER">บุคลากร</option><option value="EXECUTIVE">ผู้บริหาร</option><option value="ADMIN">ผู้ดูแลระบบ</option></select></div>
         </div>
+        <div id="memResetRequests"></div>
         <div id="memTable"></div>
       </div>
     </section>
