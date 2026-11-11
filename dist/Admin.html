@@ -1,4 +1,4 @@
-<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.6.0
+<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.7.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Admin.html (หน้าผู้บริหาร/ผู้ดูแลระบบ)
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่ -->
 <!-- =====================================================================
@@ -41,6 +41,10 @@
   .reg-card { border: 1px solid var(--border); border-radius: 16px; padding: 14px; background: #fff; display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
   .reg-card .info { flex: 1 1 240px; min-width: 0; }
   .reg-card .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .qr-box { display: flex; justify-content: center; align-items: center; background: #fff; border: 1px solid var(--border); border-radius: 16px; padding: 12px; min-height: 220px; }
+  .qr-box svg { width: min(260px, 100%); height: auto; }
+  tr.row-error td { background: var(--danger-bg) !important; }
+  .mono { font-family: 'Courier New', monospace; font-weight: 700; letter-spacing: .5px; }
   .mini-link { display: inline-flex; align-items: center; gap: 2px; font-size: .8rem; color: var(--navy-700); text-decoration: none; }
   .mini-link .ms { font-size: 16px; }
   @media (min-width: 1024px) {
@@ -76,6 +80,7 @@
     <button type="button" data-sec="corrections"><span class="ms">edit_calendar</span>คำร้องแก้ไขเวลา<span class="count" data-count="corrections" hidden></span></button>
     <button type="button" data-sec="reports"><span class="ms">analytics</span>รายงานและสถิติ</button>
     <button type="button" data-sec="calendar"><span class="ms">calendar_month</span>ปฏิทินวันหยุด</button>
+    <button type="button" data-sec="share"><span class="ms">qr_code_2</span>แชร์ระบบ / QR Code</button>
     <button type="button" data-sec="settings" data-admin-only><span class="ms">settings</span>ตั้งค่าระบบ</button>
     <button type="button" data-sec="audit" data-admin-only><span class="ms">policy</span>ประวัติการใช้งาน</button>
   </nav>
@@ -120,7 +125,8 @@
     <!-- ================= จัดการสมาชิก ================= -->
     <section data-panel-sec="members" hidden>
       <div class="page-head"><h2><span class="ms">groups</span>จัดการสมาชิก</h2>
-        <button type="button" class="btn" id="memAddBtn"><span class="ms">person_add</span>เพิ่มบุคลากร</button></div>
+        <div class="row" style="gap:8px"><button type="button" class="btn outline" id="memBulkBtn"><span class="ms">group_add</span>เพิ่มหลายคน</button>
+        <button type="button" class="btn" id="memAddBtn"><span class="ms">person_add</span>เพิ่มบุคลากร</button></div></div>
       <div class="card">
         <div class="toolbar">
           <div class="field grow"><label for="memSearch">ค้นหา</label><input type="search" id="memSearch" placeholder="ชื่อ / รหัสบุคลากร / ชื่อผู้ใช้"></div>
@@ -145,7 +151,8 @@
 
     <!-- ================= คำร้องแก้ไขเวลา ================= -->
     <section data-panel-sec="corrections" hidden>
-      <div class="page-head"><h2><span class="ms">edit_calendar</span>คำร้องแก้ไขการลงเวลา</h2></div>
+      <div class="page-head"><h2><span class="ms">edit_calendar</span>คำร้องแก้ไขการลงเวลา</h2>
+        <button type="button" class="btn" id="crRecordBtn"><span class="ms">more_time</span>บันทึกเวลาแทน (ครูลืมลงเวลา)</button></div>
       <div class="alert info" style="margin-bottom:12px"><span class="ms">history_edu</span><div>เมื่ออนุมัติ ระบบจะสร้างรายการเวลาใหม่และเก็บรายการเดิมไว้เป็นประวัติ (ไม่ลบ) พร้อมบันทึกผู้อนุมัติใน Audit Log</div></div>
       <div class="toolbar">
         <div class="seg" id="crStatusSeg"><button type="button" data-val="PENDING" class="active">รออนุมัติ</button><button type="button" data-val="APPROVED">อนุมัติแล้ว</button><button type="button" data-val="REJECTED">ไม่อนุมัติ</button><button type="button" data-val="ALL">ทั้งหมด</button></div>
@@ -182,6 +189,38 @@
         <button type="button" class="btn outline" id="repPrintBtn"><span class="ms">print</span>พิมพ์รายงาน</button>
       </div>
       <div id="repResult"></div>
+    </section>
+
+    <!-- ================= แชร์ระบบ / QR Code ================= -->
+    <section data-panel-sec="share" hidden>
+      <div class="page-head"><h2><span class="ms">qr_code_2</span>แชร์ระบบให้บุคลากร</h2></div>
+      <div class="admin-grid-2" style="margin-top:0">
+        <div class="card">
+          <div class="card-title"><span class="ms">qr_code_2</span>QR Code เข้าใช้งานระบบ</div>
+          <div class="qr-box" id="shareQr"></div>
+          <div class="field" style="margin-top:12px"><label for="shareUrl">ลิงก์ระบบ</label><input type="url" id="shareUrl" inputmode="url" spellcheck="false" autocomplete="off">
+            <span class="hint">ระบบใส่ลิงก์ให้อัตโนมัติ ถ้าไม่ถูกต้องวางลิงก์ที่ลงท้ายด้วย /exec จากการ Deploy ได้</span></div>
+          <div class="alert warning" id="shareUrlWarn" hidden><span class="ms">warning</span><div>ลิงก์ควรลงท้ายด้วย <b>/exec</b> (ลิงก์ /dev เปิดได้เฉพาะเจ้าของโปรเจกต์)</div></div>
+          <div class="row" style="gap:8px;margin-top:10px">
+            <button type="button" class="btn" id="sharePosterBtn"><span class="ms">print</span>พิมพ์ประกาศ QR (A4)</button>
+            <button type="button" class="btn outline" id="shareCopyBtn"><span class="ms">content_copy</span>คัดลอกลิงก์</button>
+            <button type="button" class="btn outline" id="shareDownloadBtn"><span class="ms">download</span>ดาวน์โหลดรูป QR</button>
+          </div>
+          <p class="small muted" style="margin:10px 0 0">ติดประกาศไว้ที่ห้องพักครู/จุดลงเวลา — ครูสแกนด้วยกล้องโทรศัพท์แล้วเข้าระบบได้ทันที</p>
+        </div>
+        <div class="stack">
+          <div class="card">
+            <div class="card-title"><span class="ms">forum</span>ข้อความสำหรับส่งในกลุ่ม LINE</div>
+            <textarea id="shareMsg" readonly style="min-height:210px;font-size:.9rem"></textarea>
+            <button type="button" class="btn outline block" id="shareMsgCopyBtn" style="margin-top:10px"><span class="ms">content_copy</span>คัดลอกข้อความ</button>
+          </div>
+          <div class="card" data-admin-only>
+            <div class="card-title"><span class="ms">badge</span>บัตรเข้าใช้งาน (เพิ่มหลายคนพร้อมกัน)</div>
+            <p class="small">วางรายชื่อจาก Excel → ระบบสร้างบัญชี + รหัสผ่านชั่วคราว → <b>พิมพ์บัตรเข้าใช้งาน</b> (มี QR Code) แจกครูได้ทันที ไม่ต้องรอสมัครและอนุมัติ</p>
+            <button type="button" class="btn success block" id="shareBulkBtn"><span class="ms">group_add</span>เพิ่มบุคลากรหลายคน</button>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- ================= ปฏิทิน ================= -->
@@ -316,6 +355,212 @@
   </main>
 </div>
 <script>
+/* QR-BEGIN — ตัวสร้าง QR Code ในตัวระบบ (ไม่ต้องโหลดไลบรารีจากอินเทอร์เน็ต)
+   ตามมาตรฐาน ISO/IEC 18004: โหมด Byte (UTF-8), ระดับแก้ไขข้อผิดพลาด M (~15%), เวอร์ชัน 1–10 (ข้อความไม่เกิน 213 ไบต์)
+   แนวทางการเขียนอ้างอิง "QR Code generator library" ของ Project Nayuki (MIT License) */
+window.WshQR = (function () {
+  'use strict';
+  var ECC_M = [-1, 10, 16, 26, 18, 24, 16, 18, 22, 22, 26];   // ECC codewords ต่อบล็อก (ระดับ M)
+  var BLOCKS_M = [-1, 1, 1, 1, 2, 2, 4, 4, 4, 5, 5];          // จำนวนบล็อก (ระดับ M)
+
+  function utf8(s) {
+    if (typeof TextEncoder !== 'undefined') return Array.prototype.slice.call(new TextEncoder().encode(s));
+    var b = unescape(encodeURIComponent(s)), out = [];
+    for (var i = 0; i < b.length; i++) out.push(b.charCodeAt(i));
+    return out;
+  }
+  function rawModules(v) {
+    var r = (16 * v + 128) * v + 64;
+    if (v >= 2) { var n = Math.floor(v / 7) + 2; r -= (25 * n - 10) * n - 55; if (v >= 7) r -= 36; }
+    return r;
+  }
+  function dataCodewords(v) { return Math.floor(rawModules(v) / 8) - ECC_M[v] * BLOCKS_M[v]; }
+  function gfMul(x, y) {
+    var z = 0;
+    for (var i = 7; i >= 0; i--) { z = (z << 1) ^ ((z >>> 7) * 0x11D); z ^= ((y >>> i) & 1) * x; }
+    return z;
+  }
+  function rsDivisor(deg) {
+    var r = [], i, j;
+    for (i = 0; i < deg - 1; i++) r.push(0);
+    r.push(1);
+    var root = 1;
+    for (i = 0; i < deg; i++) {
+      for (j = 0; j < r.length; j++) { r[j] = gfMul(r[j], root); if (j + 1 < r.length) r[j] ^= r[j + 1]; }
+      root = gfMul(root, 2);
+    }
+    return r;
+  }
+  function rsRemainder(data, div) {
+    var r = div.map(function () { return 0; });
+    data.forEach(function (b) {
+      var f = b ^ r.shift();
+      r.push(0);
+      div.forEach(function (c, i) { r[i] ^= gfMul(c, f); });
+    });
+    return r;
+  }
+  function alignPos(v) {
+    if (v === 1) return [];
+    var n = Math.floor(v / 7) + 2, size = v * 4 + 17, step = Math.ceil((v * 4 + 4) / (n * 2 - 2)) * 2, res = [6];
+    for (var p = size - 7; res.length < n; p -= step) res.splice(1, 0, p);
+    return res;
+  }
+  function formatBits(mask) { // ระดับ M = 00
+    var d = mask, rem = d;
+    for (var t = 0; t < 10; t++) rem = (rem << 1) ^ ((rem >>> 9) * 0x537);
+    return ((d << 10) | rem) ^ 0x5412;
+  }
+  function versionBits(v) {
+    var rem = v;
+    for (var i = 0; i < 12; i++) rem = (rem << 1) ^ ((rem >>> 11) * 0x1F25);
+    return (v << 12) | rem;
+  }
+  function maskBit(m, x, y) { // x = คอลัมน์, y = แถว
+    switch (m) {
+      case 0: return (x + y) % 2 === 0;
+      case 1: return y % 2 === 0;
+      case 2: return x % 3 === 0;
+      case 3: return (x + y) % 3 === 0;
+      case 4: return (Math.floor(x / 3) + Math.floor(y / 2)) % 2 === 0;
+      case 5: return x * y % 2 + x * y % 3 === 0;
+      case 6: return (x * y % 2 + x * y % 3) % 2 === 0;
+      default: return ((x + y) % 2 + x * y % 3) % 2 === 0;
+    }
+  }
+
+  /** ข้อความ → {version, size, mask, modules[แถว][คอลัมน์] (true = สีดำ)} */
+  function encode(text) {
+    var bytes = utf8(String(text)), v, i, j, k;
+    for (v = 1; v <= 10; v++) if (4 + (v < 10 ? 8 : 16) + bytes.length * 8 <= dataCodewords(v) * 8) break;
+    if (v > 10) throw new Error('ข้อความยาวเกินไปสำหรับ QR Code');
+    var capBits = dataCodewords(v) * 8, bits = [];
+    var put = function (val, len) { for (var b = len - 1; b >= 0; b--) bits.push((val >>> b) & 1); };
+    put(4, 4); put(bytes.length, v < 10 ? 8 : 16);
+    bytes.forEach(function (b) { put(b, 8); });
+    put(0, Math.min(4, capBits - bits.length));
+    put(0, (8 - bits.length % 8) % 8);
+    var data = [];
+    for (i = 0; i < bits.length; i += 8) { var x8 = 0; for (j = 0; j < 8; j++) x8 = (x8 << 1) | bits[i + j]; data.push(x8); }
+    for (var pad = 0xEC; data.length < dataCodewords(v); pad ^= 0xEC ^ 0x11) data.push(pad);
+
+    // เพิ่ม ECC แยกบล็อก แล้วสลับลำดับ (interleave)
+    var nb = BLOCKS_M[v], ecl = ECC_M[v], raw = Math.floor(rawModules(v) / 8);
+    var nShort = nb - raw % nb, shortLen = Math.floor(raw / nb), div = rsDivisor(ecl), blocks = [];
+    for (i = 0, k = 0; i < nb; i++) {
+      var dat = data.slice(k, k + shortLen - ecl + (i < nShort ? 0 : 1));
+      k += dat.length;
+      var ec = rsRemainder(dat, div);
+      if (i < nShort) dat.push(0);
+      blocks.push(dat.concat(ec));
+    }
+    var cw = [];
+    for (i = 0; i < blocks[0].length; i++) for (j = 0; j < blocks.length; j++) if (i !== shortLen - ecl || j >= nShort) cw.push(blocks[j][i]);
+
+    // วาดรูปแบบคงที่
+    var size = v * 4 + 17, mod = [], fn = [];
+    for (i = 0; i < size; i++) { mod.push([]); fn.push([]); for (j = 0; j < size; j++) { mod[i].push(false); fn[i].push(false); } }
+    var set = function (x, y, d) { mod[y][x] = d; fn[y][x] = true; };
+    for (i = 0; i < size; i++) { set(6, i, i % 2 === 0); set(i, 6, i % 2 === 0); }
+    [[3, 3], [size - 4, 3], [3, size - 4]].forEach(function (c) {
+      for (var dy = -4; dy <= 4; dy++) for (var dx = -4; dx <= 4; dx++) {
+        var d = Math.max(Math.abs(dx), Math.abs(dy)), xx = c[0] + dx, yy = c[1] + dy;
+        if (xx >= 0 && xx < size && yy >= 0 && yy < size) set(xx, yy, d !== 2 && d !== 4);
+      }
+    });
+    var ap = alignPos(v), na = ap.length;
+    for (i = 0; i < na; i++) for (j = 0; j < na; j++) {
+      if ((i === 0 && j === 0) || (i === 0 && j === na - 1) || (i === na - 1 && j === 0)) continue;
+      for (var ay = -2; ay <= 2; ay++) for (var ax = -2; ax <= 2; ax++) set(ap[i] + ax, ap[j] + ay, Math.max(Math.abs(ax), Math.abs(ay)) !== 1);
+    }
+    var drawFormat = function (mask) {
+      var b = formatBits(mask), t;
+      var bit = function (n) { return ((b >>> n) & 1) !== 0; };
+      for (t = 0; t <= 5; t++) set(8, t, bit(t));
+      set(8, 7, bit(6)); set(8, 8, bit(7)); set(7, 8, bit(8));
+      for (t = 9; t < 15; t++) set(14 - t, 8, bit(t));
+      for (t = 0; t < 8; t++) set(size - 1 - t, 8, bit(t));
+      for (t = 8; t < 15; t++) set(8, size - 15 + t, bit(t));
+      set(8, size - 8, true);
+    };
+    drawFormat(0);
+    if (v >= 7) {
+      var vb = versionBits(v);
+      for (i = 0; i < 18; i++) {
+        var on = ((vb >>> i) & 1) !== 0, a = size - 11 + i % 3, bb = Math.floor(i / 3);
+        set(a, bb, on); set(bb, a, on);
+      }
+    }
+    // วางข้อมูลแบบซิกแซก
+    var n = 0;
+    for (var right = size - 1; right >= 1; right -= 2) {
+      if (right === 6) right = 5;
+      for (var vert = 0; vert < size; vert++) for (j = 0; j < 2; j++) {
+        var x = right - j, up = ((right + 1) & 2) === 0, y = up ? size - 1 - vert : vert;
+        if (!fn[y][x] && n < cw.length * 8) { mod[y][x] = ((cw[n >>> 3] >>> (7 - (n & 7))) & 1) !== 0; n++; }
+      }
+    }
+    var applyMask = function (m) {
+      for (var yy = 0; yy < size; yy++) for (var xx = 0; xx < size; xx++) if (!fn[yy][xx] && maskBit(m, xx, yy)) mod[yy][xx] = !mod[yy][xx];
+    };
+    var penalty = function () {
+      var s = 0, dark = 0, yy, xx;
+      var line = function (get) {
+        var r = 0, run = 1, seq = [], idx;
+        for (var q = 0; q < size; q++) seq.push(get(q) ? '1' : '0');
+        for (q = 1; q <= size; q++) {
+          if (q < size && seq[q] === seq[q - 1]) run++;
+          else { if (run >= 5) r += run - 2; run = 1; }
+        }
+        var str = seq.join('');
+        ['10111010000', '00001011101'].forEach(function (p) { for (idx = str.indexOf(p); idx >= 0; idx = str.indexOf(p, idx + 1)) r += 40; });
+        return r;
+      };
+      for (yy = 0; yy < size; yy++) s += line(function (q) { return mod[yy][q]; });
+      for (xx = 0; xx < size; xx++) s += line(function (q) { return mod[q][xx]; });
+      for (yy = 0; yy < size - 1; yy++) for (xx = 0; xx < size - 1; xx++) {
+        var c = mod[yy][xx];
+        if (c === mod[yy][xx + 1] && c === mod[yy + 1][xx] && c === mod[yy + 1][xx + 1]) s += 3;
+      }
+      for (yy = 0; yy < size; yy++) for (xx = 0; xx < size; xx++) if (mod[yy][xx]) dark++;
+      var total = size * size;
+      return s + Math.max(0, Math.ceil(Math.abs(dark * 20 - total * 10) / total) - 1) * 10;
+    };
+    var best = 0, bestScore = Infinity;
+    for (var m = 0; m < 8; m++) {
+      applyMask(m); drawFormat(m);
+      var sc = penalty();
+      if (sc < bestScore) { best = m; bestScore = sc; }
+      applyMask(m);
+    }
+    applyMask(best); drawFormat(best);
+    return { version: v, size: size, mask: best, modules: mod };
+  }
+
+  /** QR Code เป็น SVG (ขอบขาว 4 ช่องตามมาตรฐาน) */
+  function svg(text, opts) {
+    opts = opts || {};
+    var q = encode(text), border = 4, n = q.size + border * 2, d = [];
+    for (var y = 0; y < q.size; y++) for (var x = 0; x < q.size; x++) if (q.modules[y][x]) d.push('M' + (x + border) + ',' + (y + border) + 'h1v1h-1z');
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + n + ' ' + n + '"' + (opts.size ? ' width="' + opts.size + '" height="' + opts.size + '"' : '') +
+      ' shape-rendering="crispEdges" role="img" aria-label="QR Code"><rect width="' + n + '" height="' + n + '" fill="#fff"/><path d="' + d.join('') + '" fill="#000"/></svg>';
+  }
+
+  /** QR Code เป็นรูป PNG (base64) สำหรับดาวน์โหลด */
+  function pngBase64(text, scale) {
+    var q = encode(text), border = 4, s = scale || 10, n = (q.size + border * 2) * s;
+    var c = document.createElement('canvas');
+    c.width = n; c.height = n;
+    var g = c.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, n, n); g.fillStyle = '#000';
+    for (var y = 0; y < q.size; y++) for (var x = 0; x < q.size; x++) if (q.modules[y][x]) g.fillRect((x + border) * s, (y + border) * s, s, s);
+    return c.toDataURL('image/png').split(',')[1];
+  }
+
+  return { encode: encode, svg: svg, pngBase64: pngBase64, _internal: { rsDivisor: rsDivisor, rsRemainder: rsRemainder, alignPos: alignPos, formatBits: formatBits, versionBits: versionBits } };
+})();
+/* QR-END */
+
 /* ==========================================================================
    AdminScript.html — Client ของหน้าผู้บริหาร/ผู้ดูแลระบบ (โหลดหลังตรวจสิทธิ์ที่ Server)
    ทุกปุ่มเรียก api() ซึ่ง Server ตรวจ Role อีกครั้งเสมอ
@@ -340,7 +585,7 @@ window.Admin = (function () {
     CORRECTION_SUBMIT: 'ยื่นคำร้องแก้ไขเวลา', CORRECTION_CANCEL: 'ยกเลิกคำร้อง', CORRECTION_APPROVE: 'อนุมัติคำร้องแก้ไขเวลา', CORRECTION_REJECT: 'ไม่อนุมัติคำร้อง',
     SETTINGS_UPDATE: 'แก้ไขการตั้งค่า', CALENDAR_ADD: 'เพิ่มวันในปฏิทิน', CALENDAR_REMOVE: 'ลบวันในปฏิทิน', CALENDAR_ADD_FIXED: 'เพิ่มวันหยุดราชการคงที่',
     REPORT_EXPORT: 'ส่งออกรายงาน', SUMMARY_REBUILD: 'คำนวณสรุปรายวันใหม่', MAINTENANCE: 'งานบำรุงรักษาข้อมูล',
-    LOGIN_REMEMBERED: 'เข้าสู่ระบบอัตโนมัติ (เครื่องที่จำไว้)', LOGOUT_ALL: 'ออกจากระบบทุกเครื่อง',
+    LOGIN_REMEMBERED: 'เข้าสู่ระบบอัตโนมัติ (เครื่องที่จำไว้)', CORRECTION_RECORD_BY_ADMIN: 'บันทึกเวลาแทนบุคลากร', EMPLOYEE_BULK_CREATE: 'เพิ่มบุคลากรหลายคน', LOGOUT_ALL: 'ออกจากระบบทุกเครื่อง',
     BOOTSTRAP_ADMIN_CREATED: 'สร้างผู้ดูแลระบบคนแรก', FIRST_RUN_SETUP: 'ติดตั้งครั้งแรกผ่านหน้าเว็บ', EMERGENCY_ADMIN_RESET: 'กู้คืนสิทธิ์ผู้ดูแลระบบ'
   };
 
@@ -375,7 +620,7 @@ window.Admin = (function () {
       var g = e.target.closest('[data-go-sec]'); if (g) go(g.getAttribute('data-go-sec'));
       var r = e.target.closest('[data-reload]'); if (r) go(r.getAttribute('data-reload'));
     });
-    bindOverview(); bindMembers(); bindRequests(); bindReports(); bindCalendar(); bindSettings(); bindAudit();
+    bindOverview(); bindMembers(); bindRequests(); bindReports(); bindCalendar(); bindSettings(); bindAudit(); bindShare();
     go('overview');
   }
   function show() { go(st.sec); }
@@ -387,7 +632,7 @@ window.Admin = (function () {
     $$('[data-panel-sec]').forEach(function (p) { p.hidden = p.getAttribute('data-panel-sec') !== sec; });
     window.scrollTo(0, 0);
     ({ overview: loadOverview, registrations: loadRegistrations, members: loadMembers, leaves: loadLeaves, corrections: loadCorrections,
-      reports: initReports, calendar: loadCalendar, settings: loadSettings, audit: loadAudit })[sec]();
+      reports: initReports, calendar: loadCalendar, settings: loadSettings, audit: loadAudit, share: loadShare })[sec]();
   }
   function setCounts(p) {
     Object.keys(p).forEach(function (k) {
@@ -485,8 +730,67 @@ window.Admin = (function () {
       rows.map(function (r) {
         return '<tr><td data-label="รหัส">' + esc(r.staffCode) + '</td><td data-label="ชื่อ-นามสกุล"><b>' + esc(r.fullName) + '</b></td><td data-label="ตำแหน่ง">' + esc(r.position) + '</td>' +
           '<td class="c" data-label="เข้า">' + esc(r.checkIn || '-') + '</td><td class="c" data-label="ออก">' + esc(r.checkOut || '-') + '</td>' +
-          '<td class="c" data-label="สถานะ">' + badge(r.status, r.statusLabel + (r.lateMinutes ? ' ' + r.lateMinutes + ' น.' : '')) + '</td><td data-label="หมายเหตุ">' + esc(r.note || '-') + '</td></tr>';
+          '<td class="c" data-label="สถานะ">' + badge(r.status, r.statusLabel + (r.lateMinutes ? ' ' + r.lateMinutes + ' น.' : '')) + '</td><td data-label="หมายเหตุ">' + esc(r.note || '-') +
+          (canRecordTime(r) ? ' <button type="button" class="btn ghost sm" data-rec-time="' + esc(r.employeeId) + '" data-type="' + (r.checkIn ? 'OUT' : 'IN') + '">' + icon('more_time') + 'บันทึกเวลาแทน</button>' : '') + '</td></tr>';
       }).join('') + '</tbody></table></div>' : A.emptyState('ไม่พบข้อมูล', 'search_off');
+    $$('#ovTable [data-rec-time]').forEach(function (b) {
+      b.addEventListener('click', function () { recordTimeDialog(b.getAttribute('data-rec-time'), st.overview.date, b.getAttribute('data-type')); });
+    });
+  }
+  /** แสดงปุ่ม "บันทึกเวลาแทน" เมื่อยังไม่ลงเวลาเข้า หรือพ้นเวลาเลิกงานแล้วยังไม่ลงเวลาออก (ไม่ใช่ตนเอง/วันลา/วันหยุด) */
+  function canRecordTime(r) {
+    if (!st.user || r.employeeId === st.user.employeeId) return false;
+    if (r.status === 'LEAVE' || r.status === 'HOLIDAY' || r.status === 'HOLIDAY_WORK') return false;
+    return !r.checkIn || !!r.missingOut;
+  }
+
+  /** บันทึกเวลาแทนบุคลากรที่ลืมลงเวลา (มีผลทันที เก็บประวัติเดิม + Audit Log) */
+  function recordTimeDialog(presetId, presetDate, presetType) {
+    A.api('emp.basicList', {}, { loadingText: 'กำลังโหลดรายชื่อ...' }).then(function (list) {
+      var active = list.filter(function (e) { return e.status === 'ACTIVE' && e.employeeId !== st.user.employeeId; });
+      var today = A.bkkToday();
+      A.modal({
+        title: 'บันทึกเวลาแทน (ลืมลงเวลา)', icon: 'more_time',
+        body: '<div class="field" data-field="employeeId"><label for="rtEmp">บุคลากร</label><select id="rtEmp"><option value="">— เลือกบุคลากร —</option>' +
+          active.map(function (e) { return '<option value="' + esc(e.employeeId) + '">' + esc(e.staffCode + ' · ' + e.fullName) + '</option>'; }).join('') + '</select><span class="err"></span></div>' +
+          '<div class="form-grid two"><div class="field" data-field="date"><label for="rtDate">วันที่</label><input type="date" id="rtDate"><span class="hint" data-thai-for="rtDate"></span><span class="err"></span></div>' +
+          '<div class="field" data-field="time"><label for="rtTime">เวลา</label><input type="time" id="rtTime"><span class="err"></span></div></div>' +
+          '<div class="field" data-field="type"><span class="field-label">ประเภท</span><div class="seg" id="rtType"><button type="button" data-val="IN" class="active">เวลาเข้างาน</button><button type="button" data-val="OUT">เวลาออกงาน</button></div></div>' +
+          '<div class="field" data-field="reason"><label for="rtReason">เหตุผล</label><input type="text" id="rtReason" maxlength="200" value="ครูแจ้งว่าลืมลงเวลา"><span class="err"></span></div>' +
+          '<p class="small muted mb-0">มีผลทันที · รายการเวลาเดิม (ถ้ามี) เก็บไว้เป็นประวัติ · บันทึกชื่อผู้บันทึกใน Audit Log</p>',
+        onOpen: function (root) {
+          if (presetId) $('#rtEmp', root).value = presetId;
+          $('#rtDate', root).max = today;
+          $('#rtDate', root).value = presetDate || today;
+          A.setThaiHint($('#rtDate', root));
+          $('#rtDate', root).addEventListener('change', function () { A.setThaiHint($('#rtDate', root)); });
+          $$('#rtType button', root).forEach(function (b) {
+            b.classList.toggle('active', b.getAttribute('data-val') === (presetType || 'IN'));
+            b.addEventListener('click', function () { A.segSelect($('#rtType', root), b); });
+          });
+        },
+        actions: [{ label: 'ยกเลิก', cls: 'outline' }, {
+          label: 'บันทึกเวลา', icon: 'save', cls: 'success', onClick: function (close, btn, root) {
+            A.clearFieldErrors(root);
+            var data = { employeeId: $('#rtEmp', root).value, date: $('#rtDate', root).value, time: $('#rtTime', root).value,
+              type: $('#rtType .active', root).getAttribute('data-val'), reason: $('#rtReason', root).value.trim() };
+            if (!data.employeeId) { A.showFieldError(root, 'employeeId', 'กรุณาเลือกบุคลากร'); return false; }
+            if (!/^\d{2}:\d{2}$/.test(data.time)) { A.showFieldError(root, 'time', 'กรุณาระบุเวลา'); return false; }
+            A.setBtnLoading(btn, true);
+            A.api('corr.adminCreate', data, { silent: true }).then(function (r) {
+              A.setBtnLoading(btn, false); close();
+              A.toast(r.message, 'success', 5000);
+              if (st.sec === 'overview') loadOverview(); else if (st.sec === 'corrections') loadCorrections();
+            }).catch(function (x) {
+              A.setBtnLoading(btn, false);
+              if (x.code === 'AUTH') return;
+              if (!(x.data && x.data.field && A.showFieldError(root, x.data.field, x.message))) A.toast(x.message, 'error', 6000);
+            });
+            return false;
+          }
+        }]
+      });
+    }).catch(err);
   }
 
   /* ------------------------------------------------------------------ registrations */
@@ -537,6 +841,7 @@ window.Admin = (function () {
     $('#memStatus').addEventListener('change', renderMembers);
     $('#memRole').addEventListener('change', renderMembers);
     $('#memAddBtn').addEventListener('click', function () { memberForm(null); });
+    $('#memBulkBtn').addEventListener('click', bulkAddDialog);
   }
   function loadMembers() {
     A.api('emp.list', {}, { loadingText: 'กำลังโหลดรายชื่อ...' }).then(function (list) { st.members = list; renderMembers(); }).catch(err);
@@ -585,6 +890,7 @@ window.Admin = (function () {
     var btns = [];
     btns.push(['history', 'ดูประวัติการลงเวลา', 'outline', function (close) { close(); openIndividual(e.employeeId); }]);
     if (e.status === 'ACTIVE') btns.push(['event_busy', 'บันทึกการลา', 'outline', function (close) { close(); recordLeaveDialog(e.employeeId); }]);
+    if (e.status === 'ACTIVE' && !self) btns.push(['more_time', 'บันทึกเวลาแทน (ลืมลงเวลา)', 'outline', function (close) { close(); recordTimeDialog(e.employeeId); }]);
     if (e.status !== 'PENDING' && e.status !== 'REJECTED') btns.push(['edit', 'แก้ไขข้อมูล', 'outline', function (close) { close(); memberForm(e); }]);
     if (!self && e.status === 'PENDING') btns.push(['how_to_reg', 'อนุมัติ / ไม่อนุมัติ', 'outline', function (close) { close(); go('registrations'); }]);
     if (!self && e.status === 'ACTIVE') {
@@ -617,7 +923,7 @@ window.Admin = (function () {
       title: isNew ? 'เพิ่มบุคลากร' : 'แก้ไขข้อมูลบุคลากร', icon: isNew ? 'person_add' : 'edit',
       body: '<form id="mfForm" novalidate>' +
         '<div class="field" data-field="fullName"><label for="mfName">ชื่อ-นามสกุล</label><input id="mfName" name="fullName" maxlength="100" placeholder="เช่น นายสมชาย ใจดี"><span class="err"></span></div>' +
-        '<div class="form-grid two"><div class="field" data-field="staffCode"><label for="mfCode">รหัสประจำตัวบุคลากร</label><input id="mfCode" name="staffCode" maxlength="20"><span class="err"></span></div>' +
+        '<div class="form-grid two"><div class="field" data-field="staffCode"><label for="mfCode">รหัสประจำตัวบุคลากร</label><input id="mfCode" name="staffCode" maxlength="20"' + (isNew ? ' placeholder="เว้นว่าง = ระบบกำหนดให้"' : '') + '><span class="err"></span></div>' +
         '<div class="field" data-field="position"><label for="mfPos">ตำแหน่ง</label><select id="mfPos" name="position">' + POSITIONS.map(function (p) { return '<option>' + esc(p) + '</option>'; }).join('') + '</select><span class="err"></span></div></div>' +
         '<div class="field" data-field="username"><label for="mfUser">ชื่อผู้ใช้</label><input id="mfUser" name="username" maxlength="30" autocapitalize="none" spellcheck="false"><span class="hint">4–30 ตัว a-z 0-9 . _ -</span><span class="err"></span></div>' +
         (isNew ? '<div class="field" data-field="role"><label for="mfRole">ประเภทผู้ใช้งาน</label><select id="mfRole" name="role"><option value="USER">บุคลากร</option><option value="EXECUTIVE">ผู้บริหาร</option><option value="ADMIN">ผู้ดูแลระบบ</option></select></div>' +
@@ -647,8 +953,10 @@ window.Admin = (function () {
       body: '<p>แจ้งข้อมูลต่อไปนี้แก่ <b>' + esc(name) + '</b> โดยตรง (ไม่ควรส่งในกลุ่มแชท)</p><dl class="kv" style="margin-bottom:10px"><dt>ชื่อผู้ใช้</dt><dd>' + esc(username) + '</dd></dl>' +
         '<div class="temp-pass" id="tpValue">' + esc(pw) + '</div>' +
         '<div class="alert warning" style="margin-top:12px">' + icon('visibility_off') + '<div>รหัสผ่านนี้จะแสดง<b>เพียงครั้งเดียว</b> ระบบไม่ได้เก็บรหัสผ่านจริงไว้ ผู้ใช้ต้องเปลี่ยนรหัสผ่านเมื่อเข้าสู่ระบบ</div></div>',
-      actions: [{ label: 'คัดลอก', cls: 'outline', icon: 'content_copy', keepOpen: true, onClick: function () {
-        if (navigator.clipboard) navigator.clipboard.writeText(pw).then(function () { A.toast('คัดลอกแล้ว', 'success'); }, function () { A.toast('คัดลอกไม่สำเร็จ กรุณาจดด้วยตนเอง', 'warning'); });
+      actions: [{ label: 'พิมพ์บัตรเข้าใช้งาน', cls: 'outline', icon: 'print', keepOpen: true, onClick: function () {
+        printLoginSlips([{ fullName: name, username: username, tempPassword: pw }]);
+      } }, { label: 'คัดลอก', cls: 'outline', icon: 'content_copy', keepOpen: true, onClick: function () {
+        A.copyText(pw, 'คัดลอกแล้ว');
       } }, { label: 'บันทึกแล้ว ปิดหน้าต่าง', icon: 'done' }]
     });
   }
@@ -687,6 +995,7 @@ window.Admin = (function () {
     bindSeg('crStatusSeg', function (v) { st.crStatus = v; loadCorrections(); });
     $('#lvSearch').addEventListener('input', debounce(loadLeaves, 400));
     $('#lvRecordBtn').addEventListener('click', function () { recordLeaveDialog(null); });
+    $('#crRecordBtn').addEventListener('click', function () { recordTimeDialog(null); });
     $('#crSearch').addEventListener('input', debounce(loadCorrections, 400));
   }
   function loadLeaves() {
@@ -1066,6 +1375,194 @@ window.Admin = (function () {
     A.api('settings.save', { values: values }, { silent: true }).then(function (r) {
       A.setBtnLoading(btn, false); A.toast(r.message, 'success'); loadSettings();
     }).catch(function (x) { A.setBtnLoading(btn, false); A.handleFormError(f, x); });
+  }
+
+  /* ------------------------------------------------------------------ แชร์ระบบ / QR Code */
+  function appLink() {
+    if (st.appLink) return Promise.resolve(st.appLink);
+    return A.api('admin.appLink', {}, { silent: true }).then(function (l) {
+      st.appLink = l;
+      if (!st.appUrl) st.appUrl = l.url;
+      return l;
+    });
+  }
+  function validLink(u) { return /^https:\/\/\S+$/.test(u || '') && u.length <= 200; }
+  function bindShare() {
+    $('#shareUrl').addEventListener('input', debounce(function () { st.appUrl = $('#shareUrl').value.trim(); renderShare(); }, 300));
+    $('#shareCopyBtn').addEventListener('click', function () { A.copyText(st.appUrl, 'คัดลอกลิงก์แล้ว'); });
+    $('#shareMsgCopyBtn').addEventListener('click', function () { A.copyText($('#shareMsg').value, 'คัดลอกข้อความแล้ว — วางในกลุ่ม LINE ของโรงเรียนได้เลย'); });
+    $('#sharePosterBtn').addEventListener('click', printPoster);
+    $('#shareDownloadBtn').addEventListener('click', function () {
+      try { A.downloadBase64(window.WshQR.pngBase64(st.appUrl, 12), 'image/png', 'WatSaoHin_Attendance_QR.png'); } catch (e) { A.toast(e.message, 'error'); }
+    });
+    var b = $('#shareBulkBtn');
+    if (b) b.addEventListener('click', bulkAddDialog);
+  }
+  function loadShare() {
+    appLink().then(function () {
+      if (!$('#shareUrl').value) $('#shareUrl').value = st.appUrl || '';
+      renderShare();
+    }).catch(err);
+  }
+  function renderShare() {
+    var u = st.appUrl || '', ok = validLink(u);
+    $('#shareQr').innerHTML = ok ? window.WshQR.svg(u) : A.emptyState('ยังไม่มีลิงก์ระบบ — วางลิงก์ที่ลงท้ายด้วย /exec ที่ได้จากการ Deploy', 'link_off');
+    $('#shareUrlWarn').hidden = !ok || /\/exec$/.test(u);
+    $('#shareMsg').value = ok ? shareMessage(u) : '';
+    ['#shareCopyBtn', '#sharePosterBtn', '#shareDownloadBtn', '#shareMsgCopyBtn'].forEach(function (s) { $(s).disabled = !ok; });
+  }
+  function shareMessage(u) {
+    var reg = st.appLink && st.appLink.allowRegistration;
+    // openExternalBrowser=1: ให้ LINE เปิดลิงก์ด้วย Chrome/Safari (GPS และการจำการเข้าสู่ระบบทำงานได้ดีกว่าเบราว์เซอร์ในแอป LINE)
+    var lineUrl = u + (u.indexOf('?') >= 0 ? '&' : '?') + 'openExternalBrowser=1';
+    return ['📌 ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน', 'เปิดลิงก์: ' + lineUrl, '',
+      '1) ' + (reg ? 'ครั้งแรกกด “สมัครสมาชิก” แล้วรอผู้ดูแลอนุมัติ (ถ้าได้รับบัตรเข้าใช้งานแล้ว ให้เข้าสู่ระบบได้เลย)' : 'เข้าสู่ระบบด้วยชื่อผู้ใช้/รหัสผ่านที่ได้รับ แล้วตั้งรหัสผ่านใหม่'),
+      '2) ติ๊ก “จำการเข้าสู่ระบบบนเครื่องนี้” จะได้ไม่ต้องใส่รหัสผ่านทุกวัน',
+      '3) เพิ่มไอคอนไว้บนหน้าจอ: เมนู “บัญชี” → “เพิ่มไอคอนบนหน้าจอ”',
+      '4) ถึงโรงเรียนกด “ลงเวลาเข้างาน” · กลับบ้านกด “ลงเวลาออกงาน”', '',
+      'ลืมรหัสผ่าน: กด “ลืมรหัสผ่าน?” ที่หน้าเข้าสู่ระบบ'].join('\n');
+  }
+  /** ประกาศ QR Code ขนาด A4 สำหรับติดห้องพักครู */
+  function printPoster() {
+    var u = st.appUrl;
+    if (!validLink(u)) return;
+    var reg = st.appLink && st.appLink.allowRegistration;
+    A.printHtml('<div class="qr-poster"><div class="pp-school">' + esc((st.appLink && st.appLink.school) || 'โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่') + '</div>' +
+      '<div class="pp-title">ระบบลงเวลาปฏิบัติงานออนไลน์</div>' +
+      '<div class="pp-sub">สแกน QR Code ด้วยกล้องโทรศัพท์ เพื่อเข้าระบบลงเวลา</div>' +
+      '<div class="pp-qr">' + window.WshQR.svg(u) + '</div><div class="pp-url">' + esc(u) + '</div>' +
+      '<ol class="pp-steps"><li>สแกน QR Code แล้วเปิดลิงก์</li>' +
+      '<li>' + (reg ? 'ครั้งแรก: <b>สมัครสมาชิก</b> แล้วรอผู้ดูแลอนุมัติ หรือเข้าสู่ระบบด้วยบัตรเข้าใช้งานที่ได้รับ' : 'เข้าสู่ระบบด้วยชื่อผู้ใช้/รหัสผ่านจากบัตรเข้าใช้งาน แล้วตั้งรหัสผ่านใหม่') + '</li>' +
+      '<li>ติ๊ก <b>“จำการเข้าสู่ระบบบนเครื่องนี้”</b> — ครั้งต่อไปไม่ต้องใส่รหัสผ่าน</li>' +
+      '<li>เพิ่มไอคอนไว้บนหน้าจอโทรศัพท์: เมนู <b>บัญชี → เพิ่มไอคอนบนหน้าจอ</b></li>' +
+      '<li>มาถึงกด <b>ลงเวลาเข้างาน</b> · กลับบ้านกด <b>ลงเวลาออกงาน</b></li></ol>' +
+      '<div class="pp-foot">ลืมรหัสผ่าน: กด “ลืมรหัสผ่าน?” ที่หน้าเข้าสู่ระบบ หรือติดต่อผู้ดูแลระบบ</div></div>', 'portrait');
+  }
+  /** บัตรเข้าใช้งาน (8 ใบต่อ A4) — ชื่อผู้ใช้ + รหัสผ่านชั่วคราว + QR Code ลิงก์ระบบ */
+  function printLoginSlips(list) {
+    appLink().catch(function () { return null; }).then(function () {
+      var u = st.appUrl, qr = validLink(u) ? window.WshQR.svg(u) : '';
+      A.printHtml('<div class="slips">' + list.map(function (p) {
+        return '<div class="slip"><div class="sl-head">บัตรเข้าใช้งานระบบลงเวลา · โรงเรียนวัดเสาหิน</div><div class="sl-body"><div class="sl-info">' +
+          '<div class="sl-name">' + esc(p.fullName) + '</div>' +
+          '<div class="sl-lbl">ชื่อผู้ใช้</div><div class="sl-code">' + esc(p.username) + '</div>' +
+          '<div class="sl-lbl">รหัสผ่านชั่วคราว (ใช้ครั้งแรกครั้งเดียว)</div><div class="sl-code">' + esc(p.tempPassword) + '</div></div>' +
+          (qr ? '<div class="sl-qr">' + qr + '</div>' : '') + '</div>' +
+          '<div class="sl-steps">สแกน QR → เข้าสู่ระบบด้วยข้อมูลนี้ → ตั้งรหัสผ่านใหม่ → ติ๊ก “จำการเข้าสู่ระบบบนเครื่องนี้”</div></div>';
+      }).join('') + '</div>', 'portrait');
+    });
+  }
+
+  /* ------------------------------------------------------------------ เพิ่มบุคลากรหลายคน */
+  var POSITION_WORD = /ครู|ผู้อำนวยการ|^ผอ|บุคลากร|ธุรการ|เจ้าหน้าที่|ภารโรง|นักการ|แม่บ้าน|แม่ครัว|การเงิน|พัสดุ|บรรณารักษ์|อัตราจ้าง|พนักงาน/;
+  function mapPosition(raw) {
+    var t = String(raw || '').replace(/\s+/g, ' ').trim();
+    if (!t) return 'ครู';
+    if (POSITIONS.indexOf(t) >= 0) return t;
+    if (/^(ผู้อำนวยการ|ผอ\.?)/.test(t)) return 'ผู้อำนวยการ';
+    if (/ครู/.test(t)) return 'ครู';
+    if (/ธุรการ|บุคลากร|การเงิน|พัสดุ|บรรณารักษ์|รองผู้อำนวยการ/.test(t)) return 'บุคลากรทางการศึกษา';
+    return 'เจ้าหน้าที่อื่น ๆ';
+  }
+  /** แยกรายชื่อที่วางจาก Excel/Google Sheets (คั่นด้วย Tab), CSV (จุลภาค) หรือพิมพ์คั่นด้วยเว้นวรรค */
+  function parseStaffPaste(text) {
+    var CODE = /^[A-Za-z0-9][A-Za-z0-9.\/-]{0,19}$/;
+    var out = [];
+    String(text || '').split(/\r?\n/).forEach(function (line, i) {
+      line = line.trim();
+      if (!line) return;
+      if (!out.length && !/\d/.test(line) && /รหัส|ชื่อ|ตำแหน่ง|ลำดับ|code|name/i.test(line)) return; // แถวหัวตาราง
+      var tabbed = line.indexOf('\t') >= 0 || line.indexOf(',') >= 0;
+      var cols = (tabbed ? line.split(line.indexOf('\t') >= 0 ? '\t' : ',') : line.split(/\s+/))
+        .map(function (c) { return c.trim(); }).filter(function (c) { return c; });
+      // คอลัมน์แรกเป็นรหัสบุคลากร (อักษรอังกฤษ/ตัวเลข) หรือไม่ก็ได้ — ไม่มีรหัส = ระบบกำหนดให้
+      var code = cols.length > 1 && CODE.test(cols[0]) ? cols.shift() : '', name = '', pos = '';
+      if (tabbed) {
+        if (cols.length >= 3) { name = cols[0] + ' ' + cols[1]; pos = cols.slice(2).join(' '); }
+        else if (cols.length === 2) { if (POSITION_WORD.test(cols[1])) { name = cols[0]; pos = cols[1]; } else name = cols[0] + ' ' + cols[1]; }
+        else name = cols[0] || '';
+      } else {
+        if (cols.length >= 3 && POSITION_WORD.test(cols[cols.length - 1])) pos = cols.pop();
+        name = cols.join(' ');
+      }
+      out.push({ line: i + 1, staffCode: code.toUpperCase(), fullName: name.replace(/\s+/g, ' ').trim(), position: mapPosition(pos), positionRaw: pos });
+    });
+    // คอลัมน์ "ลำดับ" 1, 2, 3, … จาก Excel ไม่ใช่รหัสบุคลากร → ให้ระบบกำหนดรหัสแทน
+    if (out.length && out.every(function (r, i) { return r.staffCode === String(i + 1); })) out.forEach(function (r) { r.staffCode = ''; });
+    var seen = {};
+    out.forEach(function (r) {
+      var e = '';
+      if (r.staffCode && seen[r.staffCode]) e = 'รหัสซ้ำในรายการ';
+      else if (r.fullName.length < 4 || r.fullName.indexOf(' ') < 0) e = 'ต้องมีชื่อและนามสกุล (เว้นวรรค)';
+      if (r.staffCode) seen[r.staffCode] = true;
+      r.error = e;
+    });
+    return out;
+  }
+  function bulkAddDialog() {
+    var rows = [];
+    A.modal({
+      title: 'เพิ่มบุคลากรหลายคน', icon: 'group_add', wide: true,
+      body: '<p class="small mb-0">คัดลอกจาก Excel / Google Sheets มาวางได้เลย (1 คนต่อ 1 บรรทัด): <b>ชื่อ-นามสกุล · ตำแหน่ง</b></p>' +
+        '<p class="tiny muted">ไม่ต้องใส่รหัสบุคลากร — ระบบกำหนดให้ (T001, T002, …) และสร้างชื่อผู้ใช้จากรหัส (t001) พร้อมรหัสผ่านชั่วคราว · ถ้ามีรหัสเดิมให้ใส่เป็นคอลัมน์แรก · ชื่อกับนามสกุลแยกคอลัมน์ได้ · ไม่ใส่ตำแหน่ง = ครู</p>' +
+        '<div class="field"><label for="bkText">รายชื่อ</label><textarea id="bkText" style="min-height:140px;font-family:inherit" placeholder="นางสาวสมศรี ใจดี&#9;ครู&#10;นายสมชาย รักเรียน&#9;ครูผู้ช่วย&#10;นางมาลี ศรีสุข&#9;ธุรการ"></textarea></div>' +
+        '<div id="bkPreview"></div>',
+      onOpen: function (root) {
+        var ta = $('#bkText', root);
+        var render = function (serverErrors) {
+          rows = parseStaffPaste(ta.value);
+          var errs = {};
+          (serverErrors || []).forEach(function (e) { errs[e.line] = e.message; });
+          var bad = 0;
+          $('#bkPreview', root).innerHTML = rows.length ? '<div class="table-wrap"><table class="table compact"><thead><tr><th class="c">ที่</th><th>รหัส</th><th>ชื่อ-นามสกุล</th><th>ตำแหน่ง</th><th>ตรวจสอบ</th></tr></thead><tbody>' +
+            rows.map(function (r, i) {
+              var e = errs[i + 1] || r.error;
+              if (e) bad++;
+              return '<tr' + (e ? ' class="row-error"' : '') + '><td class="c">' + (i + 1) + '</td><td>' + (r.staffCode ? esc(r.staffCode) : '<span class="muted small">อัตโนมัติ</span>') + '</td><td>' + esc(r.fullName) + '</td><td>' + esc(r.position) +
+                (r.positionRaw && r.positionRaw !== r.position ? '<div class="tiny muted">' + esc(r.positionRaw) + '</div>' : '') + '</td><td>' +
+                (e ? '<span class="badge danger">' + esc(e) + '</span>' : '<span class="badge success">พร้อม</span>') + '</td></tr>';
+            }).join('') + '</tbody></table></div><p class="small" id="bkSummary">' + rows.length + ' คน' + (bad ? ' · <b style="color:var(--danger)">แก้ไข ' + bad + ' แถว</b>' : ' · พร้อมสร้างบัญชี') + '</p>' : '';
+          var btn = $('.modal-actions .btn.success', root);
+          if (btn) { btn.disabled = !rows.length || bad > 0 || rows.length > 50; btn.innerHTML = icon('group_add') + esc(rows.length ? 'สร้างบัญชี ' + rows.length + ' คน' : 'สร้างบัญชี'); }
+          if (rows.length > 50) $('#bkSummary', root).innerHTML += ' · <b style="color:var(--danger)">ครั้งละไม่เกิน 50 คน</b>';
+        };
+        ta.addEventListener('input', debounce(function () { render(); }, 250));
+        root._render = render;
+        render();
+      },
+      actions: [{ label: 'ยกเลิก', cls: 'outline' }, {
+        label: 'สร้างบัญชี', icon: 'group_add', cls: 'success', onClick: function (close, btn, root) {
+          if (!rows.length) return false;
+          A.setBtnLoading(btn, true);
+          A.api('emp.bulkCreate', { rows: rows.map(function (r) { return { staffCode: r.staffCode, fullName: r.fullName, position: r.position }; }) },
+            { loadingText: 'กำลังสร้างบัญชี ' + rows.length + ' คน...' }).then(function (res) {
+            A.setBtnLoading(btn, false); close();
+            showBulkResult(res);
+            if (st.sec === 'members') loadMembers();
+          }).catch(function (e) {
+            A.setBtnLoading(btn, false);
+            if (e.data && e.data.rows) root._render(e.data.rows);
+            err(e);
+          });
+          return false;
+        }
+      }]
+    });
+  }
+  function showBulkResult(res) {
+    var list = res.created;
+    var text = list.map(function (p) { return p.fullName + ' (รหัส ' + p.staffCode + ') — ชื่อผู้ใช้: ' + p.username + ' รหัสผ่านชั่วคราว: ' + p.tempPassword; }).join('\n');
+    A.modal({
+      title: 'สร้างบัญชีแล้ว ' + list.length + ' คน', icon: 'how_to_reg', noClose: true, wide: true,
+      body: '<div class="alert warning">' + icon('visibility_off') + '<div>รหัสผ่านชั่วคราวแสดง<b>ครั้งเดียว</b> — กด <b>พิมพ์บัตรเข้าใช้งาน</b> แล้วแจกให้แต่ละคน (ทุกคนต้องตั้งรหัสผ่านใหม่เมื่อเข้าครั้งแรก)</div></div>' +
+        '<div class="table-wrap" style="margin-top:10px"><table class="table compact" id="bkResult"><thead><tr><th>ชื่อ-นามสกุล</th><th>ชื่อผู้ใช้</th><th>รหัสผ่านชั่วคราว</th></tr></thead><tbody>' +
+        list.map(function (p) { return '<tr><td>' + esc(p.fullName) + ' <span class="tiny muted">' + esc(p.staffCode || '') + '</span></td><td class="mono">' + esc(p.username) + '</td><td class="mono">' + esc(p.tempPassword) + '</td></tr>'; }).join('') + '</tbody></table></div>',
+      actions: [
+        { label: 'พิมพ์บัตรเข้าใช้งาน', icon: 'print', cls: 'success', keepOpen: true, onClick: function () { printLoginSlips(list); } },
+        { label: 'คัดลอกทั้งหมด', icon: 'content_copy', cls: 'outline', keepOpen: true, onClick: function () { A.copyText(text, 'คัดลอกแล้ว'); } },
+        { label: 'เสร็จสิ้น', icon: 'done' }
+      ]
+    });
   }
 
   /* ------------------------------------------------------------------ audit */

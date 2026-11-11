@@ -268,3 +268,11 @@ flowchart LR
 | ใบลาแบบราชการ (พิมพ์ A4) | มือถือ: สถิติการลา | มือถือ: ตัวอักษรใหญ่มาก | ผู้บริหาร: สรุปวันลา/มาสายรายรอบ |
 |---|---|---|---|
 | ![](screenshots/14-leave-form-print.png) | ![](screenshots/15-leave-stats-mobile.png) | ![](screenshots/16-large-text-mobile.png) | ![](screenshots/17-leave-summary-desktop.png) |
+
+| แชร์ระบบ / QR Code | ประกาศ QR (พิมพ์ A4) | บัตรเข้าใช้งาน (8 ใบ/A4) | มือถือ: เตือนลงเวลาไม่ครบ |
+|---|---|---|---|
+| ![](screenshots/18-share-qr-desktop.png) | ![](screenshots/19-qr-poster-print.png) | ![](screenshots/20-login-slips-print.png) | ![](screenshots/21-issues-mobile.png) |
+
+| มือถือ: ลงเวลาเข้าหลังเวลาสาย (ลืมกด?) | ผู้บริหาร: บันทึกเวลาแทน |
+|---|---|
+| ![](screenshots/22-forgot-checkin-mobile.png) | ![](screenshots/23-record-time-desktop.png) |

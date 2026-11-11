@@ -52,7 +52,7 @@ function getAdminOverview_(ctx) {
     list.push({
       employeeId: pp.emp.employeeId, staffCode: pp.emp.staffCode, fullName: pp.emp.fullName, position: pp.emp.position,
       checkIn: d.checkIn ? d.checkIn.substr(0, 5) : '', checkOut: d.checkOut ? d.checkOut.substr(0, 5) : '',
-      status: d.status, statusLabel: d.statusLabel, note: d.note, lateMinutes: d.lateMinutes
+      status: d.status, statusLabel: d.statusLabel, note: d.note, lateMinutes: d.lateMinutes, missingOut: d.missingOut
     });
   });
   list.sort(function (a, b) {
@@ -206,11 +206,12 @@ function validRole_(r) {
 
 /** เพิ่มสมาชิกโดยผู้ดูแลระบบ — ระบบสุ่มรหัสผ่านชั่วคราว (แสดงครั้งเดียว) และบังคับเปลี่ยนเมื่อเข้าสู่ระบบ */
 function createEmployee_(ctx, p) {
-  var data = validateEmployeeInput_(p, { requirePassword: false });
+  var data = validateEmployeeInput_(p, { requirePassword: false, autoCode: true });
   var role = validRole_(String(p.role || ROLES.USER));
   var temp = generateTempPassword_(12);
   var hash = hashPassword_(temp);
   var rec = withLock_(function () {
+    if (!data.staffCode) data.staffCode = nextStaffCode_();
     assertUniqueEmployee_(data.username, data.staffCode, null);
     var r = {
       EmployeeID: newId_('EMP'), StaffCode: data.staffCode, FullName: data.fullName, Position: data.position,
@@ -228,6 +229,103 @@ function createEmployee_(ctx, p) {
     tempPassword: temp,
     message: 'เพิ่มบุคลากรเรียบร้อย กรุณาแจ้งรหัสผ่านชั่วคราวแก่เจ้าของบัญชีโดยตรง (แสดงเพียงครั้งเดียว)'
   };
+}
+
+/* ---------- เพิ่มบุคลากรหลายคนพร้อมกัน (วางรายชื่อจาก Excel) ---------- */
+
+/** แปลงชื่อตำแหน่งที่พิมพ์มา (เช่น ครูชำนาญการ, ธุรการ) เป็นตำแหน่งในระบบ */
+function mapPosition_(raw) {
+  var t = cleanLine_(raw, 60);
+  if (!t) return 'ครู';
+  if (POSITIONS.indexOf(t) >= 0) return t;
+  if (/^(ผู้อำนวยการ|ผอ\.?)/.test(t)) return 'ผู้อำนวยการ';
+  if (/ครู/.test(t)) return 'ครู';
+  if (/ธุรการ|บุคลากร|การเงิน|พัสดุ|บรรณารักษ์|รองผู้อำนวยการ/.test(t)) return 'บุคลากรทางการศึกษา';
+  return 'เจ้าหน้าที่อื่น ๆ';
+}
+
+/** สร้างชื่อผู้ใช้จากรหัสบุคลากร (เช่น T001 → t001, 1234 → t1234) ไม่ซ้ำกับ taken */
+function suggestUsername_(staffCode, taken) {
+  var b = String(staffCode || '').toLowerCase().replace(/[^a-z0-9._-]/g, '');
+  if (!/^[a-z]/.test(b)) b = 't' + b;
+  if (b.length < 4) b = 'user' + b;
+  b = b.substr(0, 26);
+  var u = b, n = 2;
+  while (taken[u]) u = b + '.' + (n++);
+  taken[u] = true;
+  return u;
+}
+
+/** รหัสผ่านชั่วคราว (สุ่ม 12 ตัว) ใช้รอบ PBKDF2 น้อยลงเพื่อสร้างหลายบัญชีได้เร็ว — ระบบบังคับเปลี่ยนรหัสเมื่อเข้าครั้งแรก */
+var BULK_TEMP_ITERATIONS_ = 20000;
+
+/**
+ * เพิ่มบุคลากรหลายคน: ตรวจทุกแถวก่อน ถ้ามีแถวผิดจะไม่สร้างบัญชีใดเลย (แก้แล้วส่งใหม่ได้ทันที)
+ * @param {{rows: Array<{staffCode, fullName, position}>, role?: string}} p
+ */
+function bulkCreateEmployees_(ctx, p) {
+  var rows = Array.isArray(p.rows) ? p.rows : [];
+  if (!rows.length) throw appError_('กรุณาวางรายชื่อบุคลากรอย่างน้อย 1 คน', 'VALIDATION');
+  if (rows.length > 50) throw appError_('เพิ่มได้ครั้งละไม่เกิน 50 คน กรุณาแบ่งส่งเป็นหลายครั้ง', 'VALIDATION');
+  var role = validRole_(String(p.role || ROLES.USER));
+  var existing = readAll_('Employees');
+  var takenUser = {}, takenCode = {};
+  existing.forEach(function (e) { takenUser[normalizeUsername_(e.Username)] = true; takenCode[normalizeStaffCode_(e.StaffCode)] = 'มีในระบบแล้ว'; });
+  var errors = [], items = [];
+  rows.forEach(function (r, i) {
+    r = r || {};
+    try {
+      var code = normalizeStaffCode_(r.staffCode);
+      if (code && takenCode[code]) throw appError_('รหัสบุคลากร ' + code + ' ' + (takenCode[code] === true ? 'ซ้ำในรายการ' : takenCode[code]), 'DUPLICATE');
+      var data = validateEmployeeInput_({ fullName: r.fullName, staffCode: code, position: mapPosition_(r.position), username: 'placeholder' }, { autoCode: true });
+      if (!data.staffCode) data.staffCode = nextStaffCode_(takenCode);
+      data.username = suggestUsername_(data.staffCode, takenUser);
+      takenCode[data.staffCode] = true;
+      items.push(data);
+    } catch (e) {
+      errors.push({ line: i + 1, message: e.message || String(e) });
+    }
+  });
+  if (errors.length) {
+    throw appError_('ข้อมูลไม่ถูกต้อง ' + errors.length + ' แถว — ยังไม่ได้สร้างบัญชีใด ๆ กรุณาแก้ไขแล้วกดใหม่', 'VALIDATION', { rows: errors });
+  }
+  items.forEach(function (it) {
+    it.temp = generateTempPassword_(12);
+    it.hash = hashPassword_(it.temp, Math.min(getConfiguredIterations_(), BULK_TEMP_ITERATIONS_));
+  });
+  var recs = withLock_(function () {
+    // ตรวจซ้ำอีกครั้งภายใต้ Lock (กันการสมัครพร้อมกัน)
+    items.forEach(function (it) { assertUniqueEmployee_(it.username, it.staffCode, null); });
+    var now = nowStamp_(), today = todayStr_();
+    var list = items.map(function (it) {
+      return {
+        EmployeeID: newId_('EMP'), StaffCode: it.staffCode, FullName: it.fullName, Position: it.position,
+        Username: it.username, PasswordHash: it.hash, Role: role, Status: EMP_STATUS.ACTIVE,
+        MustChangePassword: true, SessionVersion: 1, ActiveFrom: today, ActiveTo: '',
+        CreatedAt: now, CreatedBy: ctx.user.FullName, UpdatedAt: now,
+        ApprovedBy: ctx.user.FullName, ApprovedAt: now, LastLoginAt: '', Note: 'เพิ่มแบบหลายคน'
+      };
+    });
+    appendRecords_('Employees', list);
+    return list;
+  });
+  writeAudit_(ctx, 'EMPLOYEE_BULK_CREATE', 'Employee', '', {
+    count: recs.length, role: role, staff: recs.map(function (r) { return r.StaffCode + ' ' + r.FullName; })
+  });
+  return {
+    created: recs.map(function (r, i) {
+      return { employeeId: r.EmployeeID, staffCode: r.StaffCode, fullName: r.FullName, position: r.Position, username: r.Username, tempPassword: items[i].temp };
+    }),
+    message: 'เพิ่มบุคลากร ' + recs.length + ' คนเรียบร้อย — พิมพ์บัตรเข้าใช้งานหรือคัดลอกรหัสผ่านชั่วคราวก่อนปิดหน้าต่าง (แสดงครั้งเดียว)'
+  };
+}
+
+/** ลิงก์เว็บแอปสำหรับแชร์/ทำ QR Code (ใช้ /exec เสมอ) */
+function getAppLink_(ctx) {
+  var url = '';
+  try { url = String(ScriptApp.getService().getUrl() || ''); } catch (e) { url = ''; }
+  url = url.replace(/\/dev(\?.*)?$/, '/exec');
+  return { url: url, school: APP.SCHOOL_FULL, nameTh: APP.NAME_TH, allowRegistration: ctx.settings.allowRegistration };
 }
 
 function updateEmployee_(ctx, p) {

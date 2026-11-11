@@ -8,6 +8,7 @@ const path = require('path');
 const assert = require('assert');
 const { chromium, devices } = require('playwright');
 const { createApp, DEFAULTS } = require('./e2e-server');
+const { decode: decodeQR } = require('./qr-decode');
 
 const SHOTS = path.join(__dirname, '..', 'docs', 'screenshots');
 const SCHOOL = DEFAULTS.school;
@@ -66,6 +67,27 @@ async function step(id, name, fn) {
   catch (e) { results.push({ id, name, ok: false, ms: Date.now() - t, err: e.message }); console.log(`✘ ${id} ${name}\n   ${e.message.split('\n').slice(0, +(process.env.ERR_LINES || 4)).join('\n   ')}`); }
 }
 function setClock(t) { return fetch(base + '/__clock?' + encodeURIComponent(t)); }
+/** เรนเดอร์ HTML ที่ส่งไปพิมพ์ด้วย CSS จริงของหน้า → PDF (นับหน้า) + ภาพหน้าจอ */
+async function printPreview(fromPage, html, orientation, shotName) {
+  const css = await fromPage.evaluate(() => Array.from(document.querySelectorAll('style')).map(x => x.textContent).join('\n'));
+  const portrait = orientation === 'portrait';
+  const pg = await browser.newPage({ viewport: portrait ? { width: 794, height: 1123 } : { width: 1123, height: 794 } });
+  await pg.setContent('<!doctype html><html><head><meta charset="utf-8"><style>' + css + '</style><style>@page { size: A4 ' + orientation + '; margin: ' + (portrait ? '14mm 16mm' : '12mm') + '; }</style></head>' +
+    '<body class="printing"><div id="printArea" class="print-area">' + html + '</div></body></html>');
+  await pg.emulateMedia({ media: 'print' });
+  const pdf = await pg.pdf({ preferCSSPageSize: true, printBackground: true });
+  const pages = (pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length;
+  if (shotName) {
+    await pg.evaluate(() => { document.body.style.padding = '40px 52px'; });
+    fs.mkdirSync(SHOTS, { recursive: true });
+    await pg.screenshot({ path: path.join(SHOTS, shotName), fullPage: true });
+  }
+  await pg.close();
+  return pages;
+}
+async function capturePrint(page) {
+  await page.evaluate(() => { window.__printHtml = null; if (!window.__capturing) { const o = window.print; window.print = () => { window.__printHtml = document.getElementById('printArea').innerHTML; o(); }; window.__capturing = true; } });
+}
 async function toast(page, re) { await page.locator('.toast', { hasText: re }).first().waitFor({ timeout: 8000 }); }
 
 (async function main() {
@@ -120,7 +142,6 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
     await teacher.click('#registerBtn');
     assert.ok(await teacher.isVisible('[data-field="fullName"].has-error'));
     await teacher.fill('#regFullName', 'นางสาวสมศรี ใจดี');
-    await teacher.fill('#regStaffCode', '01001');
     await teacher.selectOption('#regPosition', 'ครู');
     await teacher.fill('#regUsername', 'somsri.j');
     await teacher.fill('#regPassword', 'abc');
@@ -138,7 +159,8 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
     teacherRef = (await teacher.textContent('#regDoneRef')).trim();
     assert.ok(/^EMP-/.test(teacherRef));
     const rec = app.env.SpreadsheetApp.openById(app.env.state.props.SPREADSHEET_ID).getSheetByName('Employees')._records().find(e => e.Username === 'somsri.j');
-    assert.strictEqual(rec.StaffCode, '01001'); assert.strictEqual(rec.Status, 'PENDING');
+    assert.ok(/^T\d{3}$/.test(rec.StaffCode), 'ระบบกำหนดรหัสประจำตัวบุคลากรให้: ' + rec.StaffCode); assert.strictEqual(rec.Status, 'PENDING');
+    assert.strictEqual((await teacher.textContent('#regDoneCode')).trim(), rec.StaffCode);
   });
 
   await step('E05', 'บัญชีรออนุมัติเข้าสู่ระบบ → แจ้ง "รอการอนุมัติ"', async () => {
@@ -458,7 +480,6 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
       assert.ok(!(await page.content()).includes(code));
       await page.fill('#suCode', 'WRONG-CODE-0000');
       await page.fill('#suName', 'นายผู้ดูแล คนแรก');
-      await page.fill('#suCode2', '0001');
       await page.fill('#suUser', 'first.admin');
       await page.fill('#suPw', 'FirstAdm1n2026');
       await page.fill('#suPw2', 'FirstAdm1n2026');
@@ -624,6 +645,168 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
     assert.ok((await d.evaluate(() => window.__printHtml)).includes('นายสมชาย ใจดี'), 'ชื่อผู้อำนวยการในช่องลงนาม');
     await d.evaluate(() => { document.querySelectorAll('.toast').forEach(t => t.remove()); document.querySelector('#repExportBar').scrollIntoView(); });
     await shot(d, '17-leave-summary-desktop.png');
+  });
+
+  let adm, slips;
+  await step('E29', 'แชร์ระบบ: QR Code เข้าใช้งาน (ถอดรหัสได้ลิงก์ระบบ), ข้อความสำหรับกลุ่ม LINE, พิมพ์ประกาศ QR ขนาด A4 หน้าเดียว', async () => {
+    await setClock('2026-11-17 07:00:00');
+    adm = await newPage({ desktop: true });
+    await login(adm, DEFAULTS.adminUser, ADMIN_NEW_PW);
+    await adm.waitForSelector('#view-app:not([hidden])');
+    await adm.click('#toAdminBtn');
+    await adm.waitForSelector('#view-admin:not([hidden])');
+    await adm.click('#adminNav [data-sec="share"]');
+    await adm.waitForSelector('#shareQr svg');
+    const url = await adm.inputValue('#shareUrl');
+    assert.ok(/^https:\/\/script\.google\.com\/macros\/s\/\S+\/exec$/.test(url), url);
+    const modules = await adm.evaluate(u => window.WshQR.encode(u).modules, url);
+    assert.strictEqual(decodeQR(modules).text, url, 'QR Code ในหน้าเว็บถอดรหัสได้ลิงก์ระบบ');
+    const msg = await adm.inputValue('#shareMsg');
+    ['ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน', url, 'จำการเข้าสู่ระบบบนเครื่องนี้', 'ลืมรหัสผ่าน'].forEach(t => assert.ok(msg.includes(t), t));
+    await adm.click('#shareMsgCopyBtn');
+    await toast(adm, /คัดลอก/);
+    await adm.evaluate(() => document.querySelectorAll('.toast').forEach(t => t.remove()));
+    await shot(adm, '18-share-qr-desktop.png');
+    await capturePrint(adm);
+    await adm.click('#sharePosterBtn');
+    await adm.waitForFunction(() => !!window.__printHtml);
+    const html = await adm.evaluate(() => window.__printHtml);
+    ['สแกน QR Code ด้วยกล้องโทรศัพท์', 'จำการเข้าสู่ระบบบนเครื่องนี้', '<svg'].forEach(t => assert.ok(html.includes(t), t));
+    assert.strictEqual(await printPreview(adm, html, 'portrait', '19-qr-poster-print.png'), 1, 'ประกาศ QR ต้องพิมพ์ได้ในหน้าเดียว');
+    // ลิงก์ /dev → เตือน
+    await adm.fill('#shareUrl', url.replace(/\/exec$/, '/dev'));
+    await adm.waitForSelector('#shareUrlWarn:not([hidden])');
+    await adm.fill('#shareUrl', url);
+    await adm.waitForSelector('#shareUrlWarn', { state: 'hidden' });
+  });
+
+  await step('E30', 'เพิ่มบุคลากรหลายคน: วางรายชื่อจาก Excel → ตรวจทุกแถว (แถวผิดสร้างไม่ได้) → สร้างบัญชี → พิมพ์บัตรเข้าใช้งานพร้อม QR Code', async () => {
+    await adm.click('#adminNav [data-sec="members"]');
+    await adm.click('#memBulkBtn');
+    await adm.waitForSelector('#bkText');
+    // วางจาก Excel: มีคอลัมน์ลำดับ 1,2,3 และไม่มีรหัสบุคลากร (ระบบกำหนดให้)
+    await adm.fill('#bkText', 'ลำดับ\tชื่อ\tนามสกุล\tตำแหน่ง\n1\tนางสาวมาลี\tศรีสุข\tครูชำนาญการ\n2\tนายสมปอง\tรักดี\tครูผู้ช่วย\n3\tชื่อเดียว\t\tธุรการ');
+    await adm.waitForFunction(() => document.querySelectorAll('#bkPreview tbody tr').length === 3);
+    assert.ok(await adm.locator('#bkPreview tr.row-error').count() === 1);
+    assert.ok(await adm.isDisabled('.modal-actions .btn.success'), 'มีแถวผิด → กดสร้างไม่ได้');
+    assert.ok(/อัตโนมัติ/.test(await adm.textContent('#bkPreview')), 'ไม่มีรหัส → ระบบกำหนดให้');
+    await adm.fill('#bkText', 'นางสาวมาลี\tศรีสุข\tครูชำนาญการ\nนายสมปอง\tรักดี\tครูผู้ช่วย\nนางสาวใจดี\tมีสุข\tธุรการ');
+    await adm.waitForFunction(() => document.querySelectorAll('#bkPreview tbody tr').length === 3 && !document.querySelector('#bkPreview tr.row-error'));
+    assert.ok(/สร้างบัญชี 3 คน/.test(await adm.textContent('.modal-actions .btn.success')));
+    await adm.click('.modal-actions .btn.success');
+    await adm.locator('.modal', { hasText: 'สร้างบัญชีแล้ว 3 คน' }).waitFor();
+    slips = await adm.$$eval('#bkResult tbody tr', trs => trs.map(tr => Array.from(tr.cells).map(c => c.textContent.trim())));
+    assert.ok(slips.every(r => /^t\d{3}$/.test(r[1])), 'ชื่อผู้ใช้สร้างจากรหัสที่ระบบกำหนด: ' + slips.map(r => r[1]));
+    assert.strictEqual(new Set(slips.map(r => r[1])).size, 3);
+    assert.ok(slips.every(r => /^[A-Za-z2-9]{12}$/.test(r[2])), 'รหัสผ่านชั่วคราว 12 ตัว');
+    await capturePrint(adm);
+    await adm.locator('.modal-actions .btn', { hasText: 'พิมพ์บัตรเข้าใช้งาน' }).click();
+    await adm.waitForFunction(() => !!window.__printHtml);
+    const html = await adm.evaluate(() => window.__printHtml);
+    assert.strictEqual((html.match(/class="slip"/g) || []).length, 3);
+    slips.forEach(r => assert.ok(html.includes(r[1]) && html.includes(r[2]), r[1]));
+    assert.strictEqual((html.match(/<svg/g) || []).length, 3, 'บัตรทุกใบมี QR Code');
+    assert.strictEqual(await printPreview(adm, html, 'portrait', '20-login-slips-print.png'), 1);
+    await modalAction(adm, 'เสร็จสิ้น');
+    await adm.locator('#memTable tr', { hasText: 'นางสาวมาลี ศรีสุข' }).waitFor();
+  });
+
+  await step('E31', 'ครูใช้บัตรเข้าใช้งาน → ตั้งรหัสใหม่ → ลงเวลา; วันต่อมาหน้าแรกเตือน "ลงเวลาไม่ครบ" → แตะแก้ไข/แจ้งลา (กรอกวันที่ให้) → รายการหายไป', async () => {
+    const tp = await newPage();
+    await setClock('2026-11-17 07:30:00');
+    await login(tp, slips[0][1], slips[0][2]);
+    await tp.waitForSelector('#view-force-password:not([hidden])');
+    await tp.fill('#fpCurrent', slips[0][2]);
+    await tp.fill('#fpNew', 'Malee2026new'); await tp.fill('#fpConfirm', 'Malee2026new');
+    await tp.click('#forcePwForm button[type=submit]');
+    await tp.waitForSelector('#view-app:not([hidden])');
+    assert.ok(await tp.isHidden('#issuesCard'));
+    await tp.click('#checkInBtn');
+    await tp.waitForSelector('.modal .result-hero.ok', { timeout: 15000 });
+    await tp.keyboard.press('Escape');
+    await tp.evaluate(() => { document.getElementById('modalHost').innerHTML = ''; });
+    // สองวันต่อมา: ลืมลงเวลาออกวันที่ 17 และไม่ได้มาวันที่ 18
+    await setClock('2026-11-19 09:00:00');
+    await tp.evaluate(() => sessionStorage.clear());
+    await tp.reload();
+    await tp.waitForSelector('#issuesCard:not([hidden])', { timeout: 15000 });
+    assert.strictEqual(await tp.textContent('#issuesCount'), '2 วัน');
+    const txt = await tp.textContent('#issuesList');
+    assert.ok(/18 พ\.ย\. 69/.test(txt) && /ไม่มีการลงเวลา/.test(txt) && /17 พ\.ย\. 69/.test(txt) && /ไม่ได้ลงเวลาออก/.test(txt), txt);
+    await tp.locator('#issuesCard').scrollIntoViewIfNeeded();
+    await shot(tp, '21-issues-mobile.png');
+    await tp.click('[data-issue-fix="2026-11-17"]');
+    await tp.waitForSelector('[data-panel="correction"]:not([hidden])');
+    assert.strictEqual(await tp.inputValue('#corrDate'), '2026-11-17');
+    assert.ok(await tp.isChecked('#corrForm input[name=type][value="OUT"]'));
+    await tp.fill('#corrTime', '16:40');
+    await tp.fill('#corrReason', 'ลืมกดลงเวลาออก');
+    await tp.click('#corrForm button[type=submit]');
+    await toast(tp, /ส่งคำร้อง/);
+    await tp.click('#userTabs [data-tab="home"]');
+    await tp.waitForFunction(() => document.querySelector('#issuesCount').textContent === '1 วัน');
+    await tp.click('[data-issue-leave="2026-11-18"]');
+    await tp.waitForSelector('[data-panel="leave"]:not([hidden])');
+    assert.strictEqual(await tp.inputValue('#leaveStart'), '2026-11-18');
+    await tp.click('#leaveTypeGrid [data-type="PERSONAL"]');
+    await modalAction(tp, 'ยืนยันการลา');
+    await toast(tp, /ใบลา|การลา/);
+    await tp.click('#userTabs [data-tab="home"]');
+    await tp.waitForSelector('#issuesCard', { state: 'hidden' });
+  });
+
+  await step('E32', 'ครูลืมลงเวลาเข้าตอนเช้า: กดลงเวลาหลังเวลาสาย → ถาม "ลืมกด?" → แจ้งเวลาที่มาถึงจริง → ตอนเย็นลงเวลาออกได้ตามปกติ', async () => {
+    await setClock('2026-11-20 10:15:00');
+    const tp = await newPage();
+    await login(tp, slips[0][1], 'Malee2026new');
+    await tp.waitForSelector('#view-app:not([hidden])');
+    await tp.waitForFunction(() => document.querySelector('#clockTime').textContent !== '--:--:--');
+    assert.ok(await tp.isDisabled('#checkOutBtn'));
+    await tp.click('#checkInBtn');
+    await tp.locator('.modal', { hasText: 'มาถึงตอนนี้ หรือลืมกด?' }).waitFor();
+    await shot(tp, '22-forgot-checkin-mobile.png');
+    await modalAction(tp, 'ลืมกด — แจ้งเวลาที่มาถึงจริง');
+    await tp.waitForSelector('[data-panel="correction"]:not([hidden])');
+    assert.strictEqual(await tp.inputValue('#corrDate'), '2026-11-20');
+    assert.ok(await tp.isChecked('#corrForm input[name=type][value="IN"]'));
+    await tp.fill('#corrTime', '07:40');
+    await tp.fill('#corrReason', 'มาถึงแล้วลืมกดลงเวลา');
+    await tp.click('#corrForm button[type=submit]');
+    await toast(tp, /ส่งคำร้อง/);
+    await tp.click('#userTabs [data-tab="home"]');
+    await tp.waitForFunction(() => /รออนุมัติ/.test(document.querySelector('#checkInSub').textContent));
+    assert.ok(await tp.isDisabled('#checkInBtn'));
+    assert.ok(await tp.isEnabled('#checkOutBtn'), 'ลงเวลาออกได้ระหว่างรออนุมัติเวลาเข้า');
+    await setClock('2026-11-20 16:45:00');
+    await tp.click('#checkOutBtn');
+    await modalAction(tp, 'ลงเวลาออก');
+    await tp.waitForSelector('.modal .result-hero.ok', { timeout: 15000 });
+    assert.ok(/ลงเวลาออกงานสำเร็จ/.test(await tp.textContent('.modal')));
+  });
+
+  await step('E33', 'ผู้บริหาร: ครูโทรแจ้งว่าลืมลงเวลา → กด "บันทึกเวลาแทน" จากตารางวันนี้ (เลือกคน/วัน/ประเภทให้แล้ว) → มีผลทันที', async () => {
+    await setClock('2026-11-20 16:50:00');
+    const d = await newPage({ desktop: true });
+    await login(d, DEFAULTS.adminUser, ADMIN_NEW_PW);
+    await d.waitForSelector('#view-app:not([hidden])');
+    await d.click('#toAdminBtn');
+    await d.waitForSelector('#ovTable table');
+    const row = d.locator('#ovTable tr', { hasText: 'นายสมปอง รักดี' });
+    await row.locator('[data-rec-time]').click();
+    await d.locator('.modal', { hasText: 'บันทึกเวลาแทน' }).waitFor();
+    assert.strictEqual(await d.inputValue('#rtDate'), '2026-11-20');
+    assert.ok(/สมปอง/.test(await d.$eval('#rtEmp', s => s.options[s.selectedIndex].text)));
+    assert.strictEqual(await d.getAttribute('#rtType .active', 'data-val'), 'IN');
+    await d.fill('#rtTime', '07:35');
+    await shot(d, '23-record-time-desktop.png');
+    await modalAction(d, 'บันทึกเวลา');
+    await toast(d, /บันทึกเวลาเข้างานของ นายสมปอง รักดี/);
+    await d.locator('#ovTable tr', { hasText: 'นายสมปอง รักดี' }).locator('td', { hasText: '07:35' }).waitFor();
+    // ครูมาลี (t201) มีคำร้องเวลาเข้ารออนุมัติ → อนุมัติแล้ววันนั้นครบ
+    await d.click('#adminNav [data-sec="corrections"]');
+    await d.locator('#crList .req-card', { hasText: 'นางสาวมาลี ศรีสุข' }).filter({ hasText: '20 พฤศจิกายน 2569' }).locator('[data-cr="APPROVE"]').click();
+    await modalAction(d, 'อนุมัติ');
+    await toast(d, /อนุมัติคำร้อง/);
   });
 
   await step('E20', 'ไม่มี JavaScript error ในทุกหน้าที่ทดสอบ', async () => {

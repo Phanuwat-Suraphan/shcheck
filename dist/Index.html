@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.6.0
+<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.7.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Index.html
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่ -->
 <html lang="th">
@@ -484,6 +484,13 @@ table.table { width: 100%; border-collapse: collapse; font-size: .9rem; }
 .stats-table td:first-child { font-weight: 600; white-space: nowrap; }
 .stats-table td.muted { color: var(--muted); }
 
+/* ---------- วันที่ลงเวลาไม่ครบ ---------- */
+.issues-card { border: 1.5px solid #F5C451; background: #FFFBEB; }
+.issue-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 0; border-top: 1px solid #F3E3B5; }
+.issue-row:first-child { border-top: 0; padding-top: 2px; }
+.issue-info { display: flex; flex-direction: column; min-width: 0; }
+.issue-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
 /* ---------- คำแนะนำ / เครื่องนี้ ---------- */
 .home-tip { display: flex; align-items: center; gap: 10px; background: var(--sky-50); border: 1px solid var(--sky-100); border-radius: 16px; padding: 10px 10px 10px 14px; }
 .home-tip > .ms { color: var(--sky-500); font-size: 28px; }
@@ -557,6 +564,26 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
   .print-doc tr { page-break-inside: avoid; }
   .print-doc .c { text-align: center; }
   .print-doc .p-summary { margin-top: 10px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px 18px; font-size: 11.5pt; }
+  /* ประกาศ QR Code (A4 แนวตั้ง) */
+  .qr-poster { font-family: 'Sarabun', 'TH Sarabun New', Tahoma, sans-serif; color: #000; text-align: center; padding-top: 6mm; }
+  .qr-poster .pp-school { font-size: 20pt; font-weight: 700; }
+  .qr-poster .pp-title { font-size: 26pt; font-weight: 700; margin-top: 2mm; }
+  .qr-poster .pp-sub { font-size: 15pt; margin-top: 4mm; }
+  .qr-poster .pp-qr svg { width: 105mm; height: 105mm; margin-top: 6mm; }
+  .qr-poster .pp-url { font-size: 8.5pt; color: #333; word-break: break-all; margin: 2mm 12mm 0; }
+  .qr-poster .pp-steps { text-align: left; font-size: 14pt; line-height: 1.55; margin: 8mm 14mm 0 22mm; padding: 0; }
+  .qr-poster .pp-foot { margin-top: 6mm; font-size: 12pt; border-top: 1px solid #999; padding-top: 3mm; }
+  /* บัตรเข้าใช้งาน 8 ใบต่อ A4 (ตัดตามเส้นประ) */
+  .slips { display: grid; grid-template-columns: 1fr 1fr; gap: 0; font-family: 'Sarabun', 'TH Sarabun New', Tahoma, sans-serif; color: #000; }
+  .slip { border: 1px dashed #777; padding: 3mm 4mm; height: 64mm; box-sizing: border-box; page-break-inside: avoid; break-inside: avoid; overflow: hidden; }
+  .slip .sl-head { font-size: 9pt; font-weight: 700; border-bottom: 1px solid #000; padding-bottom: 1mm; }
+  .slip .sl-body { display: flex; gap: 3mm; align-items: center; margin-top: 2mm; }
+  .slip .sl-info { flex: 1; min-width: 0; }
+  .slip .sl-name { font-size: 11.5pt; font-weight: 700; margin-bottom: 1mm; }
+  .slip .sl-lbl { font-size: 8.5pt; color: #333; }
+  .slip .sl-code { font-family: 'Courier New', monospace; font-size: 14pt; font-weight: 700; letter-spacing: .5px; margin-bottom: 1mm; word-break: break-all; }
+  .slip .sl-qr svg { width: 30mm; height: 30mm; display: block; }
+  .slip .sl-steps { font-size: 8pt; margin-top: 1.5mm; color: #222; }
   /* ใบลาตามแบบของทางราชการ (A4 แนวตั้ง) */
   .lf-doc { font-family: 'Sarabun', 'TH Sarabun New', Tahoma, sans-serif; color: #000; font-size: 12pt; line-height: 1.5; }
   .lf-doc p { margin: 0 0 3px; }
@@ -686,7 +713,6 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
         <h3 style="margin-top:8px"><span class="ms" style="color:var(--sky-500)">admin_panel_settings</span> ข้อมูลผู้ดูแลระบบ</h3>
         <div class="field" data-field="fullName"><label for="suName">ชื่อ-นามสกุล</label><input id="suName" name="fullName" maxlength="100" placeholder="เช่น นายสมชาย ใจดี"><span class="err"></span></div>
         <div class="form-grid two">
-          <div class="field" data-field="staffCode"><label for="suCode2">รหัสประจำตัวบุคลากร</label><input id="suCode2" name="staffCode" maxlength="20"><span class="err"></span></div>
           <div class="field" data-field="position"><label for="suPos">ตำแหน่ง</label>
             <select id="suPos" name="position"><option>ผู้อำนวยการ</option><option selected>ครู</option><option>บุคลากรทางการศึกษา</option><option>เจ้าหน้าที่อื่น ๆ</option></select><span class="err"></span></div>
         </div>
@@ -750,11 +776,6 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
           <span class="err"></span>
         </div>
         <div class="form-grid two">
-          <div class="field" data-field="staffCode">
-            <label for="regStaffCode">รหัสประจำตัวบุคลากร <span class="muted">*</span></label>
-            <input id="regStaffCode" name="staffCode" type="text" maxlength="20" required placeholder="เช่น 1001" autocapitalize="characters">
-            <span class="err"></span>
-          </div>
           <div class="field" data-field="position">
             <label for="regPosition">ตำแหน่ง <span class="muted">*</span></label>
             <select id="regPosition" name="position" required>
@@ -828,6 +849,7 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
       <dl class="kv" style="margin:16px 0">
         <dt>ชื่อ-นามสกุล</dt><dd id="regDoneName">-</dd>
         <dt>ชื่อผู้ใช้</dt><dd id="regDoneUser">-</dd>
+        <dt>รหัสประจำตัวบุคลากร</dt><dd id="regDoneCode">-</dd>
         <dt>เลขอ้างอิง</dt><dd id="regDoneRef">-</dd>
         <dt>สถานะ</dt><dd><span class="badge warning"><span class="ms">schedule</span>รออนุมัติ</span></dd>
       </dl>
@@ -944,6 +966,11 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
             <div class="quick-links o-quick">
               <button type="button" data-tab-go="leave"><span class="ms">event_busy</span>แจ้งลา</button>
               <button type="button" data-tab-go="correction"><span class="ms">edit_calendar</span>ลืมลงเวลา / ขอแก้ไขเวลา</button>
+            </div>
+            <div class="card issues-card o-quick" id="issuesCard" hidden>
+              <div class="card-title"><span class="ms">assignment_late</span>ลงเวลาไม่ครบ <span class="badge warning" id="issuesCount"></span></div>
+              <p class="small muted" style="margin:-6px 0 8px">แตะปุ่มเพื่อแก้ไข ระบบกรอกวันที่ให้แล้ว</p>
+              <div id="issuesList"></div>
             </div>
             <div id="geoNotSetAlert" class="alert warning o-geo" hidden><span class="ms">warning</span><div>ผู้ดูแลระบบยังไม่ได้ตั้งค่าพิกัดโรงเรียน จึงยังลงเวลาไม่ได้</div></div>
             <div class="home-tip o-tip" id="homeTip" hidden>
@@ -1582,6 +1609,22 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
     setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 5000);
   }
 
+  /** คัดลอกข้อความ (สำรองด้วย execCommand เมื่อ Clipboard API ใช้ไม่ได้ใน iframe) */
+  function copyText(text, okMsg) {
+    var fallback = function () {
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      ta.remove();
+      toast(ok ? (okMsg || 'คัดลอกแล้ว') : 'คัดลอกไม่สำเร็จ กรุณากดค้างที่ข้อความแล้วเลือกคัดลอก', ok ? 'success' : 'warning');
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { toast(okMsg || 'คัดลอกแล้ว', 'success'); }, fallback);
+    } else fallback();
+  }
+
   /** ดูไฟล์แนบ (ตรวจสิทธิ์ที่ Server) */
   function viewAttachment(kind, id) {
     api('file.get', { kind: kind, id: id }, { loadingText: 'กำลังโหลดเอกสาร...' }).then(function (f) {
@@ -1862,7 +1905,7 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
     clearFieldErrors(f);
     $('#setupAlert').hidden = true;
     var data = {
-      setupCode: $('#suCode').value.trim(), fullName: $('#suName').value.trim(), staffCode: $('#suCode2').value.trim(),
+      setupCode: $('#suCode').value.trim(), fullName: $('#suName').value.trim(),
       position: $('#suPos').value, username: $('#suUser').value.trim().toLowerCase(),
       password: $('#suPw').value, confirmPassword: $('#suPw2').value,
       settings: {
@@ -2019,13 +2062,12 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
     clearFieldErrors(f);
     $('#registerAlert').hidden = true;
     var data = {
-      fullName: f.fullName.value.trim(), staffCode: f.staffCode.value.trim(), position: f.position.value,
+      fullName: f.fullName.value.trim(), position: f.position.value, // รหัสประจำตัวบุคลากร: ระบบกำหนดให้อัตโนมัติ
       username: f.username.value.trim().toLowerCase(), password: f.password.value, confirmPassword: f.confirmPassword.value,
       acceptPrivacy: $('#regAccept').checked
     };
     var st = pwRuleState();
     if (!data.fullName) return showFieldError(f, 'fullName', 'กรุณากรอกชื่อ-นามสกุล');
-    if (!data.staffCode) return showFieldError(f, 'staffCode', 'กรุณากรอกรหัสประจำตัวบุคลากร');
     if (!data.position) return showFieldError(f, 'position', 'กรุณาเลือกตำแหน่ง');
     if (!/^[a-z][a-z0-9._-]{3,29}$/.test(data.username)) return showFieldError(f, 'username', 'ชื่อผู้ใช้ไม่ถูกต้อง (4–30 ตัว ขึ้นต้นด้วย a-z)');
     if (!st.len || !st.mix || !st.user) return showFieldError(f, 'password', 'รหัสผ่านยังไม่ผ่านเกณฑ์ด้านล่าง');
@@ -2048,6 +2090,7 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
       $('#regDoneName').textContent = res.data.fullName;
       $('#regDoneUser').textContent = res.data.username;
       $('#regDoneRef').textContent = res.data.reference;
+      $('#regDoneCode').textContent = res.data.staffCode || '-';
       $('#loginUsername').value = res.data.username;
       window.scrollTo(0, 0);
     }).catch(function (err) { setBtnLoading(btn, false); $('#registerAlertText').textContent = err.message; $('#registerAlert').hidden = false; });
@@ -2091,6 +2134,41 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
     if (tab === 'correction') { initCorrectionForm(); loadMyCorrections(); }
   }
 
+  /* ---------- วันที่ลงเวลาไม่ครบ: แก้ไขได้ในแตะเดียว ---------- */
+  var ISSUE_LABEL = { MISSING_OUT: 'ไม่ได้ลงเวลาออก', MISSING_IN: 'ไม่ได้ลงเวลาเข้า', ABSENT: 'ไม่มีการลงเวลา' };
+  function renderIssues(list) {
+    list = list || [];
+    $('#issuesCard').hidden = !list.length;
+    if (!list.length) return;
+    $('#issuesCount').textContent = list.length + ' วัน';
+    $('#issuesList').innerHTML = list.map(function (x) {
+      return '<div class="issue-row"><div class="issue-info"><b>' + esc(x.dayName + ' ' + x.dateLabel) + '</b><span class="small muted">' + esc(ISSUE_LABEL[x.kind] || '') +
+        (x.checkIn ? ' · เข้า ' + esc(x.checkIn) : '') + (x.checkOut ? ' · ออก ' + esc(x.checkOut) : '') + '</span></div><div class="issue-actions">' +
+        (x.kind === 'ABSENT' ? '<button type="button" class="btn outline sm" data-issue-leave="' + esc(x.date) + '">' + icon('event_busy') + 'แจ้งลา</button>' : '') +
+        '<button type="button" class="btn sm" data-issue-fix="' + esc(x.date) + '" data-type="' + (x.kind === 'MISSING_OUT' ? 'OUT' : 'IN') + '">' + icon('edit_calendar') + 'ขอแก้ไขเวลา</button></div></div>';
+    }).join('');
+    $$('#issuesList [data-issue-fix]').forEach(function (b) { b.addEventListener('click', function () { openCorrectionFor(b.getAttribute('data-issue-fix'), b.getAttribute('data-type')); }); });
+    $$('#issuesList [data-issue-leave]').forEach(function (b) { b.addEventListener('click', function () { openLeaveFor(b.getAttribute('data-issue-leave')); }); });
+  }
+  function openCorrectionFor(date, type) {
+    switchTab('correction');
+    $('#corrDate').value = date; setThaiHint($('#corrDate'));
+    var r = $('#corrForm input[name=type][value="' + type + '"]');
+    if (r) r.checked = true;
+    var t = $('#corrTime');
+    if (t) { t.scrollIntoView({ block: 'center' }); try { t.focus(); } catch (e) { /* ignore */ } }
+    toast('กรอกเวลาที่ถูกต้องและเหตุผล แล้วกด “ส่งคำร้อง”', 'info', 5000);
+  }
+  function openLeaveFor(date) {
+    switchTab('leave');
+    segSelect($('#lvQuickDay'), $('#lvQuickDay [data-val="custom"]'));
+    $('#lvDateFields').hidden = false;
+    $('#leaveStart').value = date; $('#leaveEnd').value = date; $('#leaveStart').dataset.prev = date;
+    setThaiHint($('#leaveStart')); setThaiHint($('#leaveEnd')); syncPeriod(); updateLeaveDateSummary();
+    $('#leaveTypeGrid').scrollIntoView({ block: 'center' });
+    toast('แตะประเภทการลาของวันที่ ' + thDate(date, 'long'), 'info', 5000);
+  }
+
   /* ------------------------------------------------------------------ home / dashboard */
   function loadDashboard(silent) {
     return api('me.dashboard', {}, { silent: !!silent && !!S.dash, loadingText: 'กำลังโหลดข้อมูล...' }).then(function (d) {
@@ -2102,6 +2180,7 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
 
   function renderDashboard() {
     var d = S.dash, s = d.settings, row = d.today.row;
+    renderIssues(d.issues);
     var hh = bkkParts(serverNow()).hh;
     $('#greeting').textContent = hh < 12 ? 'สวัสดีตอนเช้า' : (hh < 17 ? 'สวัสดีตอนบ่าย' : 'สวัสดีตอนเย็น');
     $('#workHours').textContent = 'เวลาทำงาน ' + s.workStart + '–' + s.workEnd + ' น. · ถือว่าสายเมื่อลงเวลาหลัง ' + s.lateAfter + ' น.';
@@ -2180,11 +2259,12 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
     var row = d.today.row, s = d.settings;
     var inBtn = $('#checkInBtn'), outBtn = $('#checkOutBtn');
     var hasIn = !!(row && row.checkIn), hasOut = !!(row && row.checkOut);
-    inBtn.disabled = S.attBusy || !s.geofenceConfigured || hasIn;
-    outBtn.disabled = S.attBusy || (s.checkoutRequiresGps && !s.geofenceConfigured) || !hasIn || hasOut;
-    $('#checkInSub').textContent = hasIn ? 'ลงเวลาเข้าแล้ว ' + hm(row.checkIn) + ' น.' : 'กดเพื่อบันทึกเวลาเข้า (ใช้ GPS)';
+    var pendingIn = !hasIn && !!(d.pending && d.pending.todayIn); // ลืมลงเวลาเข้า แต่ยื่นคำร้องเวลาเข้าแล้ว
+    inBtn.disabled = S.attBusy || !s.geofenceConfigured || hasIn || pendingIn;
+    outBtn.disabled = S.attBusy || (s.checkoutRequiresGps && !s.geofenceConfigured) || !(hasIn || pendingIn) || hasOut;
+    $('#checkInSub').textContent = hasIn ? 'ลงเวลาเข้าแล้ว ' + hm(row.checkIn) + ' น.' : (pendingIn ? 'ยื่นคำร้องเวลาเข้าแล้ว (รออนุมัติ)' : 'กดเพื่อบันทึกเวลาเข้า (ใช้ GPS)');
     $('#checkOutSub').textContent = hasOut ? 'ลงเวลาออกแล้ว ' + hm(row.checkOut) + ' น.' :
-      (hasIn ? (s.checkoutRequiresGps ? 'กดเพื่อบันทึกเวลาออก (ใช้ GPS)' : 'กดเพื่อบันทึกเวลาออก') : 'ต้องลงเวลาเข้างานก่อน');
+      ((hasIn || pendingIn) ? (s.checkoutRequiresGps ? 'กดเพื่อบันทึกเวลาออก (ใช้ GPS)' : 'กดเพื่อบันทึกเวลาออก') : 'ต้องลงเวลาเข้างานก่อน');
   }
 
   /* ---------- GPS ---------- */
@@ -2334,7 +2414,21 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
     var s = S.dash.settings;
     if (type === 'OUT' && !s.checkoutRequiresGps) { doCheckoutNoGps(); return; }
     var pre = Promise.resolve(true);
-    if (type === 'OUT' && S.dash.today.isWorkday && bkkTimeHM() < s.workEnd) {
+    if (type === 'IN' && S.dash.today.isWorkday && bkkTimeHM() > s.lateAfter) {
+      pre = new Promise(function (resolve) {
+        var done = false, finish = function (v) { if (!done) { done = true; resolve(v); } };
+        modal({
+          title: 'มาถึงตอนนี้ หรือลืมกด?', icon: 'help',
+          body: '<p>ขณะนี้เวลา <b>' + bkkTimeHM() + ' น.</b> เลยเวลาที่ถือว่าสาย (' + esc(s.lateAfter) + ' น.) แล้ว</p>' +
+            '<p class="mb-0">ถ้า <b>มาถึงก่อนหน้านี้แต่ลืมกด</b> ให้แจ้งเวลาที่มาถึงจริง (ผู้บริหารอนุมัติ) — ระหว่างรออนุมัติ ลงเวลาออกตอนเย็นได้ตามปกติ</p>',
+          onClose: function () { finish(false); },
+          actions: [
+            { label: 'ลืมกด — แจ้งเวลาที่มาถึงจริง', cls: 'outline', icon: 'edit_calendar', onClick: function () { finish(false); setTimeout(function () { openCorrectionFor(bkkToday(), 'IN'); }, 0); } },
+            { label: 'เพิ่งมาถึง — ลงเวลาตอนนี้', icon: 'login', onClick: function () { finish(true); } }
+          ]
+        });
+      });
+    } else if (type === 'OUT' && S.dash.today.isWorkday && bkkTimeHM() < s.workEnd) {
       pre = confirmDialog({ title: 'ยังไม่ถึงเวลาเลิกงาน', icon: 'schedule', html: 'ขณะนี้เวลา <b>' + bkkTimeHM() + ' น.</b> ยังไม่ถึงเวลาเลิกงาน (' + esc(s.workEnd) + ' น.)<br>ระบบจะบันทึกสถานะ <b>“ออกก่อนเวลา”</b> ต้องการลงเวลาออกงานใช่หรือไม่', confirmText: 'ลงเวลาออก' });
     }
     pre.then(function (go) {
@@ -2747,7 +2841,7 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
     setBtnLoading(btn, true);
     fileToPayload(f.attachment.files[0]).then(function (att) {
       data.attachment = att;
-      return api('corr.submit', data, { silent: true });
+      return api('corr.submit', data, { silent: true }).then(function (r) { loadDashboard(true); return r; });
     }).then(function (r) {
       toast(r.message, 'success');
       f.reset(); $('[data-file-label]', f).textContent = 'แนบไฟล์ PDF หรือรูปภาพ (ไม่เกิน 5 MB)';
@@ -2760,7 +2854,7 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
       '<div class="meta">' + icon('event') + ' ' + esc(c.dateLabel) + '</div>' + (mine ? '' : '<div class="meta">' + icon('person') + ' ' + esc(c.fullName) + ' (' + esc(c.staffCode) + ')</div>') +
       (!mine ? '<div class="meta">เวลาปัจจุบันในระบบ: เข้า ' + esc(c.currentIn || '-') + ' / ออก ' + esc(c.currentOut || '-') + '</div>' : '') + '</div>' +
       badge(c.status, c.statusLabel) + '</div><div class="reason">' + esc(c.reason) + '</div>' +
-      '<div class="meta">ยื่นเมื่อ ' + esc(c.requestedLabel) + (c.reviewedByName ? ' · พิจารณาโดย ' + esc(c.reviewedByName) + ' ' + esc(c.reviewedLabel) : '') + '</div>' +
+      '<div class="meta">' + (c.recordedBy ? 'บันทึกแทนโดย ' + esc(c.recordedBy) + ' ' + esc(c.requestedLabel) : 'ยื่นเมื่อ ' + esc(c.requestedLabel) + (c.reviewedByName ? ' · พิจารณาโดย ' + esc(c.reviewedByName) + ' ' + esc(c.reviewedLabel) : '')) + '</div>' +
       (c.reviewNote ? '<div class="meta">ความเห็น: ' + esc(c.reviewNote) + '</div>' : '') +
       '<div class="actions">' + (c.hasAttachment ? '<button type="button" class="btn outline sm" data-view-att="correction" data-id="' + esc(c.requestId) + '">' + icon('attach_file') + 'หลักฐาน</button>' : '') +
       (mine && c.status === 'PENDING' ? '<button type="button" class="btn ghost sm" data-cancel-corr="' + esc(c.requestId) + '">' + icon('close') + 'ยกเลิกคำร้อง</button>' : '') + '</div></div>';
@@ -2803,7 +2897,7 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
     leaveCard: leaveCard, corrCard: corrCard, bkkToday: bkkToday, bkkParts: bkkParts, serverNow: serverNow,
     fillMonthYear: fillMonthYear, TH_M: TH_M, TH_MS: TH_MS, backToUser: backToUser, doLogout: doLogout, showGeoHelp: showGeoHelp,
     parseYmd: parseYmd, LEAVE_TYPE_META: LEAVE_TYPE_META, leaveConfirmDialog: leaveConfirmDialog, addDaysYmd: addDaysYmd,
-    segSelect: segSelect, setThaiHint: setThaiHint, bindPrintLeave: bindPrintLeave, printHtml: printHtml
+    segSelect: segSelect, setThaiHint: setThaiHint, bindPrintLeave: bindPrintLeave, printHtml: printHtml, copyText: copyText
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();

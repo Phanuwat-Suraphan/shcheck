@@ -107,6 +107,11 @@
               <button type="button" data-tab-go="leave"><span class="ms">event_busy</span>แจ้งลา</button>
               <button type="button" data-tab-go="correction"><span class="ms">edit_calendar</span>ลืมลงเวลา / ขอแก้ไขเวลา</button>
             </div>
+            <div class="card issues-card o-quick" id="issuesCard" hidden>
+              <div class="card-title"><span class="ms">assignment_late</span>ลงเวลาไม่ครบ <span class="badge warning" id="issuesCount"></span></div>
+              <p class="small muted" style="margin:-6px 0 8px">แตะปุ่มเพื่อแก้ไข ระบบกรอกวันที่ให้แล้ว</p>
+              <div id="issuesList"></div>
+            </div>
             <div id="geoNotSetAlert" class="alert warning o-geo" hidden><span class="ms">warning</span><div>ผู้ดูแลระบบยังไม่ได้ตั้งค่าพิกัดโรงเรียน จึงยังลงเวลาไม่ได้</div></div>
             <div class="home-tip o-tip" id="homeTip" hidden>
               <span class="ms">add_to_home_screen</span>

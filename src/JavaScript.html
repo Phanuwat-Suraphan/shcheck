@@ -351,6 +351,22 @@
     setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 5000);
   }
 
+  /** คัดลอกข้อความ (สำรองด้วย execCommand เมื่อ Clipboard API ใช้ไม่ได้ใน iframe) */
+  function copyText(text, okMsg) {
+    var fallback = function () {
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      ta.remove();
+      toast(ok ? (okMsg || 'คัดลอกแล้ว') : 'คัดลอกไม่สำเร็จ กรุณากดค้างที่ข้อความแล้วเลือกคัดลอก', ok ? 'success' : 'warning');
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { toast(okMsg || 'คัดลอกแล้ว', 'success'); }, fallback);
+    } else fallback();
+  }
+
   /** ดูไฟล์แนบ (ตรวจสิทธิ์ที่ Server) */
   function viewAttachment(kind, id) {
     api('file.get', { kind: kind, id: id }, { loadingText: 'กำลังโหลดเอกสาร...' }).then(function (f) {
@@ -631,7 +647,7 @@
     clearFieldErrors(f);
     $('#setupAlert').hidden = true;
     var data = {
-      setupCode: $('#suCode').value.trim(), fullName: $('#suName').value.trim(), staffCode: $('#suCode2').value.trim(),
+      setupCode: $('#suCode').value.trim(), fullName: $('#suName').value.trim(),
       position: $('#suPos').value, username: $('#suUser').value.trim().toLowerCase(),
       password: $('#suPw').value, confirmPassword: $('#suPw2').value,
       settings: {
@@ -788,13 +804,12 @@
     clearFieldErrors(f);
     $('#registerAlert').hidden = true;
     var data = {
-      fullName: f.fullName.value.trim(), staffCode: f.staffCode.value.trim(), position: f.position.value,
+      fullName: f.fullName.value.trim(), position: f.position.value, // รหัสประจำตัวบุคลากร: ระบบกำหนดให้อัตโนมัติ
       username: f.username.value.trim().toLowerCase(), password: f.password.value, confirmPassword: f.confirmPassword.value,
       acceptPrivacy: $('#regAccept').checked
     };
     var st = pwRuleState();
     if (!data.fullName) return showFieldError(f, 'fullName', 'กรุณากรอกชื่อ-นามสกุล');
-    if (!data.staffCode) return showFieldError(f, 'staffCode', 'กรุณากรอกรหัสประจำตัวบุคลากร');
     if (!data.position) return showFieldError(f, 'position', 'กรุณาเลือกตำแหน่ง');
     if (!/^[a-z][a-z0-9._-]{3,29}$/.test(data.username)) return showFieldError(f, 'username', 'ชื่อผู้ใช้ไม่ถูกต้อง (4–30 ตัว ขึ้นต้นด้วย a-z)');
     if (!st.len || !st.mix || !st.user) return showFieldError(f, 'password', 'รหัสผ่านยังไม่ผ่านเกณฑ์ด้านล่าง');
@@ -817,6 +832,7 @@
       $('#regDoneName').textContent = res.data.fullName;
       $('#regDoneUser').textContent = res.data.username;
       $('#regDoneRef').textContent = res.data.reference;
+      $('#regDoneCode').textContent = res.data.staffCode || '-';
       $('#loginUsername').value = res.data.username;
       window.scrollTo(0, 0);
     }).catch(function (err) { setBtnLoading(btn, false); $('#registerAlertText').textContent = err.message; $('#registerAlert').hidden = false; });
@@ -860,6 +876,41 @@
     if (tab === 'correction') { initCorrectionForm(); loadMyCorrections(); }
   }
 
+  /* ---------- วันที่ลงเวลาไม่ครบ: แก้ไขได้ในแตะเดียว ---------- */
+  var ISSUE_LABEL = { MISSING_OUT: 'ไม่ได้ลงเวลาออก', MISSING_IN: 'ไม่ได้ลงเวลาเข้า', ABSENT: 'ไม่มีการลงเวลา' };
+  function renderIssues(list) {
+    list = list || [];
+    $('#issuesCard').hidden = !list.length;
+    if (!list.length) return;
+    $('#issuesCount').textContent = list.length + ' วัน';
+    $('#issuesList').innerHTML = list.map(function (x) {
+      return '<div class="issue-row"><div class="issue-info"><b>' + esc(x.dayName + ' ' + x.dateLabel) + '</b><span class="small muted">' + esc(ISSUE_LABEL[x.kind] || '') +
+        (x.checkIn ? ' · เข้า ' + esc(x.checkIn) : '') + (x.checkOut ? ' · ออก ' + esc(x.checkOut) : '') + '</span></div><div class="issue-actions">' +
+        (x.kind === 'ABSENT' ? '<button type="button" class="btn outline sm" data-issue-leave="' + esc(x.date) + '">' + icon('event_busy') + 'แจ้งลา</button>' : '') +
+        '<button type="button" class="btn sm" data-issue-fix="' + esc(x.date) + '" data-type="' + (x.kind === 'MISSING_OUT' ? 'OUT' : 'IN') + '">' + icon('edit_calendar') + 'ขอแก้ไขเวลา</button></div></div>';
+    }).join('');
+    $$('#issuesList [data-issue-fix]').forEach(function (b) { b.addEventListener('click', function () { openCorrectionFor(b.getAttribute('data-issue-fix'), b.getAttribute('data-type')); }); });
+    $$('#issuesList [data-issue-leave]').forEach(function (b) { b.addEventListener('click', function () { openLeaveFor(b.getAttribute('data-issue-leave')); }); });
+  }
+  function openCorrectionFor(date, type) {
+    switchTab('correction');
+    $('#corrDate').value = date; setThaiHint($('#corrDate'));
+    var r = $('#corrForm input[name=type][value="' + type + '"]');
+    if (r) r.checked = true;
+    var t = $('#corrTime');
+    if (t) { t.scrollIntoView({ block: 'center' }); try { t.focus(); } catch (e) { /* ignore */ } }
+    toast('กรอกเวลาที่ถูกต้องและเหตุผล แล้วกด “ส่งคำร้อง”', 'info', 5000);
+  }
+  function openLeaveFor(date) {
+    switchTab('leave');
+    segSelect($('#lvQuickDay'), $('#lvQuickDay [data-val="custom"]'));
+    $('#lvDateFields').hidden = false;
+    $('#leaveStart').value = date; $('#leaveEnd').value = date; $('#leaveStart').dataset.prev = date;
+    setThaiHint($('#leaveStart')); setThaiHint($('#leaveEnd')); syncPeriod(); updateLeaveDateSummary();
+    $('#leaveTypeGrid').scrollIntoView({ block: 'center' });
+    toast('แตะประเภทการลาของวันที่ ' + thDate(date, 'long'), 'info', 5000);
+  }
+
   /* ------------------------------------------------------------------ home / dashboard */
   function loadDashboard(silent) {
     return api('me.dashboard', {}, { silent: !!silent && !!S.dash, loadingText: 'กำลังโหลดข้อมูล...' }).then(function (d) {
@@ -871,6 +922,7 @@
 
   function renderDashboard() {
     var d = S.dash, s = d.settings, row = d.today.row;
+    renderIssues(d.issues);
     var hh = bkkParts(serverNow()).hh;
     $('#greeting').textContent = hh < 12 ? 'สวัสดีตอนเช้า' : (hh < 17 ? 'สวัสดีตอนบ่าย' : 'สวัสดีตอนเย็น');
     $('#workHours').textContent = 'เวลาทำงาน ' + s.workStart + '–' + s.workEnd + ' น. · ถือว่าสายเมื่อลงเวลาหลัง ' + s.lateAfter + ' น.';
@@ -949,11 +1001,12 @@
     var row = d.today.row, s = d.settings;
     var inBtn = $('#checkInBtn'), outBtn = $('#checkOutBtn');
     var hasIn = !!(row && row.checkIn), hasOut = !!(row && row.checkOut);
-    inBtn.disabled = S.attBusy || !s.geofenceConfigured || hasIn;
-    outBtn.disabled = S.attBusy || (s.checkoutRequiresGps && !s.geofenceConfigured) || !hasIn || hasOut;
-    $('#checkInSub').textContent = hasIn ? 'ลงเวลาเข้าแล้ว ' + hm(row.checkIn) + ' น.' : 'กดเพื่อบันทึกเวลาเข้า (ใช้ GPS)';
+    var pendingIn = !hasIn && !!(d.pending && d.pending.todayIn); // ลืมลงเวลาเข้า แต่ยื่นคำร้องเวลาเข้าแล้ว
+    inBtn.disabled = S.attBusy || !s.geofenceConfigured || hasIn || pendingIn;
+    outBtn.disabled = S.attBusy || (s.checkoutRequiresGps && !s.geofenceConfigured) || !(hasIn || pendingIn) || hasOut;
+    $('#checkInSub').textContent = hasIn ? 'ลงเวลาเข้าแล้ว ' + hm(row.checkIn) + ' น.' : (pendingIn ? 'ยื่นคำร้องเวลาเข้าแล้ว (รออนุมัติ)' : 'กดเพื่อบันทึกเวลาเข้า (ใช้ GPS)');
     $('#checkOutSub').textContent = hasOut ? 'ลงเวลาออกแล้ว ' + hm(row.checkOut) + ' น.' :
-      (hasIn ? (s.checkoutRequiresGps ? 'กดเพื่อบันทึกเวลาออก (ใช้ GPS)' : 'กดเพื่อบันทึกเวลาออก') : 'ต้องลงเวลาเข้างานก่อน');
+      ((hasIn || pendingIn) ? (s.checkoutRequiresGps ? 'กดเพื่อบันทึกเวลาออก (ใช้ GPS)' : 'กดเพื่อบันทึกเวลาออก') : 'ต้องลงเวลาเข้างานก่อน');
   }
 
   /* ---------- GPS ---------- */
@@ -1103,7 +1156,21 @@
     var s = S.dash.settings;
     if (type === 'OUT' && !s.checkoutRequiresGps) { doCheckoutNoGps(); return; }
     var pre = Promise.resolve(true);
-    if (type === 'OUT' && S.dash.today.isWorkday && bkkTimeHM() < s.workEnd) {
+    if (type === 'IN' && S.dash.today.isWorkday && bkkTimeHM() > s.lateAfter) {
+      pre = new Promise(function (resolve) {
+        var done = false, finish = function (v) { if (!done) { done = true; resolve(v); } };
+        modal({
+          title: 'มาถึงตอนนี้ หรือลืมกด?', icon: 'help',
+          body: '<p>ขณะนี้เวลา <b>' + bkkTimeHM() + ' น.</b> เลยเวลาที่ถือว่าสาย (' + esc(s.lateAfter) + ' น.) แล้ว</p>' +
+            '<p class="mb-0">ถ้า <b>มาถึงก่อนหน้านี้แต่ลืมกด</b> ให้แจ้งเวลาที่มาถึงจริง (ผู้บริหารอนุมัติ) — ระหว่างรออนุมัติ ลงเวลาออกตอนเย็นได้ตามปกติ</p>',
+          onClose: function () { finish(false); },
+          actions: [
+            { label: 'ลืมกด — แจ้งเวลาที่มาถึงจริง', cls: 'outline', icon: 'edit_calendar', onClick: function () { finish(false); setTimeout(function () { openCorrectionFor(bkkToday(), 'IN'); }, 0); } },
+            { label: 'เพิ่งมาถึง — ลงเวลาตอนนี้', icon: 'login', onClick: function () { finish(true); } }
+          ]
+        });
+      });
+    } else if (type === 'OUT' && S.dash.today.isWorkday && bkkTimeHM() < s.workEnd) {
       pre = confirmDialog({ title: 'ยังไม่ถึงเวลาเลิกงาน', icon: 'schedule', html: 'ขณะนี้เวลา <b>' + bkkTimeHM() + ' น.</b> ยังไม่ถึงเวลาเลิกงาน (' + esc(s.workEnd) + ' น.)<br>ระบบจะบันทึกสถานะ <b>“ออกก่อนเวลา”</b> ต้องการลงเวลาออกงานใช่หรือไม่', confirmText: 'ลงเวลาออก' });
     }
     pre.then(function (go) {
@@ -1516,7 +1583,7 @@
     setBtnLoading(btn, true);
     fileToPayload(f.attachment.files[0]).then(function (att) {
       data.attachment = att;
-      return api('corr.submit', data, { silent: true });
+      return api('corr.submit', data, { silent: true }).then(function (r) { loadDashboard(true); return r; });
     }).then(function (r) {
       toast(r.message, 'success');
       f.reset(); $('[data-file-label]', f).textContent = 'แนบไฟล์ PDF หรือรูปภาพ (ไม่เกิน 5 MB)';
@@ -1529,7 +1596,7 @@
       '<div class="meta">' + icon('event') + ' ' + esc(c.dateLabel) + '</div>' + (mine ? '' : '<div class="meta">' + icon('person') + ' ' + esc(c.fullName) + ' (' + esc(c.staffCode) + ')</div>') +
       (!mine ? '<div class="meta">เวลาปัจจุบันในระบบ: เข้า ' + esc(c.currentIn || '-') + ' / ออก ' + esc(c.currentOut || '-') + '</div>' : '') + '</div>' +
       badge(c.status, c.statusLabel) + '</div><div class="reason">' + esc(c.reason) + '</div>' +
-      '<div class="meta">ยื่นเมื่อ ' + esc(c.requestedLabel) + (c.reviewedByName ? ' · พิจารณาโดย ' + esc(c.reviewedByName) + ' ' + esc(c.reviewedLabel) : '') + '</div>' +
+      '<div class="meta">' + (c.recordedBy ? 'บันทึกแทนโดย ' + esc(c.recordedBy) + ' ' + esc(c.requestedLabel) : 'ยื่นเมื่อ ' + esc(c.requestedLabel) + (c.reviewedByName ? ' · พิจารณาโดย ' + esc(c.reviewedByName) + ' ' + esc(c.reviewedLabel) : '')) + '</div>' +
       (c.reviewNote ? '<div class="meta">ความเห็น: ' + esc(c.reviewNote) + '</div>' : '') +
       '<div class="actions">' + (c.hasAttachment ? '<button type="button" class="btn outline sm" data-view-att="correction" data-id="' + esc(c.requestId) + '">' + icon('attach_file') + 'หลักฐาน</button>' : '') +
       (mine && c.status === 'PENDING' ? '<button type="button" class="btn ghost sm" data-cancel-corr="' + esc(c.requestId) + '">' + icon('close') + 'ยกเลิกคำร้อง</button>' : '') + '</div></div>';
@@ -1572,7 +1639,7 @@
     leaveCard: leaveCard, corrCard: corrCard, bkkToday: bkkToday, bkkParts: bkkParts, serverNow: serverNow,
     fillMonthYear: fillMonthYear, TH_M: TH_M, TH_MS: TH_MS, backToUser: backToUser, doLogout: doLogout, showGeoHelp: showGeoHelp,
     parseYmd: parseYmd, LEAVE_TYPE_META: LEAVE_TYPE_META, leaveConfirmDialog: leaveConfirmDialog, addDaysYmd: addDaysYmd,
-    segSelect: segSelect, setThaiHint: setThaiHint, bindPrintLeave: bindPrintLeave, printHtml: printHtml
+    segSelect: segSelect, setThaiHint: setThaiHint, bindPrintLeave: bindPrintLeave, printHtml: printHtml, copyText: copyText
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();

@@ -157,10 +157,11 @@ function recordAttendance_(ctx, type, p) {
       throw appError_('ท่านลงเวลาเข้างานของวันนี้แล้ว เมื่อเวลา ' + summary.CheckInTime.substr(0, 5) + ' น.', 'DUPLICATE');
     }
     if (type === 'OUT') {
-      if (!summary || !summary.CheckInTime) {
+      // ลืมลงเวลาเข้าแต่ยื่นคำร้องแก้ไขเวลาเข้าของวันนี้แล้ว → ลงเวลาออกได้ตามปกติ
+      if ((!summary || !summary.CheckInTime) && !hasPendingInCorrection_(emp.EmployeeID, date)) {
         throw appError_('ยังไม่มีการลงเวลาเข้างานของวันนี้ กรุณาลงเวลาเข้างานก่อน (หากลืมลงเวลาเข้า ให้ยื่นคำร้องแก้ไขเวลา)', 'NO_CHECKIN');
       }
-      if (summary.CheckOutTime) {
+      if (summary && summary.CheckOutTime) {
         throw appError_('ท่านลงเวลาออกงานของวันนี้แล้ว เมื่อเวลา ' + summary.CheckOutTime.substr(0, 5) + ' น.', 'DUPLICATE');
       }
     }
@@ -246,8 +247,52 @@ function getMyDashboard_(ctx) {
     settings: clientSettings_(s),
     month: { year: y, month: m, label: thaiMonthYear_(y, m), totals: me.totals },
     recent: recent,
-    pending: { leaves: myLeaves, corrections: myCorr }
+    pending: { leaves: myLeaves, corrections: myCorr, todayIn: hasPendingInCorrection_(emp.EmployeeID, today) },
+    issues: myAttendanceIssues_(emp, s, today)
   };
+}
+
+/** มีคำร้องแก้ไข "เวลาเข้า" ของวันที่ระบุรอพิจารณาอยู่หรือไม่ */
+function hasPendingInCorrection_(empId, date) {
+  return readAll_('CorrectionRequests').some(function (c) {
+    return c.EmployeeID === empId && c.Date === date && c.Type === 'IN' && c.Status === REQUEST_STATUS.PENDING;
+  });
+}
+
+/**
+ * วันที่ลงเวลาไม่ครบในช่วงที่ยื่นคำร้องแก้ไขได้ (ไม่เกิน 14 วันล่าสุด ไม่รวมวันนี้)
+ * ไม่แสดงวันที่มีคำร้องแก้ไขเวลา/ใบลารออนุมัติอยู่แล้ว
+ */
+function myAttendanceIssues_(emp, s, today) {
+  var to = addDays_(today, -1);
+  var from = addDays_(today, -Math.min(14, s.correctionMaxDays));
+  if (emp.ActiveFrom && from < emp.ActiveFrom) from = emp.ActiveFrom;
+  if (from > to) return [];
+  var person = computeAttendance_({ employees: [emp], from: from, to: to }).people[0];
+  if (!person) return [];
+  var pendingCorr = {};
+  readAll_('CorrectionRequests').forEach(function (c) {
+    if (c.EmployeeID === emp.EmployeeID && c.Status === REQUEST_STATUS.PENDING) pendingCorr[c.Date + '|' + c.Type] = true;
+  });
+  var pendingLeave = readAll_('LeaveRequests').filter(function (l) {
+    return l.EmployeeID === emp.EmployeeID && l.Status === REQUEST_STATUS.PENDING && l.EndDate >= from && l.StartDate <= to;
+  });
+  var out = [];
+  person.days.forEach(function (d) {
+    if (!d.isWorkday) return;
+    var kind = d.status === 'ABSENT' ? 'ABSENT' : (d.missingIn ? 'MISSING_IN' : (d.missingOut ? 'MISSING_OUT' : ''));
+    if (!kind) return;
+    var leavePending = pendingLeave.some(function (l) { return l.StartDate <= d.date && l.EndDate >= d.date; });
+    if (leavePending) return;
+    if (kind === 'MISSING_IN' && pendingCorr[d.date + '|IN']) return;
+    if (kind === 'MISSING_OUT' && pendingCorr[d.date + '|OUT']) return;
+    if (kind === 'ABSENT' && pendingCorr[d.date + '|IN']) return;
+    out.push({
+      date: d.date, dateLabel: thaiDate_(d.date, 'short'), dayName: THAI_DAYS_SHORT[dayOfWeek_(d.date)],
+      kind: kind, checkIn: d.checkIn ? d.checkIn.substr(0, 5) : '', checkOut: d.checkOut ? d.checkOut.substr(0, 5) : ''
+    });
+  });
+  return out.reverse().slice(0, 5);
 }
 
 /** การตั้งค่าที่ฝั่ง Browser จำเป็นต้องรู้ (ไม่มีข้อมูลลับ) */

@@ -374,7 +374,8 @@ function createGasEnv(opts = {}) {
       const b = { timeBased: () => b, atHour: h => { t.hour = h; return b; }, everyDays: n => { t.days = n; return b; }, inTimezone: z => { t.tz = z; return b; }, create: () => { state.triggers.push(t); return t; } };
       return b;
     },
-    getOAuthToken: () => 'mock-oauth-token'
+    getOAuthToken: () => 'mock-oauth-token',
+    getService: () => ({ getUrl: () => state.serviceUrl || 'https://script.google.com/macros/s/AKfycbyTEST0000000000000000000000000000000000000000000000000000000000/exec' })
   };
   const UrlFetchApp = {
     fetch(url, options) {

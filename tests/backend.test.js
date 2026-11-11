@@ -9,6 +9,20 @@ const path = require('path');
 const crypto = require('crypto');
 const assert = require('assert');
 const { createGasEnv } = require('./gas-mock');
+const vm = require('vm');
+const { decode: decodeQR } = require('./qr-decode');
+
+/** โหลดตัวสร้าง QR Code จากหน้า Admin (src หรือชุด 3 ไฟล์ตาม GAS_SRC) */
+function loadQR() {
+  const file = process.env.GAS_SRC === 'dist' ? path.join(__dirname, '..', 'dist', 'Admin.html') : path.join(__dirname, '..', 'src', 'AdminScript.html');
+  const html = fs.readFileSync(file, 'utf8');
+  const a = html.indexOf('/* QR-BEGIN'), b = html.indexOf('/* QR-END */');
+  assert.ok(a >= 0 && b > a, 'QR module not found in ' + file);
+  const ctx = { window: {}, TextEncoder };
+  vm.createContext(ctx);
+  vm.runInContext(html.slice(a, b), ctx);
+  return ctx.window.WshQR;
+}
 
 const SCHOOL = { lat: 18.7883, lng: 98.9853 };
 const INSIDE = { lat: SCHOOL.lat + 0.0004, lng: SCHOOL.lng, accuracy: 12 };      // ~45 m
@@ -309,6 +323,32 @@ test('R04', 'ปิดรับสมัครสมาชิกจากหน�
 });
 
 /* ================================================================== LOGIN / SESSION */
+test('R05', 'รหัสประจำตัวบุคลากรกำหนดให้อัตโนมัติ: สมัครโดยไม่กรอกรหัส → T001, T002, … (ต่อจากเลขที่มากที่สุด), ผู้ดูแลเพิ่มทีละคน/หลายคนเว้นว่างได้', () => {
+  const sys = newSystem({ noAdmin: true });
+  const reg = (n, extra) => ok(sys.register(Object.assign(regForm(n), { staffCode: '' }, extra || {})));
+  const a = reg(1), b = reg(2);
+  assert.strictEqual(a.staffCode, 'T001'); assert.strictEqual(b.staffCode, 'T002');
+  const c = reg(3, { staffCode: undefined });
+  assert.strictEqual(c.staffCode, 'T003');
+  ok(sys.register(regForm(4, { staffCode: 'T010' }))); // กรอกเองได้ (ไม่บังคับ)
+  assert.strictEqual(reg(5).staffCode, 'T011');
+  ok(sys.register(regForm(6, { staffCode: '9999' })));  // รหัสรูปแบบอื่นไม่กระทบลำดับ
+  const recs = records(sys, 'Employees');
+  assert.deepStrictEqual(recs.map(e => e.StaffCode), ['T001', 'T002', 'T003', 'T010', 'T011', '9999']);
+  // ผู้ดูแลระบบ
+  const sys2 = newSystem();
+  const adminCode = records(sys2, 'Employees')[0].StaffCode;
+  assert.ok(adminCode, 'มีรหัสผู้ดูแล');
+  const one = ok(sys2.api(sys2.admin, 'emp.create', { fullName: 'นายเพิ่ม ทีละคน', staffCode: '', position: 'ครู', username: 'add.one' }));
+  assert.ok(/^T\d{3}$/.test(one.employee.staffCode), one.employee.staffCode);
+  const bulk = ok(sys2.api(sys2.admin, 'emp.bulkCreate', { rows: [
+    { fullName: 'นางสาวหนึ่ง ใจดี', position: 'ครู' }, { staffCode: '', fullName: 'นายสอง รักดี', position: 'ธุรการ' }, { staffCode: 'X77', fullName: 'นายสาม มีรหัส' }] }));
+  const n0 = parseInt(one.employee.staffCode.slice(1), 10);
+  assert.deepStrictEqual(bulk.created.map(x => x.staffCode), ['T' + String(n0 + 1).padStart(3, '0'), 'T' + String(n0 + 2).padStart(3, '0'), 'X77']);
+  assert.deepStrictEqual(bulk.created.map(x => x.username), bulk.created.map(x => x.staffCode.toLowerCase().replace(/^x77$/, 'userx77')));
+  expectErr(sys2.api(sys2.admin, 'emp.update', { employeeId: one.employee.employeeId, fullName: 'นายเพิ่ม ทีละคน', staffCode: '', position: 'ครู', username: 'add.one' }), 'VALIDATION'); // แก้ไขต้องมีรหัส
+});
+
 test('L01', 'รหัสผ่านผิด/ไม่มีผู้ใช้ ได้ข้อความเดียวกัน (ไม่เปิดเผยว่ามีบัญชีหรือไม่)', () => {
   const sys = newSystem();
   const a = expectErr(sys.login('admin.saohin', 'WrongPass123'), 'INVALID_LOGIN');
@@ -1006,6 +1046,58 @@ test('K03', 'อนุมัติคำร้องแทนที่ราย�
   assert.strictEqual(cr.OldAttendanceID, oldOut.AttendanceID); assert.strictEqual(cr.NewAttendanceID, newOut.AttendanceID);
 });
 
+test('K05', 'ลืมลงเวลาเข้าวันนี้ → ยื่นคำร้อง → ลงเวลาออกได้ (ไม่มีเวลาเข้า) → อนุมัติเวลาเข้า → วันนั้น "มาปฏิบัติงาน" ไม่สาย', () => {
+  const sys = newSystem({ now: '2026-11-09 07:00:00' });
+  const t = addTeacher(sys, 1);
+  sys.at('2026-11-09 10:05:00');
+  assert.strictEqual(ok(sys.api(t.token, 'me.dashboard', {})).pending.todayIn, false);
+  expectErr(sys.api(t.token, 'att.checkOut', {}), 'NO_CHECKIN'); // ยังไม่ได้ยื่นคำร้อง → ลงเวลาออกไม่ได้
+  ok(sys.api(t.token, 'corr.submit', { date: '2026-11-09', type: 'IN', time: '07:45', reason: 'มาถึงแล้วลืมกดลงเวลา' }));
+  assert.strictEqual(ok(sys.api(t.token, 'me.dashboard', {})).pending.todayIn, true);
+  sys.at('2026-11-09 16:40:00');
+  ok(sys.api(t.token, 'att.checkOut', {}));
+  let row = records(sys, 'DailySummary').find(r => r.EmployeeID === t.id && r.Date === '2026-11-09');
+  assert.ok(!row.CheckInTime && row.CheckOutTime.startsWith('16:40'));
+  const cr = ok(sys.api(sys.admin, 'corr.adminList', { status: 'PENDING' }))[0];
+  ok(sys.api(sys.admin, 'corr.review', { requestId: cr.requestId, decision: 'APPROVE' }));
+  row = records(sys, 'DailySummary').find(r => r.EmployeeID === t.id && r.Date === '2026-11-09');
+  assert.ok(row.CheckInTime.startsWith('07:45') && row.CheckOutTime.startsWith('16:40') && row.IsLate === false, JSON.stringify(row));
+  sys.at('2026-11-09 18:00:00');
+  const rep = ok(sys.api(sys.admin, 'report.daily', { date: '2026-11-09' })).tables[0].rows.find(r => r.employeeId === t.id);
+  assert.strictEqual(rep.statusCode, 'PRESENT');
+});
+
+test('K06', 'ผู้บริหาร/ผู้ดูแล "บันทึกเวลาแทน" ครูที่ลืมลงเวลา: มีผลทันที, เก็บรายการเดิม, บันทึก Audit; บันทึกให้ตนเอง/บุคลากรทั่วไป/วันอนาคต/คำร้องซ้ำ ไม่ได้', () => {
+  const sys = newSystem({ now: '2026-11-09 07:00:00' });
+  const t = addTeacher(sys, 1), ex = addTeacher(sys, 2, 'EXECUTIVE'), t3 = addTeacher(sys, 3);
+  sys.at('2026-11-09 09:10:00');
+  ok(sys.api(t.token, 'att.checkIn', INSIDE)); // สาย 09:10 (จริง ๆ มาถึง 07:40 แต่ลืมกด)
+  sys.at('2026-11-09 17:30:00');
+  let ov = ok(sys.api(sys.admin, 'admin.overview', {}));
+  assert.strictEqual(ov.today.find(r => r.employeeId === t.id).missingOut, true);
+  const r1 = ok(sys.api(ex.token, 'corr.adminCreate', { employeeId: t.id, date: '2026-11-09', type: 'IN', time: '07:40', reason: 'ครูแจ้งว่ามาถึงแล้วลืมกด' }));
+  assert.ok(/เรียบร้อย/.test(r1.message));
+  assert.strictEqual(r1.request.status, 'APPROVED'); assert.ok(r1.request.recordedBy);
+  ok(sys.api(sys.admin, 'corr.adminCreate', { employeeId: t.id, date: '2026-11-09', type: 'OUT', time: '16:35', reason: 'ลืมกดลงเวลาออก' }));
+  const row = records(sys, 'DailySummary').find(r => r.EmployeeID === t.id && r.Date === '2026-11-09');
+  assert.ok(row.CheckInTime.startsWith('07:40') && row.CheckOutTime.startsWith('16:35') && row.IsLate === false && row.Corrected === true, JSON.stringify(row));
+  const logs = records(sys, 'AttendanceLogs').filter(l => l.EmployeeID === t.id);
+  assert.ok(logs.some(l => l.Time.startsWith('09:10') && l.IsActive === false && l.SupersededBy), 'รายการเดิมเก็บไว้ (ไม่ลบ)');
+  assert.strictEqual(logs.filter(l => l.Source === 'CORRECTION' && l.IsActive).length, 2);
+  const crs = records(sys, 'CorrectionRequests');
+  assert.ok(crs.every(c => c.Status === 'APPROVED' && c.RecordedBy && c.RecordedBy !== 'SELF'));
+  assert.strictEqual(records(sys, 'AuditLogs').filter(a => a.Action === 'CORRECTION_RECORD_BY_ADMIN').length, 2);
+  const mine = ok(sys.api(t.token, 'corr.my', {}));
+  assert.ok(mine.length === 2 && mine.every(c => c.recordedBy));
+  // ข้อห้าม
+  expectErr(sys.api(sys.admin, 'corr.adminCreate', { employeeId: records(sys, 'Employees').find(e => e.Username === 'admin.saohin').EmployeeID, date: '2026-11-09', type: 'IN', time: '07:30', reason: 'ทดสอบ' }), 'FORBIDDEN');
+  expectErr(sys.api(t3.token, 'corr.adminCreate', { employeeId: t.id, date: '2026-11-09', type: 'IN', time: '07:30', reason: 'ทดสอบ' }), 'FORBIDDEN');
+  expectErr(sys.api(sys.admin, 'corr.adminCreate', { employeeId: t3.id, date: '2026-11-10', type: 'IN', time: '07:30', reason: 'ทดสอบ' }), 'VALIDATION');
+  expectErr(sys.api(sys.admin, 'corr.adminCreate', { employeeId: t3.id, date: '2026-11-09', type: 'IN', time: '07:30', reason: '' }), 'VALIDATION');
+  ok(sys.api(t3.token, 'corr.submit', { date: '2026-11-09', type: 'IN', time: '07:50', reason: 'ลืมกดลงเวลาเข้า' }));
+  expectErr(sys.api(sys.admin, 'corr.adminCreate', { employeeId: t3.id, date: '2026-11-09', type: 'IN', time: '07:50', reason: 'ครูแจ้ง' }), 'DUPLICATE');
+});
+
 test('K04', 'คำร้องเวลาออกก่อนเวลาเข้า → อนุมัติไม่ได้; ไม่อนุมัติต้องระบุเหตุผล', () => {
   const sys = newSystem();
   const t = addTeacher(sys, 1);
@@ -1347,6 +1439,103 @@ test('W03', 'ข้อความที่ขึ้นต้นด้วย = +
   assert.strictEqual(rec.Reason, '=IMPORTXML("http://evil","//a")'); assert.strictEqual(rec.ReviewNote, '+cmd|calc'); assert.strictEqual(rec.TypeDetail, '@SUM(A1)');
 });
 
+
+/* ================================================================== QR CODE */
+test('Q01', 'QR Code: ค่าอ้างอิงตามมาตรฐาน (Reed-Solomon "HELLO WORLD" 1-Q, Format info ระดับ M, Version info, ตำแหน่ง Alignment)', () => {
+  const I = loadQR()._internal;
+  assert.deepStrictEqual(Array.from(I.rsRemainder([32, 91, 11, 120, 209, 114, 220, 77, 67, 64, 236, 17, 236], I.rsDivisor(13))),
+    [168, 72, 22, 82, 217, 54, 156, 0, 46, 15, 180, 122, 16]);
+  // ตาราง Format information ระดับ M (mask 0–7)
+  assert.deepStrictEqual([0, 1, 2, 3, 4, 5, 6, 7].map(m => I.formatBits(m).toString(2).padStart(15, '0')),
+    ['101010000010010', '101000100100101', '101111001111100', '101101101001011', '100010111111001', '100000011001110', '100111110010111', '100101010100000']);
+  assert.deepStrictEqual([7, 8, 9, 10].map(v => I.versionBits(v).toString(16)), ['7c94', '85bc', '9a99', 'a4d3']);
+  assert.deepStrictEqual(Array.from(I.alignPos(7)), [6, 22, 38]);
+  assert.deepStrictEqual(Array.from(I.alignPos(10)), [6, 28, 50]);
+});
+
+test('Q02', 'QR Code: สร้างแล้วถอดกลับได้ข้อความเดิมทุกเวอร์ชัน 1–10 (ลิงก์ Apps Script, ภาษาไทย, ขอบความจุ) และยาวเกินแจ้งเตือน', () => {
+  const QR = loadQR();
+  const url = 'https://script.google.com/macros/s/AKfycbyY0o0SHUf-neoASe8tBGYB9fJzBzjtQqo9oihKhwHVbw4lRfLJ7UWM-xDTMIPr1HHF/exec';
+  const texts = [url, 'ระบบลงเวลา โรงเรียนวัดเสาหิน', 'a'];
+  // ขอบความจุโหมด Byte ระดับ M: v1=14 v2=26 v3=42 v4=62 v5=84 v6=106 v7=122 v8=152 v9=180 v10=213
+  [14, 15, 26, 27, 42, 43, 62, 63, 84, 85, 106, 107, 122, 123, 152, 153, 180, 181, 213].forEach(n =>
+    texts.push(Array.from({ length: n }, (_, i) => String.fromCharCode(33 + (i * 7) % 90)).join('')));
+  const versions = new Set();
+  texts.forEach(t => {
+    const q = QR.encode(t);
+    const d = decodeQR(q.modules);
+    assert.strictEqual(d.text, t, 'round trip v' + q.version);
+    versions.add(q.version);
+  });
+  assert.deepStrictEqual([...versions].sort((a, b) => a - b), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  assert.strictEqual(QR.encode(url).version, 7);
+  assert.strictEqual(QR.encode('x'.repeat(14)).version, 1); assert.strictEqual(QR.encode('x'.repeat(15)).version, 2);
+  assert.throws(() => QR.encode('x'.repeat(214)), /ยาวเกินไป/);
+  assert.ok(/^<svg [^>]*viewBox="0 0 53 53"/.test(QR.svg(url)), 'SVG มีขอบขาว 4 ช่อง (45 + 8)');
+});
+
+/* ================================================================== แชร์ระบบ / เพิ่มหลายคน */
+test('M10', 'ลิงก์ระบบสำหรับแชร์/QR: ใช้ /exec เสมอ, ผู้บริหารเรียกได้, บุคลากรทั่วไปเรียกไม่ได้', () => {
+  const sys = newSystem();
+  const t = addTeacher(sys, 1), ex = addTeacher(sys, 2, 'EXECUTIVE');
+  const l = ok(sys.api(sys.admin, 'admin.appLink', {}));
+  assert.ok(/^https:\/\/script\.google\.com\/macros\/s\/\S+\/exec$/.test(l.url), l.url);
+  assert.strictEqual(l.school, 'โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่');
+  sys.env.state.serviceUrl = 'https://script.google.com/macros/s/ABC/dev';
+  assert.strictEqual(ok(sys.api(ex.token, 'admin.appLink', {})).url, 'https://script.google.com/macros/s/ABC/exec');
+  expectErr(sys.api(t.token, 'admin.appLink', {}), 'FORBIDDEN');
+});
+
+test('M11', 'เพิ่มบุคลากรหลายคน: ตรวจทุกแถวก่อน (ผิด 1 แถว = ไม่สร้างเลย), สร้างชื่อผู้ใช้จากรหัส, แปลงตำแหน่ง, รหัสชั่วคราวใช้ได้และบังคับเปลี่ยน', () => {
+  const sys = newSystem();
+  const t = addTeacher(sys, 1); // T001 / teacher1
+  ok(sys.api(sys.admin, 'emp.create', { fullName: 'นายผู้ใช้ ชื่อซ้ำ', staffCode: 'X9', position: 'ครู', username: 't1234' }));
+  const before = records(sys, 'Employees').length;
+  const bad = expectErr(sys.api(sys.admin, 'emp.bulkCreate', { rows: [
+    { staffCode: 'T101', fullName: 'นางสาวมาลี ศรีสุข', position: 'ครูชำนาญการ' },
+    { staffCode: 'T001', fullName: 'นายรหัส ซ้ำของเดิม', position: '' },
+    { staffCode: 'T101', fullName: 'นายรหัส ซ้ำในรายการ', position: '' },
+    { staffCode: 'T102', fullName: 'ชื่อเดียว', position: '' }
+  ] }), 'VALIDATION');
+  assert.deepStrictEqual(bad.data.rows.map(r => r.line), [2, 3, 4]);
+  assert.ok(/มีในระบบแล้ว/.test(bad.data.rows[0].message) && /ซ้ำในรายการ/.test(bad.data.rows[1].message), JSON.stringify(bad.data.rows));
+  assert.strictEqual(records(sys, 'Employees').length, before, 'ไม่มีบัญชีใดถูกสร้าง');
+  const res = ok(sys.api(sys.admin, 'emp.bulkCreate', { rows: [
+    { staffCode: 'T101', fullName: 'นางสาวมาลี ศรีสุข', position: 'ครูชำนาญการ' },
+    { staffCode: '1234', fullName: 'นายสมชาย รักเรียน', position: 'ธุรการ' },
+    { staffCode: 'P1', fullName: 'นายดี มีสุข', position: 'ผู้อำนวยการโรงเรียน' },
+    { staffCode: 'J7', fullName: 'นางแม่บ้าน ใจงาม', position: 'แม่บ้าน' }
+  ] }));
+  assert.strictEqual(res.created.length, 4);
+  assert.deepStrictEqual(res.created.map(c => c.username), ['t101', 't1234.2', 'userp1', 'userj7']);
+  assert.deepStrictEqual(res.created.map(c => c.position), ['ครู', 'บุคลากรทางการศึกษา', 'ผู้อำนวยการ', 'เจ้าหน้าที่อื่น ๆ']);
+  const recs = records(sys, 'Employees').filter(e => res.created.some(c => c.employeeId === e.EmployeeID));
+  assert.ok(recs.every(e => e.Status === 'ACTIVE' && e.MustChangePassword === true && e.Role === 'USER' && !String(e.PasswordHash).includes(res.created[0].tempPassword)));
+  const l = ok(sys.login('t101', res.created[0].tempPassword));
+  assert.strictEqual(l.mustChangePassword, true);
+  assert.ok(records(sys, 'AuditLogs').some(a => a.Action === 'EMPLOYEE_BULK_CREATE'));
+  expectErr(sys.api(sys.admin, 'emp.bulkCreate', { rows: Array.from({ length: 51 }, (_, i) => ({ staffCode: 'Z' + i, fullName: 'นายทดสอบ คนที่' })) }), 'VALIDATION');
+  expectErr(sys.api(sys.admin, 'emp.bulkCreate', { rows: [] }), 'VALIDATION');
+  expectErr(sys.api(t.token, 'emp.bulkCreate', { rows: [{ staffCode: 'Q1', fullName: 'นายไม่มี สิทธิ์' }] }), 'FORBIDDEN');
+});
+
+test('H01', 'หน้าแรกเตือน "ลงเวลาไม่ครบ": ไม่ลงเวลาออก/เข้า/ขาดงานย้อนหลัง, ไม่นับวันนี้และวันหยุด, ซ่อนวันที่ยื่นคำร้อง/ใบลารออนุมัติแล้ว', () => {
+  const sys = newSystem({ now: '2026-11-09 07:00:00' });
+  const t = addTeacher(sys, 1);
+  sys.at('2026-11-09 07:50:00'); ok(sys.api(t.token, 'att.checkIn', INSIDE));           // จ. ลืมลงเวลาออก
+  sys.at('2026-11-10 07:50:00'); ok(sys.api(t.token, 'att.checkIn', INSIDE));
+  sys.at('2026-11-10 16:40:00'); ok(sys.api(t.token, 'att.checkOut', INSIDE));          // อ. ครบ
+  // พ. 11 ไม่มา, พฤ. 12 ไม่มา, ศ. 13 ไม่มา, ส.-อา. หยุด
+  sys.at('2026-11-16 09:00:00'); ok(sys.api(t.token, 'att.checkIn', INSIDE));           // จ. 16 = วันนี้ (ไม่นับ)
+  let d = ok(sys.api(t.token, 'me.dashboard', {}));
+  assert.deepStrictEqual(d.issues.map(x => [x.date, x.kind]), [['2026-11-13', 'ABSENT'], ['2026-11-12', 'ABSENT'], ['2026-11-11', 'ABSENT'], ['2026-11-09', 'MISSING_OUT']]);
+  assert.strictEqual(d.issues[3].checkIn, '07:50'); assert.strictEqual(d.issues[0].dayName, 'ศ.');
+  // ยื่นคำร้องแก้เวลาออกวันที่ 9 และใบลาวันที่ 12 → ซ่อน
+  ok(sys.api(t.token, 'corr.submit', { date: '2026-11-09', type: 'OUT', time: '16:35', reason: 'ลืมกดลงเวลาออก' }));
+  ok(sys.api(t.token, 'leave.submit', { type: 'SICK', startDate: '2026-11-12', endDate: '2026-11-12' }));
+  d = ok(sys.api(t.token, 'me.dashboard', {}));
+  assert.deepStrictEqual(d.issues.map(x => x.date), ['2026-11-13', '2026-11-11']);
+});
 
 /* ================================================================== FIRST RUN (ติดตั้งแบบง่าย) */
 function freshEnv() {

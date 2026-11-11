@@ -468,6 +468,13 @@ table.table { width: 100%; border-collapse: collapse; font-size: .9rem; }
 .stats-table td:first-child { font-weight: 600; white-space: nowrap; }
 .stats-table td.muted { color: var(--muted); }
 
+/* ---------- วันที่ลงเวลาไม่ครบ ---------- */
+.issues-card { border: 1.5px solid #F5C451; background: #FFFBEB; }
+.issue-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 0; border-top: 1px solid #F3E3B5; }
+.issue-row:first-child { border-top: 0; padding-top: 2px; }
+.issue-info { display: flex; flex-direction: column; min-width: 0; }
+.issue-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
 /* ---------- คำแนะนำ / เครื่องนี้ ---------- */
 .home-tip { display: flex; align-items: center; gap: 10px; background: var(--sky-50); border: 1px solid var(--sky-100); border-radius: 16px; padding: 10px 10px 10px 14px; }
 .home-tip > .ms { color: var(--sky-500); font-size: 28px; }
@@ -541,6 +548,26 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
   .print-doc tr { page-break-inside: avoid; }
   .print-doc .c { text-align: center; }
   .print-doc .p-summary { margin-top: 10px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px 18px; font-size: 11.5pt; }
+  /* ประกาศ QR Code (A4 แนวตั้ง) */
+  .qr-poster { font-family: 'Sarabun', 'TH Sarabun New', Tahoma, sans-serif; color: #000; text-align: center; padding-top: 6mm; }
+  .qr-poster .pp-school { font-size: 20pt; font-weight: 700; }
+  .qr-poster .pp-title { font-size: 26pt; font-weight: 700; margin-top: 2mm; }
+  .qr-poster .pp-sub { font-size: 15pt; margin-top: 4mm; }
+  .qr-poster .pp-qr svg { width: 105mm; height: 105mm; margin-top: 6mm; }
+  .qr-poster .pp-url { font-size: 8.5pt; color: #333; word-break: break-all; margin: 2mm 12mm 0; }
+  .qr-poster .pp-steps { text-align: left; font-size: 14pt; line-height: 1.55; margin: 8mm 14mm 0 22mm; padding: 0; }
+  .qr-poster .pp-foot { margin-top: 6mm; font-size: 12pt; border-top: 1px solid #999; padding-top: 3mm; }
+  /* บัตรเข้าใช้งาน 8 ใบต่อ A4 (ตัดตามเส้นประ) */
+  .slips { display: grid; grid-template-columns: 1fr 1fr; gap: 0; font-family: 'Sarabun', 'TH Sarabun New', Tahoma, sans-serif; color: #000; }
+  .slip { border: 1px dashed #777; padding: 3mm 4mm; height: 64mm; box-sizing: border-box; page-break-inside: avoid; break-inside: avoid; overflow: hidden; }
+  .slip .sl-head { font-size: 9pt; font-weight: 700; border-bottom: 1px solid #000; padding-bottom: 1mm; }
+  .slip .sl-body { display: flex; gap: 3mm; align-items: center; margin-top: 2mm; }
+  .slip .sl-info { flex: 1; min-width: 0; }
+  .slip .sl-name { font-size: 11.5pt; font-weight: 700; margin-bottom: 1mm; }
+  .slip .sl-lbl { font-size: 8.5pt; color: #333; }
+  .slip .sl-code { font-family: 'Courier New', monospace; font-size: 14pt; font-weight: 700; letter-spacing: .5px; margin-bottom: 1mm; word-break: break-all; }
+  .slip .sl-qr svg { width: 30mm; height: 30mm; display: block; }
+  .slip .sl-steps { font-size: 8pt; margin-top: 1.5mm; color: #222; }
   /* ใบลาตามแบบของทางราชการ (A4 แนวตั้ง) */
   .lf-doc { font-family: 'Sarabun', 'TH Sarabun New', Tahoma, sans-serif; color: #000; font-size: 12pt; line-height: 1.5; }
   .lf-doc p { margin: 0 0 3px; }

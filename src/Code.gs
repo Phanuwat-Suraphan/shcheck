@@ -27,7 +27,7 @@ var APP = {
   SCHOOL_FULL: 'โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่',
   NAME_EN: 'Wat Sao Hin School Attendance System',
   SLOGAN: 'ระบบลงเวลาอัจฉริยะ สะดวก โปร่งใส ตรวจสอบได้',
-  VERSION: '1.6.0',
+  VERSION: '1.7.0',
   TZ: 'Asia/Bangkok'
 };
 
@@ -200,11 +200,13 @@ function getRoutes_() {
     'admin.view': { fn: getAdminView_, roles: AE },
     'admin.overview': { fn: getAdminOverview_, roles: AE },
     'emp.basicList': { fn: listEmployeesBasic_, roles: AE },
+    'admin.appLink': { fn: getAppLink_, roles: AE },
     'leave.adminList': { fn: adminListLeaves_, roles: AE },
     'leave.adminCreate': { fn: adminRecordLeave_, roles: AE },
     'leave.review': { fn: reviewLeave_, roles: AE },
     'corr.adminList': { fn: adminListCorrections_, roles: AE },
     'corr.review': { fn: reviewCorrection_, roles: AE },
+    'corr.adminCreate': { fn: adminRecordCorrection_, roles: AE },
     'report.daily': { fn: reportDaily_, roles: AE },
     'report.monthly': { fn: reportMonthly_, roles: AE },
     'report.yearly': { fn: reportYearly_, roles: AE },
@@ -215,6 +217,7 @@ function getRoutes_() {
     // ----- ผู้ดูแลระบบเท่านั้น -----
     'emp.list': { fn: listEmployees_, roles: A },
     'emp.create': { fn: createEmployee_, roles: A },
+    'emp.bulkCreate': { fn: bulkCreateEmployees_, roles: A },
     'emp.update': { fn: updateEmployee_, roles: A },
     'emp.setStatus': { fn: setEmployeeStatus_, roles: A },
     'emp.setRole': { fn: setEmployeeRole_, roles: A },

@@ -68,7 +68,8 @@ function validateEmployeeInput_(src, opts) {
     throw appError_('ชื่อ-นามสกุลมีอักขระที่ไม่อนุญาต', 'VALIDATION', { field: 'fullName' });
   }
   var staffCode = normalizeStaffCode_(src.staffCode);
-  if (!AUTH_.STAFFCODE_RE.test(staffCode)) {
+  // opts.autoCode: เว้นว่างได้ — ระบบกำหนดรหัสให้ (T001, T002, …) ภายใต้ Lock ด้วย nextStaffCode_()
+  if (!(opts.autoCode && staffCode === '') && !AUTH_.STAFFCODE_RE.test(staffCode)) {
     throw appError_('รหัสประจำตัวบุคลากรต้องเป็นตัวอักษรภาษาอังกฤษ/ตัวเลข 1–20 ตัว (ใช้ - . / ได้)', 'VALIDATION', { field: 'staffCode' });
   }
   var position = cleanLine_(src.position, 60);
@@ -85,6 +86,20 @@ function validateEmployeeInput_(src, opts) {
     out.password = src.password;
   }
   return out;
+}
+
+/**
+ * รหัสประจำตัวบุคลากรถัดไปแบบอัตโนมัติ: T + เลข 3 หลักขึ้นไป (T001, T002, …) ต่อจากเลขที่มากที่สุดในระบบ
+ * @param {Object=} taken รหัสที่ถูกจองเพิ่มเติม (เช่น ระหว่างเพิ่มหลายคน) — จะถูกเพิ่มรหัสใหม่เข้าไปด้วย
+ */
+function nextStaffCode_(taken) {
+  var max = 0;
+  var scan = function (code) { var m = /^T(\d{1,6})$/.exec(normalizeStaffCode_(code)); if (m) max = Math.max(max, parseInt(m[1], 10)); };
+  readAll_('Employees').forEach(function (e) { scan(e.StaffCode); });
+  if (taken) Object.keys(taken).forEach(scan);
+  var n = max + 1, code = 'T' + (n < 1000 ? ('00' + n).slice(-3) : String(n));
+  if (taken) taken[code] = true;
+  return code;
 }
 
 /** ตรวจสอบ Username และรหัสบุคลากรซ้ำ (อ่านจากชีตโดยตรง — เรียกภายใต้ Lock) */
@@ -114,7 +129,7 @@ function register(form) {
     var s = getSettings_();
     if (!s.allowRegistration) throw appError_('ขณะนี้ระบบปิดรับสมัครสมาชิก กรุณาติดต่อผู้ดูแลระบบ', 'CLOSED');
     form = sanitizeParams_(form);
-    var data = validateEmployeeInput_(form, { requirePassword: true });
+    var data = validateEmployeeInput_(form, { requirePassword: true, autoCode: true });
     if (form.acceptPrivacy !== true) {
       throw appError_('กรุณายอมรับนโยบายการเก็บข้อมูลตำแหน่ง (GPS) และข้อมูลส่วนบุคคล', 'VALIDATION', { field: 'acceptPrivacy' });
     }
@@ -126,6 +141,7 @@ function register(form) {
 
     var hash = hashPassword_(data.password); // คำนวณนอก Lock (ใช้ CPU)
     var emp = withLock_(function () {
+      if (!data.staffCode) data.staffCode = nextStaffCode_();
       assertUniqueEmployee_(data.username, data.staffCode, null);
       var pending = readAll_('Employees').filter(function (e) { return e.Status === EMP_STATUS.PENDING; }).length;
       if (pending >= AUTH_.MAX_PENDING) throw appError_('มีผู้สมัครรออนุมัติจำนวนมาก กรุณาติดต่อผู้ดูแลระบบ', 'BUSY');
@@ -159,6 +175,7 @@ function register(form) {
         reference: emp.EmployeeID,
         fullName: emp.FullName,
         username: emp.Username,
+        staffCode: emp.StaffCode,
         message: 'สมัครสมาชิกสำเร็จ บัญชีของท่านอยู่ระหว่างรอการอนุมัติจากผู้ดูแลระบบ ' +
           'เมื่อได้รับอนุมัติแล้วจึงจะสามารถเข้าสู่ระบบและลงเวลาได้'
       }
@@ -538,7 +555,7 @@ function changePassword_(ctx, p) {
  *   BOOTSTRAP_ADMIN_USERNAME   (จำเป็น)
  *   BOOTSTRAP_ADMIN_PASSWORD   (จำเป็น — ระบบจะลบทิ้งทันทีหลังสร้างบัญชี)
  *   BOOTSTRAP_ADMIN_FULLNAME   (จำเป็น)
- *   BOOTSTRAP_ADMIN_STAFFCODE  (จำเป็น)
+ *   BOOTSTRAP_ADMIN_STAFFCODE  (ไม่บังคับ — เว้นว่าง = ระบบกำหนดให้)
  *   BOOTSTRAP_ADMIN_POSITION   (ไม่บังคับ ค่าเริ่มต้น: ครู)
  * ทำงานได้เฉพาะเมื่อยังไม่มี ADMIN ที่ใช้งานอยู่ และบังคับเปลี่ยนรหัสผ่านเมื่อเข้าสู่ระบบครั้งแรก
  */
@@ -559,18 +576,19 @@ function CreateFirstAdmin() {
     staffCode: props.getProperty('BOOTSTRAP_ADMIN_STAFFCODE'),
     position: props.getProperty('BOOTSTRAP_ADMIN_POSITION') || 'ครู'
   };
-  if (!input.username || !input.password || !input.fullName || !input.staffCode) {
+  if (!input.username || !input.password || !input.fullName) {
     throw new Error('กรุณาตั้งค่า Script Properties: BOOTSTRAP_ADMIN_USERNAME, BOOTSTRAP_ADMIN_PASSWORD, ' +
-      'BOOTSTRAP_ADMIN_FULLNAME, BOOTSTRAP_ADMIN_STAFFCODE ก่อนรันฟังก์ชันนี้');
+      'BOOTSTRAP_ADMIN_FULLNAME ก่อนรันฟังก์ชันนี้');
   }
   var data;
   try {
-    data = validateEmployeeInput_(input, { requirePassword: true });
+    data = validateEmployeeInput_(input, { requirePassword: true, autoCode: true });
   } catch (e) {
     throw new Error('ข้อมูลผู้ดูแลระบบไม่ถูกต้อง: ' + e.message);
   }
   var hash = hashPassword_(data.password);
   var rec = withLock_(function () {
+    if (!data.staffCode) data.staffCode = nextStaffCode_();
     assertUniqueEmployee_(data.username, data.staffCode, null);
     var r = {
       EmployeeID: newId_('EMP'), StaffCode: data.staffCode, FullName: data.fullName, Position: data.position,
@@ -614,7 +632,7 @@ function firstRunSetup(form) {
       cache.put(rateKey, String(tries + 1), 3700);
       throw appError_('รหัสติดตั้งไม่ถูกต้อง กรุณาคัดลอกจากชีต "' + SETUP_SHEET_ + '" ในไฟล์ฐานข้อมูลอีกครั้ง', 'VALIDATION', { field: 'setupCode' });
     }
-    var data = validateEmployeeInput_(form, { requirePassword: true });
+    var data = validateEmployeeInput_(form, { requirePassword: true, autoCode: true });
     // การตั้งค่าเริ่มต้น (ไม่บังคับ) — ปรับภายหลังได้ในหน้าตั้งค่าระบบ
     var input = form.settings || {};
     var next = {};
@@ -631,6 +649,7 @@ function firstRunSetup(form) {
     var emp = withLock_(function () {
       var exists = readAll_('Employees').some(function (e) { return e.Role === ROLES.ADMIN && e.Status === EMP_STATUS.ACTIVE; });
       if (exists) throw appError_('ระบบมีผู้ดูแลระบบแล้ว กรุณาเข้าสู่ระบบตามปกติ', 'ALREADY_SETUP');
+      if (!data.staffCode) data.staffCode = nextStaffCode_();
       assertUniqueEmployee_(data.username, data.staffCode, null);
       var r = {
         EmployeeID: newId_('EMP'), StaffCode: data.staffCode, FullName: data.fullName, Position: data.position,

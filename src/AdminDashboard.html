@@ -38,6 +38,10 @@
   .reg-card { border: 1px solid var(--border); border-radius: 16px; padding: 14px; background: #fff; display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
   .reg-card .info { flex: 1 1 240px; min-width: 0; }
   .reg-card .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .qr-box { display: flex; justify-content: center; align-items: center; background: #fff; border: 1px solid var(--border); border-radius: 16px; padding: 12px; min-height: 220px; }
+  .qr-box svg { width: min(260px, 100%); height: auto; }
+  tr.row-error td { background: var(--danger-bg) !important; }
+  .mono { font-family: 'Courier New', monospace; font-weight: 700; letter-spacing: .5px; }
   .mini-link { display: inline-flex; align-items: center; gap: 2px; font-size: .8rem; color: var(--navy-700); text-decoration: none; }
   .mini-link .ms { font-size: 16px; }
   @media (min-width: 1024px) {
@@ -73,6 +77,7 @@
     <button type="button" data-sec="corrections"><span class="ms">edit_calendar</span>คำร้องแก้ไขเวลา<span class="count" data-count="corrections" hidden></span></button>
     <button type="button" data-sec="reports"><span class="ms">analytics</span>รายงานและสถิติ</button>
     <button type="button" data-sec="calendar"><span class="ms">calendar_month</span>ปฏิทินวันหยุด</button>
+    <button type="button" data-sec="share"><span class="ms">qr_code_2</span>แชร์ระบบ / QR Code</button>
     <button type="button" data-sec="settings" data-admin-only><span class="ms">settings</span>ตั้งค่าระบบ</button>
     <button type="button" data-sec="audit" data-admin-only><span class="ms">policy</span>ประวัติการใช้งาน</button>
   </nav>
@@ -117,7 +122,8 @@
     <!-- ================= จัดการสมาชิก ================= -->
     <section data-panel-sec="members" hidden>
       <div class="page-head"><h2><span class="ms">groups</span>จัดการสมาชิก</h2>
-        <button type="button" class="btn" id="memAddBtn"><span class="ms">person_add</span>เพิ่มบุคลากร</button></div>
+        <div class="row" style="gap:8px"><button type="button" class="btn outline" id="memBulkBtn"><span class="ms">group_add</span>เพิ่มหลายคน</button>
+        <button type="button" class="btn" id="memAddBtn"><span class="ms">person_add</span>เพิ่มบุคลากร</button></div></div>
       <div class="card">
         <div class="toolbar">
           <div class="field grow"><label for="memSearch">ค้นหา</label><input type="search" id="memSearch" placeholder="ชื่อ / รหัสบุคลากร / ชื่อผู้ใช้"></div>
@@ -142,7 +148,8 @@
 
     <!-- ================= คำร้องแก้ไขเวลา ================= -->
     <section data-panel-sec="corrections" hidden>
-      <div class="page-head"><h2><span class="ms">edit_calendar</span>คำร้องแก้ไขการลงเวลา</h2></div>
+      <div class="page-head"><h2><span class="ms">edit_calendar</span>คำร้องแก้ไขการลงเวลา</h2>
+        <button type="button" class="btn" id="crRecordBtn"><span class="ms">more_time</span>บันทึกเวลาแทน (ครูลืมลงเวลา)</button></div>
       <div class="alert info" style="margin-bottom:12px"><span class="ms">history_edu</span><div>เมื่ออนุมัติ ระบบจะสร้างรายการเวลาใหม่และเก็บรายการเดิมไว้เป็นประวัติ (ไม่ลบ) พร้อมบันทึกผู้อนุมัติใน Audit Log</div></div>
       <div class="toolbar">
         <div class="seg" id="crStatusSeg"><button type="button" data-val="PENDING" class="active">รออนุมัติ</button><button type="button" data-val="APPROVED">อนุมัติแล้ว</button><button type="button" data-val="REJECTED">ไม่อนุมัติ</button><button type="button" data-val="ALL">ทั้งหมด</button></div>
@@ -179,6 +186,38 @@
         <button type="button" class="btn outline" id="repPrintBtn"><span class="ms">print</span>พิมพ์รายงาน</button>
       </div>
       <div id="repResult"></div>
+    </section>
+
+    <!-- ================= แชร์ระบบ / QR Code ================= -->
+    <section data-panel-sec="share" hidden>
+      <div class="page-head"><h2><span class="ms">qr_code_2</span>แชร์ระบบให้บุคลากร</h2></div>
+      <div class="admin-grid-2" style="margin-top:0">
+        <div class="card">
+          <div class="card-title"><span class="ms">qr_code_2</span>QR Code เข้าใช้งานระบบ</div>
+          <div class="qr-box" id="shareQr"></div>
+          <div class="field" style="margin-top:12px"><label for="shareUrl">ลิงก์ระบบ</label><input type="url" id="shareUrl" inputmode="url" spellcheck="false" autocomplete="off">
+            <span class="hint">ระบบใส่ลิงก์ให้อัตโนมัติ ถ้าไม่ถูกต้องวางลิงก์ที่ลงท้ายด้วย /exec จากการ Deploy ได้</span></div>
+          <div class="alert warning" id="shareUrlWarn" hidden><span class="ms">warning</span><div>ลิงก์ควรลงท้ายด้วย <b>/exec</b> (ลิงก์ /dev เปิดได้เฉพาะเจ้าของโปรเจกต์)</div></div>
+          <div class="row" style="gap:8px;margin-top:10px">
+            <button type="button" class="btn" id="sharePosterBtn"><span class="ms">print</span>พิมพ์ประกาศ QR (A4)</button>
+            <button type="button" class="btn outline" id="shareCopyBtn"><span class="ms">content_copy</span>คัดลอกลิงก์</button>
+            <button type="button" class="btn outline" id="shareDownloadBtn"><span class="ms">download</span>ดาวน์โหลดรูป QR</button>
+          </div>
+          <p class="small muted" style="margin:10px 0 0">ติดประกาศไว้ที่ห้องพักครู/จุดลงเวลา — ครูสแกนด้วยกล้องโทรศัพท์แล้วเข้าระบบได้ทันที</p>
+        </div>
+        <div class="stack">
+          <div class="card">
+            <div class="card-title"><span class="ms">forum</span>ข้อความสำหรับส่งในกลุ่ม LINE</div>
+            <textarea id="shareMsg" readonly style="min-height:210px;font-size:.9rem"></textarea>
+            <button type="button" class="btn outline block" id="shareMsgCopyBtn" style="margin-top:10px"><span class="ms">content_copy</span>คัดลอกข้อความ</button>
+          </div>
+          <div class="card" data-admin-only>
+            <div class="card-title"><span class="ms">badge</span>บัตรเข้าใช้งาน (เพิ่มหลายคนพร้อมกัน)</div>
+            <p class="small">วางรายชื่อจาก Excel → ระบบสร้างบัญชี + รหัสผ่านชั่วคราว → <b>พิมพ์บัตรเข้าใช้งาน</b> (มี QR Code) แจกครูได้ทันที ไม่ต้องรอสมัครและอนุมัติ</p>
+            <button type="button" class="btn success block" id="shareBulkBtn"><span class="ms">group_add</span>เพิ่มบุคลากรหลายคน</button>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- ================= ปฏิทิน ================= -->

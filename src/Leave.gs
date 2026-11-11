@@ -430,25 +430,30 @@ function correctionView_(r) {
     status: r.Status, statusLabel: REQUEST_STATUS_LABELS[r.Status] || r.Status,
     requestedAt: r.RequestedAt, requestedLabel: thaiStamp_(r.RequestedAt),
     reviewedByName: r.ReviewedByName, reviewedLabel: thaiStamp_(r.ReviewedAt), reviewNote: r.ReviewNote,
-    oldAttendanceId: r.OldAttendanceID, newAttendanceId: r.NewAttendanceID
+    oldAttendanceId: r.OldAttendanceID, newAttendanceId: r.NewAttendanceID,
+    recordedBy: r.RecordedBy && r.RecordedBy !== 'SELF' ? r.RecordedBy : ''
   };
 }
 
-function submitCorrection_(ctx, p) {
-  var emp = ctx.user, s = ctx.settings;
-  var date = String(p.date || '');
-  var type = String(p.type || '');
-  var time = String(p.time || '');
-  var today = todayStr_();
+/** ตรวจวันที่/ประเภท/เวลา ของการแก้ไขเวลา (ใช้ร่วมกันทั้งคำร้องของบุคลากรและการบันทึกแทนโดยผู้บริหาร) */
+function validateCorrectionInput_(emp, p, maxBackDays) {
+  var date = String(p.date || ''), type = String(p.type || ''), time = String(p.time || ''), today = todayStr_();
   if (!isValidYmd_(date)) throw appError_('กรุณาเลือกวันที่ที่ต้องการแก้ไข', 'VALIDATION', { field: 'date' });
   if (date > today) throw appError_('ไม่สามารถแก้ไขเวลาของวันในอนาคตได้', 'VALIDATION', { field: 'date' });
-  if (date < addDays_(today, -s.correctionMaxDays)) {
-    throw appError_('ยื่นคำร้องย้อนหลังได้ไม่เกิน ' + s.correctionMaxDays + ' วัน', 'VALIDATION', { field: 'date' });
+  if (date < addDays_(today, -maxBackDays)) {
+    throw appError_('แก้ไขเวลาย้อนหลังได้ไม่เกิน ' + maxBackDays + ' วัน', 'VALIDATION', { field: 'date' });
   }
   if (emp.ActiveFrom && date < emp.ActiveFrom) throw appError_('วันที่เลือกอยู่ก่อนวันที่บัญชีเริ่มใช้งาน', 'VALIDATION', { field: 'date' });
   if (!ATT_TYPES[type]) throw appError_('กรุณาเลือกประเภท เวลาเข้า หรือ เวลาออก', 'VALIDATION', { field: 'type' });
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw appError_('กรุณาระบุเวลาให้ถูกต้อง (ชั่วโมง:นาที)', 'VALIDATION', { field: 'time' });
   if (date === today && time + ':00' > nowTimeStr_()) throw appError_('เวลาที่แจ้งต้องไม่เกินเวลาปัจจุบัน', 'VALIDATION', { field: 'time' });
+  return { date: date, type: type, time: time };
+}
+
+function submitCorrection_(ctx, p) {
+  var emp = ctx.user, s = ctx.settings;
+  var v = validateCorrectionInput_(emp, p, s.correctionMaxDays);
+  var date = v.date, type = v.type, time = v.time;
   var reason = cleanText_(p.reason, 1000);
   if (reason.length < 5) throw appError_('กรุณาระบุเหตุผลอย่างน้อย 5 ตัวอักษร', 'VALIDATION', { field: 'reason' });
   if (reason.length > 500) throw appError_('เหตุผลต้องไม่เกิน 500 ตัวอักษร', 'VALIDATION', { field: 'reason' });
@@ -465,7 +470,7 @@ function submitCorrection_(ctx, p) {
       Date: date, Type: type, RequestedTime: time + ':00', Reason: reason,
       AttachmentFileId: att ? att.fileId : '', AttachmentName: att ? att.name : '',
       Status: 'PENDING', RequestedAt: nowStamp_(), ReviewedBy: '', ReviewedByName: '', ReviewedAt: '', ReviewNote: '',
-      OldAttendanceID: '', NewAttendanceID: ''
+      OldAttendanceID: '', NewAttendanceID: '', RecordedBy: 'SELF'
     };
     appendRecord_('CorrectionRequests', r);
     return r;
@@ -521,7 +526,6 @@ function reviewCorrection_(ctx, p) {
   if (['APPROVE', 'REJECT'].indexOf(decision) < 0) throw appError_('คำสั่งไม่ถูกต้อง', 'VALIDATION');
   var note = cleanText_(p.note, 500);
   if (decision === 'REJECT' && note.length < 2) throw appError_('กรุณาระบุเหตุผลที่ไม่อนุมัติ', 'VALIDATION', { field: 'note' });
-  var s = ctx.settings;
   var out = withLock_(function () {
     var r = findOne_('CorrectionRequests', 'RequestID', String(p.requestId || ''));
     if (!r) throw appError_('ไม่พบคำร้อง', 'NOT_FOUND');
@@ -533,57 +537,114 @@ function reviewCorrection_(ctx, p) {
       });
       return { before: r, after: rej, oldLog: null, newLog: null };
     }
-    var emp = getEmployeeById_(r.EmployeeID);
-    if (!emp) throw appError_('ไม่พบข้อมูลบุคลากรของคำร้องนี้', 'NOT_FOUND');
-    var summary = findOne_('DailySummary', 'Key', summaryKey_(r.Date, r.EmployeeID));
-    var time = normTime_(r.RequestedTime);
-    if (r.Type === 'OUT' && summary && summary.CheckInTime && time <= summary.CheckInTime) {
-      throw appError_('เวลาออกที่ขอแก้ไข (' + time.substr(0, 5) + ') ต้องหลังเวลาเข้างาน (' + summary.CheckInTime.substr(0, 5) + ')', 'VALIDATION');
-    }
-    if (r.Type === 'IN' && summary && summary.CheckOutTime && time >= summary.CheckOutTime) {
-      throw appError_('เวลาเข้าที่ขอแก้ไข (' + time.substr(0, 5) + ') ต้องก่อนเวลาออกงาน (' + summary.CheckOutTime.substr(0, 5) + ')', 'VALIDATION');
-    }
-    var dayInfo = getDayInfo_(r.Date, s);
-    var st = computeLogStatus_(r.Type, time, dayInfo, s);
-    var newId = newId_(r.Type === 'IN' ? 'IN' : 'OUT');
-    var oldId = summary ? (r.Type === 'IN' ? summary.CheckInLogID : summary.CheckOutLogID) : '';
-    var oldLog = null;
-    if (oldId) {
-      oldLog = findOne_('AttendanceLogs', 'AttendanceID', oldId);
-      if (oldLog) {
-        updateRecord_('AttendanceLogs', oldLog._row, {
-          IsActive: false, SupersededBy: newId,
-          Note: (oldLog.Note ? oldLog.Note + ' | ' : '') + 'ถูกแทนที่ตามคำร้อง ' + r.RequestID
-        });
-      }
-    }
-    var newLog = {
-      AttendanceID: newId, EmployeeID: emp.EmployeeID, StaffCode: emp.StaffCode, FullName: emp.FullName,
-      Type: r.Type, Date: r.Date, Time: time, Timestamp: nowStamp_(),
-      Latitude: '', Longitude: '', Accuracy: '', DistanceM: '',
-      Status: st.status, Source: 'CORRECTION', IsActive: true, SupersededBy: '', RefID: r.RequestID,
-      Note: 'อนุมัติโดย ' + ctx.user.FullName + (note ? ' — ' + note : '')
-    };
-    appendRecord_('AttendanceLogs', newLog);
-    var patch = { DayType: dayInfo.isWorkday ? 'WORKDAY' : 'HOLIDAY', Corrected: true };
-    if (r.Type === 'IN') {
-      patch.CheckInTime = time; patch.CheckInLogID = newId; patch.InDistanceM = null;
-      patch.IsLate = st.isLate; patch.LateMinutes = st.lateMinutes;
-    } else {
-      patch.CheckOutTime = time; patch.CheckOutLogID = newId; patch.OutDistanceM = null; patch.EarlyLeave = st.early;
-    }
-    upsertDailySummary_(r.Date, emp, patch);
+    var applied = applyCorrection_(ctx, r, 'อนุมัติโดย ' + ctx.user.FullName + (note ? ' — ' + note : ''));
     var after = updateRecord_('CorrectionRequests', r._row, {
       Status: 'APPROVED', ReviewedBy: ctx.user.EmployeeID, ReviewedByName: ctx.user.FullName, ReviewedAt: nowStamp_(),
-      ReviewNote: note, OldAttendanceID: oldId || '', NewAttendanceID: newId
+      ReviewNote: note, OldAttendanceID: applied.oldId || '', NewAttendanceID: applied.newId
     });
-    return { before: r, after: after, oldLog: oldLog, newLog: newLog };
+    return { before: r, after: after, oldLog: applied.oldLog, newLog: applied.newLog };
   });
-  writeAudit_(ctx, 'CORRECTION_' + decision, 'CorrectionRequest', out.after.RequestID, {
+  writeCorrectionAudit_(ctx, 'CORRECTION_' + decision, out, note);
+  return { request: correctionView_(out.after), message: decision === 'APPROVE' ? 'อนุมัติคำร้องและปรับเวลาเรียบร้อยแล้ว' : 'ไม่อนุมัติคำร้องแล้ว' };
+}
+
+/**
+ * ปรับเวลาตามคำร้อง (เรียกภายใต้ Lock): เพิ่มรายการเวลาใหม่ ทำเครื่องหมายรายการเดิมว่าถูกแทนที่ (ไม่ลบ)
+ * และปรับตารางสรุปรายวัน → {oldId, newId, oldLog, newLog}
+ */
+function applyCorrection_(ctx, r, logNote) {
+  var s = ctx.settings;
+  var emp = getEmployeeById_(r.EmployeeID);
+  if (!emp) throw appError_('ไม่พบข้อมูลบุคลากรของคำร้องนี้', 'NOT_FOUND');
+  var summary = findOne_('DailySummary', 'Key', summaryKey_(r.Date, r.EmployeeID));
+  var time = normTime_(r.RequestedTime);
+  if (r.Type === 'OUT' && summary && summary.CheckInTime && time <= summary.CheckInTime) {
+    throw appError_('เวลาออกที่ขอแก้ไข (' + time.substr(0, 5) + ') ต้องหลังเวลาเข้างาน (' + summary.CheckInTime.substr(0, 5) + ')', 'VALIDATION');
+  }
+  if (r.Type === 'IN' && summary && summary.CheckOutTime && time >= summary.CheckOutTime) {
+    throw appError_('เวลาเข้าที่ขอแก้ไข (' + time.substr(0, 5) + ') ต้องก่อนเวลาออกงาน (' + summary.CheckOutTime.substr(0, 5) + ')', 'VALIDATION');
+  }
+  var dayInfo = getDayInfo_(r.Date, s);
+  var st = computeLogStatus_(r.Type, time, dayInfo, s);
+  var newId = newId_(r.Type === 'IN' ? 'IN' : 'OUT');
+  var oldId = summary ? (r.Type === 'IN' ? summary.CheckInLogID : summary.CheckOutLogID) : '';
+  var oldLog = null;
+  if (oldId) {
+    oldLog = findOne_('AttendanceLogs', 'AttendanceID', oldId);
+    if (oldLog) {
+      updateRecord_('AttendanceLogs', oldLog._row, {
+        IsActive: false, SupersededBy: newId,
+        Note: (oldLog.Note ? oldLog.Note + ' | ' : '') + 'ถูกแทนที่ตามคำร้อง ' + r.RequestID
+      });
+    }
+  }
+  var newLog = {
+    AttendanceID: newId, EmployeeID: emp.EmployeeID, StaffCode: emp.StaffCode, FullName: emp.FullName,
+    Type: r.Type, Date: r.Date, Time: time, Timestamp: nowStamp_(),
+    Latitude: '', Longitude: '', Accuracy: '', DistanceM: '',
+    Status: st.status, Source: 'CORRECTION', IsActive: true, SupersededBy: '', RefID: r.RequestID,
+    Note: logNote
+  };
+  appendRecord_('AttendanceLogs', newLog);
+  var patch = { DayType: dayInfo.isWorkday ? 'WORKDAY' : 'HOLIDAY', Corrected: true };
+  if (r.Type === 'IN') {
+    patch.CheckInTime = time; patch.CheckInLogID = newId; patch.InDistanceM = null;
+    patch.IsLate = st.isLate; patch.LateMinutes = st.lateMinutes;
+  } else {
+    patch.CheckOutTime = time; patch.CheckOutLogID = newId; patch.OutDistanceM = null; patch.EarlyLeave = st.early;
+  }
+  upsertDailySummary_(r.Date, emp, patch);
+  return { oldId: oldId, newId: newId, oldLog: oldLog, newLog: newLog };
+}
+
+function writeCorrectionAudit_(ctx, action, out, note) {
+  writeAudit_(ctx, action, 'CorrectionRequest', out.after.RequestID, {
     employee: out.after.FullName, date: out.after.Date, type: out.after.Type, requestedTime: out.after.RequestedTime,
     oldRecord: out.oldLog ? { id: out.oldLog.AttendanceID, time: out.oldLog.Time, status: out.oldLog.Status, source: out.oldLog.Source } : null,
     newRecord: out.newLog ? { id: out.newLog.AttendanceID, time: out.newLog.Time, status: out.newLog.Status } : null,
     note: note
   });
-  return { request: correctionView_(out.after), message: decision === 'APPROVE' ? 'อนุมัติคำร้องและปรับเวลาเรียบร้อยแล้ว' : 'ไม่อนุมัติคำร้องแล้ว' };
+}
+
+/**
+ * ผู้บริหาร/ผู้ดูแลระบบ "บันทึกเวลาแทน" บุคลากรที่ลืมลงเวลา (เช่น ครูโทรมาแจ้ง) → มีผลทันที
+ * - เก็บเป็นคำร้องที่อนุมัติแล้ว (ผู้บันทึก = ผู้อนุมัติ) รายการเวลาเดิมไม่ถูกลบ + Audit Log
+ * - บันทึกให้ตนเองไม่ได้ (ต้องยื่นคำร้องให้ผู้อื่นอนุมัติ) · ย้อนหลังได้ไม่เกิน 1 ปี
+ * - ถ้ามีคำร้องของวัน/ประเภทเดียวกันรออยู่ ให้พิจารณาคำร้องนั้นแทน
+ */
+function adminRecordCorrection_(ctx, p) {
+  var emp = getEmployeeById_(String(p.employeeId || ''));
+  if (!emp) throw appError_('กรุณาเลือกบุคลากร', 'VALIDATION', { field: 'employeeId' });
+  if (emp.Status !== EMP_STATUS.ACTIVE) throw appError_('บัญชีนี้ไม่ได้อยู่ในสถานะใช้งาน', 'VALIDATION', { field: 'employeeId' });
+  if (emp.EmployeeID === ctx.user.EmployeeID) {
+    throw appError_('บันทึกเวลาให้ตนเองไม่ได้ กรุณายื่นคำร้องแก้ไขเวลาเพื่อให้ผู้บริหาร/ผู้ดูแลท่านอื่นอนุมัติ', 'FORBIDDEN');
+  }
+  var v = validateCorrectionInput_(emp, p, 366);
+  var reason = cleanText_(p.reason, 1000);
+  if (reason.length < 2) throw appError_('กรุณาระบุเหตุผล เช่น ครูแจ้งว่าลืมลงเวลา', 'VALIDATION', { field: 'reason' });
+  if (reason.length > 500) throw appError_('เหตุผลต้องไม่เกิน 500 ตัวอักษร', 'VALIDATION', { field: 'reason' });
+  var out = withLock_(function () {
+    var dup = readAll_('CorrectionRequests').some(function (r) {
+      return r.EmployeeID === emp.EmployeeID && r.Date === v.date && r.Type === v.type && r.Status === 'PENDING';
+    });
+    if (dup) throw appError_('มีคำร้องแก้ไข' + ATT_TYPES[v.type] + 'ของวันนี้รอการพิจารณาอยู่แล้ว กรุณาพิจารณาที่เมนู “คำร้องแก้ไขเวลา”', 'DUPLICATE');
+    var now = nowStamp_();
+    var r = {
+      RequestID: newId_('CR'), EmployeeID: emp.EmployeeID, StaffCode: emp.StaffCode, FullName: emp.FullName,
+      Date: v.date, Type: v.type, RequestedTime: v.time + ':00', Reason: reason,
+      AttachmentFileId: '', AttachmentName: '', Status: 'APPROVED', RequestedAt: now,
+      ReviewedBy: ctx.user.EmployeeID, ReviewedByName: ctx.user.FullName, ReviewedAt: now, ReviewNote: 'บันทึกเวลาแทนโดย ' + ctx.user.FullName,
+      OldAttendanceID: '', NewAttendanceID: '', RecordedBy: ctx.user.FullName
+    };
+    var applied = applyCorrection_(ctx, r, 'บันทึกแทนโดย ' + ctx.user.FullName + ' — ' + reason);
+    r.OldAttendanceID = applied.oldId || '';
+    r.NewAttendanceID = applied.newId;
+    appendRecord_('CorrectionRequests', r);
+    return { after: r, oldLog: applied.oldLog, newLog: applied.newLog };
+  });
+  writeCorrectionAudit_(ctx, 'CORRECTION_RECORD_BY_ADMIN', out, reason);
+  return {
+    request: correctionView_(out.after),
+    message: 'บันทึกเวลา' + ATT_TYPES[v.type] + 'ของ ' + emp.FullName + ' วันที่ ' + thaiDate_(v.date, 'short') + ' เวลา ' + v.time + ' น. เรียบร้อย'
+  };
 }

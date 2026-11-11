@@ -1,5 +1,5 @@
 /*
- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.6.0
+ * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.7.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Code.gs (โค้ดฝั่ง Server ทั้งหมด)
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่
  */
@@ -35,7 +35,7 @@ var APP = {
   SCHOOL_FULL: 'โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่',
   NAME_EN: 'Wat Sao Hin School Attendance System',
   SLOGAN: 'ระบบลงเวลาอัจฉริยะ สะดวก โปร่งใส ตรวจสอบได้',
-  VERSION: '1.6.0',
+  VERSION: '1.7.0',
   TZ: 'Asia/Bangkok'
 };
 
@@ -208,11 +208,13 @@ function getRoutes_() {
     'admin.view': { fn: getAdminView_, roles: AE },
     'admin.overview': { fn: getAdminOverview_, roles: AE },
     'emp.basicList': { fn: listEmployeesBasic_, roles: AE },
+    'admin.appLink': { fn: getAppLink_, roles: AE },
     'leave.adminList': { fn: adminListLeaves_, roles: AE },
     'leave.adminCreate': { fn: adminRecordLeave_, roles: AE },
     'leave.review': { fn: reviewLeave_, roles: AE },
     'corr.adminList': { fn: adminListCorrections_, roles: AE },
     'corr.review': { fn: reviewCorrection_, roles: AE },
+    'corr.adminCreate': { fn: adminRecordCorrection_, roles: AE },
     'report.daily': { fn: reportDaily_, roles: AE },
     'report.monthly': { fn: reportMonthly_, roles: AE },
     'report.yearly': { fn: reportYearly_, roles: AE },
@@ -223,6 +225,7 @@ function getRoutes_() {
     // ----- ผู้ดูแลระบบเท่านั้น -----
     'emp.list': { fn: listEmployees_, roles: A },
     'emp.create': { fn: createEmployee_, roles: A },
+    'emp.bulkCreate': { fn: bulkCreateEmployees_, roles: A },
     'emp.update': { fn: updateEmployee_, roles: A },
     'emp.setStatus': { fn: setEmployeeStatus_, roles: A },
     'emp.setRole': { fn: setEmployeeRole_, roles: A },
@@ -653,7 +656,8 @@ var SCHEMA_ = {
       ['ReviewedAt', 'datetime', 'วันเวลาที่พิจารณา'],
       ['ReviewNote', 'str', 'ความเห็นผู้พิจารณา'],
       ['OldAttendanceID', 'str', 'รหัสรายการเดิมที่ถูกแทนที่ (ถ้ามี)'],
-      ['NewAttendanceID', 'str', 'รหัสรายการใหม่ที่สร้างจากคำร้อง']
+      ['NewAttendanceID', 'str', 'รหัสรายการใหม่ที่สร้างจากคำร้อง'],
+      ['RecordedBy', 'str', 'ผู้บันทึก: SELF = บุคลากรยื่นเอง หรือชื่อผู้บริหาร/ผู้ดูแลที่บันทึกเวลาแทน']
     ]
   },
   AuditLogs: {
@@ -1867,7 +1871,8 @@ function validateEmployeeInput_(src, opts) {
     throw appError_('ชื่อ-นามสกุลมีอักขระที่ไม่อนุญาต', 'VALIDATION', { field: 'fullName' });
   }
   var staffCode = normalizeStaffCode_(src.staffCode);
-  if (!AUTH_.STAFFCODE_RE.test(staffCode)) {
+  // opts.autoCode: เว้นว่างได้ — ระบบกำหนดรหัสให้ (T001, T002, …) ภายใต้ Lock ด้วย nextStaffCode_()
+  if (!(opts.autoCode && staffCode === '') && !AUTH_.STAFFCODE_RE.test(staffCode)) {
     throw appError_('รหัสประจำตัวบุคลากรต้องเป็นตัวอักษรภาษาอังกฤษ/ตัวเลข 1–20 ตัว (ใช้ - . / ได้)', 'VALIDATION', { field: 'staffCode' });
   }
   var position = cleanLine_(src.position, 60);
@@ -1884,6 +1889,20 @@ function validateEmployeeInput_(src, opts) {
     out.password = src.password;
   }
   return out;
+}
+
+/**
+ * รหัสประจำตัวบุคลากรถัดไปแบบอัตโนมัติ: T + เลข 3 หลักขึ้นไป (T001, T002, …) ต่อจากเลขที่มากที่สุดในระบบ
+ * @param {Object=} taken รหัสที่ถูกจองเพิ่มเติม (เช่น ระหว่างเพิ่มหลายคน) — จะถูกเพิ่มรหัสใหม่เข้าไปด้วย
+ */
+function nextStaffCode_(taken) {
+  var max = 0;
+  var scan = function (code) { var m = /^T(\d{1,6})$/.exec(normalizeStaffCode_(code)); if (m) max = Math.max(max, parseInt(m[1], 10)); };
+  readAll_('Employees').forEach(function (e) { scan(e.StaffCode); });
+  if (taken) Object.keys(taken).forEach(scan);
+  var n = max + 1, code = 'T' + (n < 1000 ? ('00' + n).slice(-3) : String(n));
+  if (taken) taken[code] = true;
+  return code;
 }
 
 /** ตรวจสอบ Username และรหัสบุคลากรซ้ำ (อ่านจากชีตโดยตรง — เรียกภายใต้ Lock) */
@@ -1913,7 +1932,7 @@ function register(form) {
     var s = getSettings_();
     if (!s.allowRegistration) throw appError_('ขณะนี้ระบบปิดรับสมัครสมาชิก กรุณาติดต่อผู้ดูแลระบบ', 'CLOSED');
     form = sanitizeParams_(form);
-    var data = validateEmployeeInput_(form, { requirePassword: true });
+    var data = validateEmployeeInput_(form, { requirePassword: true, autoCode: true });
     if (form.acceptPrivacy !== true) {
       throw appError_('กรุณายอมรับนโยบายการเก็บข้อมูลตำแหน่ง (GPS) และข้อมูลส่วนบุคคล', 'VALIDATION', { field: 'acceptPrivacy' });
     }
@@ -1925,6 +1944,7 @@ function register(form) {
 
     var hash = hashPassword_(data.password); // คำนวณนอก Lock (ใช้ CPU)
     var emp = withLock_(function () {
+      if (!data.staffCode) data.staffCode = nextStaffCode_();
       assertUniqueEmployee_(data.username, data.staffCode, null);
       var pending = readAll_('Employees').filter(function (e) { return e.Status === EMP_STATUS.PENDING; }).length;
       if (pending >= AUTH_.MAX_PENDING) throw appError_('มีผู้สมัครรออนุมัติจำนวนมาก กรุณาติดต่อผู้ดูแลระบบ', 'BUSY');
@@ -1958,6 +1978,7 @@ function register(form) {
         reference: emp.EmployeeID,
         fullName: emp.FullName,
         username: emp.Username,
+        staffCode: emp.StaffCode,
         message: 'สมัครสมาชิกสำเร็จ บัญชีของท่านอยู่ระหว่างรอการอนุมัติจากผู้ดูแลระบบ ' +
           'เมื่อได้รับอนุมัติแล้วจึงจะสามารถเข้าสู่ระบบและลงเวลาได้'
       }
@@ -2337,7 +2358,7 @@ function changePassword_(ctx, p) {
  *   BOOTSTRAP_ADMIN_USERNAME   (จำเป็น)
  *   BOOTSTRAP_ADMIN_PASSWORD   (จำเป็น — ระบบจะลบทิ้งทันทีหลังสร้างบัญชี)
  *   BOOTSTRAP_ADMIN_FULLNAME   (จำเป็น)
- *   BOOTSTRAP_ADMIN_STAFFCODE  (จำเป็น)
+ *   BOOTSTRAP_ADMIN_STAFFCODE  (ไม่บังคับ — เว้นว่าง = ระบบกำหนดให้)
  *   BOOTSTRAP_ADMIN_POSITION   (ไม่บังคับ ค่าเริ่มต้น: ครู)
  * ทำงานได้เฉพาะเมื่อยังไม่มี ADMIN ที่ใช้งานอยู่ และบังคับเปลี่ยนรหัสผ่านเมื่อเข้าสู่ระบบครั้งแรก
  */
@@ -2358,18 +2379,19 @@ function CreateFirstAdmin() {
     staffCode: props.getProperty('BOOTSTRAP_ADMIN_STAFFCODE'),
     position: props.getProperty('BOOTSTRAP_ADMIN_POSITION') || 'ครู'
   };
-  if (!input.username || !input.password || !input.fullName || !input.staffCode) {
+  if (!input.username || !input.password || !input.fullName) {
     throw new Error('กรุณาตั้งค่า Script Properties: BOOTSTRAP_ADMIN_USERNAME, BOOTSTRAP_ADMIN_PASSWORD, ' +
-      'BOOTSTRAP_ADMIN_FULLNAME, BOOTSTRAP_ADMIN_STAFFCODE ก่อนรันฟังก์ชันนี้');
+      'BOOTSTRAP_ADMIN_FULLNAME ก่อนรันฟังก์ชันนี้');
   }
   var data;
   try {
-    data = validateEmployeeInput_(input, { requirePassword: true });
+    data = validateEmployeeInput_(input, { requirePassword: true, autoCode: true });
   } catch (e) {
     throw new Error('ข้อมูลผู้ดูแลระบบไม่ถูกต้อง: ' + e.message);
   }
   var hash = hashPassword_(data.password);
   var rec = withLock_(function () {
+    if (!data.staffCode) data.staffCode = nextStaffCode_();
     assertUniqueEmployee_(data.username, data.staffCode, null);
     var r = {
       EmployeeID: newId_('EMP'), StaffCode: data.staffCode, FullName: data.fullName, Position: data.position,
@@ -2413,7 +2435,7 @@ function firstRunSetup(form) {
       cache.put(rateKey, String(tries + 1), 3700);
       throw appError_('รหัสติดตั้งไม่ถูกต้อง กรุณาคัดลอกจากชีต "' + SETUP_SHEET_ + '" ในไฟล์ฐานข้อมูลอีกครั้ง', 'VALIDATION', { field: 'setupCode' });
     }
-    var data = validateEmployeeInput_(form, { requirePassword: true });
+    var data = validateEmployeeInput_(form, { requirePassword: true, autoCode: true });
     // การตั้งค่าเริ่มต้น (ไม่บังคับ) — ปรับภายหลังได้ในหน้าตั้งค่าระบบ
     var input = form.settings || {};
     var next = {};
@@ -2430,6 +2452,7 @@ function firstRunSetup(form) {
     var emp = withLock_(function () {
       var exists = readAll_('Employees').some(function (e) { return e.Role === ROLES.ADMIN && e.Status === EMP_STATUS.ACTIVE; });
       if (exists) throw appError_('ระบบมีผู้ดูแลระบบแล้ว กรุณาเข้าสู่ระบบตามปกติ', 'ALREADY_SETUP');
+      if (!data.staffCode) data.staffCode = nextStaffCode_();
       assertUniqueEmployee_(data.username, data.staffCode, null);
       var r = {
         EmployeeID: newId_('EMP'), StaffCode: data.staffCode, FullName: data.fullName, Position: data.position,
@@ -2671,10 +2694,11 @@ function recordAttendance_(ctx, type, p) {
       throw appError_('ท่านลงเวลาเข้างานของวันนี้แล้ว เมื่อเวลา ' + summary.CheckInTime.substr(0, 5) + ' น.', 'DUPLICATE');
     }
     if (type === 'OUT') {
-      if (!summary || !summary.CheckInTime) {
+      // ลืมลงเวลาเข้าแต่ยื่นคำร้องแก้ไขเวลาเข้าของวันนี้แล้ว → ลงเวลาออกได้ตามปกติ
+      if ((!summary || !summary.CheckInTime) && !hasPendingInCorrection_(emp.EmployeeID, date)) {
         throw appError_('ยังไม่มีการลงเวลาเข้างานของวันนี้ กรุณาลงเวลาเข้างานก่อน (หากลืมลงเวลาเข้า ให้ยื่นคำร้องแก้ไขเวลา)', 'NO_CHECKIN');
       }
-      if (summary.CheckOutTime) {
+      if (summary && summary.CheckOutTime) {
         throw appError_('ท่านลงเวลาออกงานของวันนี้แล้ว เมื่อเวลา ' + summary.CheckOutTime.substr(0, 5) + ' น.', 'DUPLICATE');
       }
     }
@@ -2760,8 +2784,52 @@ function getMyDashboard_(ctx) {
     settings: clientSettings_(s),
     month: { year: y, month: m, label: thaiMonthYear_(y, m), totals: me.totals },
     recent: recent,
-    pending: { leaves: myLeaves, corrections: myCorr }
+    pending: { leaves: myLeaves, corrections: myCorr, todayIn: hasPendingInCorrection_(emp.EmployeeID, today) },
+    issues: myAttendanceIssues_(emp, s, today)
   };
+}
+
+/** มีคำร้องแก้ไข "เวลาเข้า" ของวันที่ระบุรอพิจารณาอยู่หรือไม่ */
+function hasPendingInCorrection_(empId, date) {
+  return readAll_('CorrectionRequests').some(function (c) {
+    return c.EmployeeID === empId && c.Date === date && c.Type === 'IN' && c.Status === REQUEST_STATUS.PENDING;
+  });
+}
+
+/**
+ * วันที่ลงเวลาไม่ครบในช่วงที่ยื่นคำร้องแก้ไขได้ (ไม่เกิน 14 วันล่าสุด ไม่รวมวันนี้)
+ * ไม่แสดงวันที่มีคำร้องแก้ไขเวลา/ใบลารออนุมัติอยู่แล้ว
+ */
+function myAttendanceIssues_(emp, s, today) {
+  var to = addDays_(today, -1);
+  var from = addDays_(today, -Math.min(14, s.correctionMaxDays));
+  if (emp.ActiveFrom && from < emp.ActiveFrom) from = emp.ActiveFrom;
+  if (from > to) return [];
+  var person = computeAttendance_({ employees: [emp], from: from, to: to }).people[0];
+  if (!person) return [];
+  var pendingCorr = {};
+  readAll_('CorrectionRequests').forEach(function (c) {
+    if (c.EmployeeID === emp.EmployeeID && c.Status === REQUEST_STATUS.PENDING) pendingCorr[c.Date + '|' + c.Type] = true;
+  });
+  var pendingLeave = readAll_('LeaveRequests').filter(function (l) {
+    return l.EmployeeID === emp.EmployeeID && l.Status === REQUEST_STATUS.PENDING && l.EndDate >= from && l.StartDate <= to;
+  });
+  var out = [];
+  person.days.forEach(function (d) {
+    if (!d.isWorkday) return;
+    var kind = d.status === 'ABSENT' ? 'ABSENT' : (d.missingIn ? 'MISSING_IN' : (d.missingOut ? 'MISSING_OUT' : ''));
+    if (!kind) return;
+    var leavePending = pendingLeave.some(function (l) { return l.StartDate <= d.date && l.EndDate >= d.date; });
+    if (leavePending) return;
+    if (kind === 'MISSING_IN' && pendingCorr[d.date + '|IN']) return;
+    if (kind === 'MISSING_OUT' && pendingCorr[d.date + '|OUT']) return;
+    if (kind === 'ABSENT' && pendingCorr[d.date + '|IN']) return;
+    out.push({
+      date: d.date, dateLabel: thaiDate_(d.date, 'short'), dayName: THAI_DAYS_SHORT[dayOfWeek_(d.date)],
+      kind: kind, checkIn: d.checkIn ? d.checkIn.substr(0, 5) : '', checkOut: d.checkOut ? d.checkOut.substr(0, 5) : ''
+    });
+  });
+  return out.reverse().slice(0, 5);
 }
 
 /** การตั้งค่าที่ฝั่ง Browser จำเป็นต้องรู้ (ไม่มีข้อมูลลับ) */
@@ -3232,25 +3300,30 @@ function correctionView_(r) {
     status: r.Status, statusLabel: REQUEST_STATUS_LABELS[r.Status] || r.Status,
     requestedAt: r.RequestedAt, requestedLabel: thaiStamp_(r.RequestedAt),
     reviewedByName: r.ReviewedByName, reviewedLabel: thaiStamp_(r.ReviewedAt), reviewNote: r.ReviewNote,
-    oldAttendanceId: r.OldAttendanceID, newAttendanceId: r.NewAttendanceID
+    oldAttendanceId: r.OldAttendanceID, newAttendanceId: r.NewAttendanceID,
+    recordedBy: r.RecordedBy && r.RecordedBy !== 'SELF' ? r.RecordedBy : ''
   };
 }
 
-function submitCorrection_(ctx, p) {
-  var emp = ctx.user, s = ctx.settings;
-  var date = String(p.date || '');
-  var type = String(p.type || '');
-  var time = String(p.time || '');
-  var today = todayStr_();
+/** ตรวจวันที่/ประเภท/เวลา ของการแก้ไขเวลา (ใช้ร่วมกันทั้งคำร้องของบุคลากรและการบันทึกแทนโดยผู้บริหาร) */
+function validateCorrectionInput_(emp, p, maxBackDays) {
+  var date = String(p.date || ''), type = String(p.type || ''), time = String(p.time || ''), today = todayStr_();
   if (!isValidYmd_(date)) throw appError_('กรุณาเลือกวันที่ที่ต้องการแก้ไข', 'VALIDATION', { field: 'date' });
   if (date > today) throw appError_('ไม่สามารถแก้ไขเวลาของวันในอนาคตได้', 'VALIDATION', { field: 'date' });
-  if (date < addDays_(today, -s.correctionMaxDays)) {
-    throw appError_('ยื่นคำร้องย้อนหลังได้ไม่เกิน ' + s.correctionMaxDays + ' วัน', 'VALIDATION', { field: 'date' });
+  if (date < addDays_(today, -maxBackDays)) {
+    throw appError_('แก้ไขเวลาย้อนหลังได้ไม่เกิน ' + maxBackDays + ' วัน', 'VALIDATION', { field: 'date' });
   }
   if (emp.ActiveFrom && date < emp.ActiveFrom) throw appError_('วันที่เลือกอยู่ก่อนวันที่บัญชีเริ่มใช้งาน', 'VALIDATION', { field: 'date' });
   if (!ATT_TYPES[type]) throw appError_('กรุณาเลือกประเภท เวลาเข้า หรือ เวลาออก', 'VALIDATION', { field: 'type' });
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw appError_('กรุณาระบุเวลาให้ถูกต้อง (ชั่วโมง:นาที)', 'VALIDATION', { field: 'time' });
   if (date === today && time + ':00' > nowTimeStr_()) throw appError_('เวลาที่แจ้งต้องไม่เกินเวลาปัจจุบัน', 'VALIDATION', { field: 'time' });
+  return { date: date, type: type, time: time };
+}
+
+function submitCorrection_(ctx, p) {
+  var emp = ctx.user, s = ctx.settings;
+  var v = validateCorrectionInput_(emp, p, s.correctionMaxDays);
+  var date = v.date, type = v.type, time = v.time;
   var reason = cleanText_(p.reason, 1000);
   if (reason.length < 5) throw appError_('กรุณาระบุเหตุผลอย่างน้อย 5 ตัวอักษร', 'VALIDATION', { field: 'reason' });
   if (reason.length > 500) throw appError_('เหตุผลต้องไม่เกิน 500 ตัวอักษร', 'VALIDATION', { field: 'reason' });
@@ -3267,7 +3340,7 @@ function submitCorrection_(ctx, p) {
       Date: date, Type: type, RequestedTime: time + ':00', Reason: reason,
       AttachmentFileId: att ? att.fileId : '', AttachmentName: att ? att.name : '',
       Status: 'PENDING', RequestedAt: nowStamp_(), ReviewedBy: '', ReviewedByName: '', ReviewedAt: '', ReviewNote: '',
-      OldAttendanceID: '', NewAttendanceID: ''
+      OldAttendanceID: '', NewAttendanceID: '', RecordedBy: 'SELF'
     };
     appendRecord_('CorrectionRequests', r);
     return r;
@@ -3323,7 +3396,6 @@ function reviewCorrection_(ctx, p) {
   if (['APPROVE', 'REJECT'].indexOf(decision) < 0) throw appError_('คำสั่งไม่ถูกต้อง', 'VALIDATION');
   var note = cleanText_(p.note, 500);
   if (decision === 'REJECT' && note.length < 2) throw appError_('กรุณาระบุเหตุผลที่ไม่อนุมัติ', 'VALIDATION', { field: 'note' });
-  var s = ctx.settings;
   var out = withLock_(function () {
     var r = findOne_('CorrectionRequests', 'RequestID', String(p.requestId || ''));
     if (!r) throw appError_('ไม่พบคำร้อง', 'NOT_FOUND');
@@ -3335,59 +3407,116 @@ function reviewCorrection_(ctx, p) {
       });
       return { before: r, after: rej, oldLog: null, newLog: null };
     }
-    var emp = getEmployeeById_(r.EmployeeID);
-    if (!emp) throw appError_('ไม่พบข้อมูลบุคลากรของคำร้องนี้', 'NOT_FOUND');
-    var summary = findOne_('DailySummary', 'Key', summaryKey_(r.Date, r.EmployeeID));
-    var time = normTime_(r.RequestedTime);
-    if (r.Type === 'OUT' && summary && summary.CheckInTime && time <= summary.CheckInTime) {
-      throw appError_('เวลาออกที่ขอแก้ไข (' + time.substr(0, 5) + ') ต้องหลังเวลาเข้างาน (' + summary.CheckInTime.substr(0, 5) + ')', 'VALIDATION');
-    }
-    if (r.Type === 'IN' && summary && summary.CheckOutTime && time >= summary.CheckOutTime) {
-      throw appError_('เวลาเข้าที่ขอแก้ไข (' + time.substr(0, 5) + ') ต้องก่อนเวลาออกงาน (' + summary.CheckOutTime.substr(0, 5) + ')', 'VALIDATION');
-    }
-    var dayInfo = getDayInfo_(r.Date, s);
-    var st = computeLogStatus_(r.Type, time, dayInfo, s);
-    var newId = newId_(r.Type === 'IN' ? 'IN' : 'OUT');
-    var oldId = summary ? (r.Type === 'IN' ? summary.CheckInLogID : summary.CheckOutLogID) : '';
-    var oldLog = null;
-    if (oldId) {
-      oldLog = findOne_('AttendanceLogs', 'AttendanceID', oldId);
-      if (oldLog) {
-        updateRecord_('AttendanceLogs', oldLog._row, {
-          IsActive: false, SupersededBy: newId,
-          Note: (oldLog.Note ? oldLog.Note + ' | ' : '') + 'ถูกแทนที่ตามคำร้อง ' + r.RequestID
-        });
-      }
-    }
-    var newLog = {
-      AttendanceID: newId, EmployeeID: emp.EmployeeID, StaffCode: emp.StaffCode, FullName: emp.FullName,
-      Type: r.Type, Date: r.Date, Time: time, Timestamp: nowStamp_(),
-      Latitude: '', Longitude: '', Accuracy: '', DistanceM: '',
-      Status: st.status, Source: 'CORRECTION', IsActive: true, SupersededBy: '', RefID: r.RequestID,
-      Note: 'อนุมัติโดย ' + ctx.user.FullName + (note ? ' — ' + note : '')
-    };
-    appendRecord_('AttendanceLogs', newLog);
-    var patch = { DayType: dayInfo.isWorkday ? 'WORKDAY' : 'HOLIDAY', Corrected: true };
-    if (r.Type === 'IN') {
-      patch.CheckInTime = time; patch.CheckInLogID = newId; patch.InDistanceM = null;
-      patch.IsLate = st.isLate; patch.LateMinutes = st.lateMinutes;
-    } else {
-      patch.CheckOutTime = time; patch.CheckOutLogID = newId; patch.OutDistanceM = null; patch.EarlyLeave = st.early;
-    }
-    upsertDailySummary_(r.Date, emp, patch);
+    var applied = applyCorrection_(ctx, r, 'อนุมัติโดย ' + ctx.user.FullName + (note ? ' — ' + note : ''));
     var after = updateRecord_('CorrectionRequests', r._row, {
       Status: 'APPROVED', ReviewedBy: ctx.user.EmployeeID, ReviewedByName: ctx.user.FullName, ReviewedAt: nowStamp_(),
-      ReviewNote: note, OldAttendanceID: oldId || '', NewAttendanceID: newId
+      ReviewNote: note, OldAttendanceID: applied.oldId || '', NewAttendanceID: applied.newId
     });
-    return { before: r, after: after, oldLog: oldLog, newLog: newLog };
+    return { before: r, after: after, oldLog: applied.oldLog, newLog: applied.newLog };
   });
-  writeAudit_(ctx, 'CORRECTION_' + decision, 'CorrectionRequest', out.after.RequestID, {
+  writeCorrectionAudit_(ctx, 'CORRECTION_' + decision, out, note);
+  return { request: correctionView_(out.after), message: decision === 'APPROVE' ? 'อนุมัติคำร้องและปรับเวลาเรียบร้อยแล้ว' : 'ไม่อนุมัติคำร้องแล้ว' };
+}
+
+/**
+ * ปรับเวลาตามคำร้อง (เรียกภายใต้ Lock): เพิ่มรายการเวลาใหม่ ทำเครื่องหมายรายการเดิมว่าถูกแทนที่ (ไม่ลบ)
+ * และปรับตารางสรุปรายวัน → {oldId, newId, oldLog, newLog}
+ */
+function applyCorrection_(ctx, r, logNote) {
+  var s = ctx.settings;
+  var emp = getEmployeeById_(r.EmployeeID);
+  if (!emp) throw appError_('ไม่พบข้อมูลบุคลากรของคำร้องนี้', 'NOT_FOUND');
+  var summary = findOne_('DailySummary', 'Key', summaryKey_(r.Date, r.EmployeeID));
+  var time = normTime_(r.RequestedTime);
+  if (r.Type === 'OUT' && summary && summary.CheckInTime && time <= summary.CheckInTime) {
+    throw appError_('เวลาออกที่ขอแก้ไข (' + time.substr(0, 5) + ') ต้องหลังเวลาเข้างาน (' + summary.CheckInTime.substr(0, 5) + ')', 'VALIDATION');
+  }
+  if (r.Type === 'IN' && summary && summary.CheckOutTime && time >= summary.CheckOutTime) {
+    throw appError_('เวลาเข้าที่ขอแก้ไข (' + time.substr(0, 5) + ') ต้องก่อนเวลาออกงาน (' + summary.CheckOutTime.substr(0, 5) + ')', 'VALIDATION');
+  }
+  var dayInfo = getDayInfo_(r.Date, s);
+  var st = computeLogStatus_(r.Type, time, dayInfo, s);
+  var newId = newId_(r.Type === 'IN' ? 'IN' : 'OUT');
+  var oldId = summary ? (r.Type === 'IN' ? summary.CheckInLogID : summary.CheckOutLogID) : '';
+  var oldLog = null;
+  if (oldId) {
+    oldLog = findOne_('AttendanceLogs', 'AttendanceID', oldId);
+    if (oldLog) {
+      updateRecord_('AttendanceLogs', oldLog._row, {
+        IsActive: false, SupersededBy: newId,
+        Note: (oldLog.Note ? oldLog.Note + ' | ' : '') + 'ถูกแทนที่ตามคำร้อง ' + r.RequestID
+      });
+    }
+  }
+  var newLog = {
+    AttendanceID: newId, EmployeeID: emp.EmployeeID, StaffCode: emp.StaffCode, FullName: emp.FullName,
+    Type: r.Type, Date: r.Date, Time: time, Timestamp: nowStamp_(),
+    Latitude: '', Longitude: '', Accuracy: '', DistanceM: '',
+    Status: st.status, Source: 'CORRECTION', IsActive: true, SupersededBy: '', RefID: r.RequestID,
+    Note: logNote
+  };
+  appendRecord_('AttendanceLogs', newLog);
+  var patch = { DayType: dayInfo.isWorkday ? 'WORKDAY' : 'HOLIDAY', Corrected: true };
+  if (r.Type === 'IN') {
+    patch.CheckInTime = time; patch.CheckInLogID = newId; patch.InDistanceM = null;
+    patch.IsLate = st.isLate; patch.LateMinutes = st.lateMinutes;
+  } else {
+    patch.CheckOutTime = time; patch.CheckOutLogID = newId; patch.OutDistanceM = null; patch.EarlyLeave = st.early;
+  }
+  upsertDailySummary_(r.Date, emp, patch);
+  return { oldId: oldId, newId: newId, oldLog: oldLog, newLog: newLog };
+}
+
+function writeCorrectionAudit_(ctx, action, out, note) {
+  writeAudit_(ctx, action, 'CorrectionRequest', out.after.RequestID, {
     employee: out.after.FullName, date: out.after.Date, type: out.after.Type, requestedTime: out.after.RequestedTime,
     oldRecord: out.oldLog ? { id: out.oldLog.AttendanceID, time: out.oldLog.Time, status: out.oldLog.Status, source: out.oldLog.Source } : null,
     newRecord: out.newLog ? { id: out.newLog.AttendanceID, time: out.newLog.Time, status: out.newLog.Status } : null,
     note: note
   });
-  return { request: correctionView_(out.after), message: decision === 'APPROVE' ? 'อนุมัติคำร้องและปรับเวลาเรียบร้อยแล้ว' : 'ไม่อนุมัติคำร้องแล้ว' };
+}
+
+/**
+ * ผู้บริหาร/ผู้ดูแลระบบ "บันทึกเวลาแทน" บุคลากรที่ลืมลงเวลา (เช่น ครูโทรมาแจ้ง) → มีผลทันที
+ * - เก็บเป็นคำร้องที่อนุมัติแล้ว (ผู้บันทึก = ผู้อนุมัติ) รายการเวลาเดิมไม่ถูกลบ + Audit Log
+ * - บันทึกให้ตนเองไม่ได้ (ต้องยื่นคำร้องให้ผู้อื่นอนุมัติ) · ย้อนหลังได้ไม่เกิน 1 ปี
+ * - ถ้ามีคำร้องของวัน/ประเภทเดียวกันรออยู่ ให้พิจารณาคำร้องนั้นแทน
+ */
+function adminRecordCorrection_(ctx, p) {
+  var emp = getEmployeeById_(String(p.employeeId || ''));
+  if (!emp) throw appError_('กรุณาเลือกบุคลากร', 'VALIDATION', { field: 'employeeId' });
+  if (emp.Status !== EMP_STATUS.ACTIVE) throw appError_('บัญชีนี้ไม่ได้อยู่ในสถานะใช้งาน', 'VALIDATION', { field: 'employeeId' });
+  if (emp.EmployeeID === ctx.user.EmployeeID) {
+    throw appError_('บันทึกเวลาให้ตนเองไม่ได้ กรุณายื่นคำร้องแก้ไขเวลาเพื่อให้ผู้บริหาร/ผู้ดูแลท่านอื่นอนุมัติ', 'FORBIDDEN');
+  }
+  var v = validateCorrectionInput_(emp, p, 366);
+  var reason = cleanText_(p.reason, 1000);
+  if (reason.length < 2) throw appError_('กรุณาระบุเหตุผล เช่น ครูแจ้งว่าลืมลงเวลา', 'VALIDATION', { field: 'reason' });
+  if (reason.length > 500) throw appError_('เหตุผลต้องไม่เกิน 500 ตัวอักษร', 'VALIDATION', { field: 'reason' });
+  var out = withLock_(function () {
+    var dup = readAll_('CorrectionRequests').some(function (r) {
+      return r.EmployeeID === emp.EmployeeID && r.Date === v.date && r.Type === v.type && r.Status === 'PENDING';
+    });
+    if (dup) throw appError_('มีคำร้องแก้ไข' + ATT_TYPES[v.type] + 'ของวันนี้รอการพิจารณาอยู่แล้ว กรุณาพิจารณาที่เมนู “คำร้องแก้ไขเวลา”', 'DUPLICATE');
+    var now = nowStamp_();
+    var r = {
+      RequestID: newId_('CR'), EmployeeID: emp.EmployeeID, StaffCode: emp.StaffCode, FullName: emp.FullName,
+      Date: v.date, Type: v.type, RequestedTime: v.time + ':00', Reason: reason,
+      AttachmentFileId: '', AttachmentName: '', Status: 'APPROVED', RequestedAt: now,
+      ReviewedBy: ctx.user.EmployeeID, ReviewedByName: ctx.user.FullName, ReviewedAt: now, ReviewNote: 'บันทึกเวลาแทนโดย ' + ctx.user.FullName,
+      OldAttendanceID: '', NewAttendanceID: '', RecordedBy: ctx.user.FullName
+    };
+    var applied = applyCorrection_(ctx, r, 'บันทึกแทนโดย ' + ctx.user.FullName + ' — ' + reason);
+    r.OldAttendanceID = applied.oldId || '';
+    r.NewAttendanceID = applied.newId;
+    appendRecord_('CorrectionRequests', r);
+    return { after: r, oldLog: applied.oldLog, newLog: applied.newLog };
+  });
+  writeCorrectionAudit_(ctx, 'CORRECTION_RECORD_BY_ADMIN', out, reason);
+  return {
+    request: correctionView_(out.after),
+    message: 'บันทึกเวลา' + ATT_TYPES[v.type] + 'ของ ' + emp.FullName + ' วันที่ ' + thaiDate_(v.date, 'short') + ' เวลา ' + v.time + ' น. เรียบร้อย'
+  };
 }
 
 /* ======================================================================
@@ -3447,7 +3576,7 @@ function getAdminOverview_(ctx) {
     list.push({
       employeeId: pp.emp.employeeId, staffCode: pp.emp.staffCode, fullName: pp.emp.fullName, position: pp.emp.position,
       checkIn: d.checkIn ? d.checkIn.substr(0, 5) : '', checkOut: d.checkOut ? d.checkOut.substr(0, 5) : '',
-      status: d.status, statusLabel: d.statusLabel, note: d.note, lateMinutes: d.lateMinutes
+      status: d.status, statusLabel: d.statusLabel, note: d.note, lateMinutes: d.lateMinutes, missingOut: d.missingOut
     });
   });
   list.sort(function (a, b) {
@@ -3601,11 +3730,12 @@ function validRole_(r) {
 
 /** เพิ่มสมาชิกโดยผู้ดูแลระบบ — ระบบสุ่มรหัสผ่านชั่วคราว (แสดงครั้งเดียว) และบังคับเปลี่ยนเมื่อเข้าสู่ระบบ */
 function createEmployee_(ctx, p) {
-  var data = validateEmployeeInput_(p, { requirePassword: false });
+  var data = validateEmployeeInput_(p, { requirePassword: false, autoCode: true });
   var role = validRole_(String(p.role || ROLES.USER));
   var temp = generateTempPassword_(12);
   var hash = hashPassword_(temp);
   var rec = withLock_(function () {
+    if (!data.staffCode) data.staffCode = nextStaffCode_();
     assertUniqueEmployee_(data.username, data.staffCode, null);
     var r = {
       EmployeeID: newId_('EMP'), StaffCode: data.staffCode, FullName: data.fullName, Position: data.position,
@@ -3623,6 +3753,103 @@ function createEmployee_(ctx, p) {
     tempPassword: temp,
     message: 'เพิ่มบุคลากรเรียบร้อย กรุณาแจ้งรหัสผ่านชั่วคราวแก่เจ้าของบัญชีโดยตรง (แสดงเพียงครั้งเดียว)'
   };
+}
+
+/* ---------- เพิ่มบุคลากรหลายคนพร้อมกัน (วางรายชื่อจาก Excel) ---------- */
+
+/** แปลงชื่อตำแหน่งที่พิมพ์มา (เช่น ครูชำนาญการ, ธุรการ) เป็นตำแหน่งในระบบ */
+function mapPosition_(raw) {
+  var t = cleanLine_(raw, 60);
+  if (!t) return 'ครู';
+  if (POSITIONS.indexOf(t) >= 0) return t;
+  if (/^(ผู้อำนวยการ|ผอ\.?)/.test(t)) return 'ผู้อำนวยการ';
+  if (/ครู/.test(t)) return 'ครู';
+  if (/ธุรการ|บุคลากร|การเงิน|พัสดุ|บรรณารักษ์|รองผู้อำนวยการ/.test(t)) return 'บุคลากรทางการศึกษา';
+  return 'เจ้าหน้าที่อื่น ๆ';
+}
+
+/** สร้างชื่อผู้ใช้จากรหัสบุคลากร (เช่น T001 → t001, 1234 → t1234) ไม่ซ้ำกับ taken */
+function suggestUsername_(staffCode, taken) {
+  var b = String(staffCode || '').toLowerCase().replace(/[^a-z0-9._-]/g, '');
+  if (!/^[a-z]/.test(b)) b = 't' + b;
+  if (b.length < 4) b = 'user' + b;
+  b = b.substr(0, 26);
+  var u = b, n = 2;
+  while (taken[u]) u = b + '.' + (n++);
+  taken[u] = true;
+  return u;
+}
+
+/** รหัสผ่านชั่วคราว (สุ่ม 12 ตัว) ใช้รอบ PBKDF2 น้อยลงเพื่อสร้างหลายบัญชีได้เร็ว — ระบบบังคับเปลี่ยนรหัสเมื่อเข้าครั้งแรก */
+var BULK_TEMP_ITERATIONS_ = 20000;
+
+/**
+ * เพิ่มบุคลากรหลายคน: ตรวจทุกแถวก่อน ถ้ามีแถวผิดจะไม่สร้างบัญชีใดเลย (แก้แล้วส่งใหม่ได้ทันที)
+ * @param {{rows: Array<{staffCode, fullName, position}>, role?: string}} p
+ */
+function bulkCreateEmployees_(ctx, p) {
+  var rows = Array.isArray(p.rows) ? p.rows : [];
+  if (!rows.length) throw appError_('กรุณาวางรายชื่อบุคลากรอย่างน้อย 1 คน', 'VALIDATION');
+  if (rows.length > 50) throw appError_('เพิ่มได้ครั้งละไม่เกิน 50 คน กรุณาแบ่งส่งเป็นหลายครั้ง', 'VALIDATION');
+  var role = validRole_(String(p.role || ROLES.USER));
+  var existing = readAll_('Employees');
+  var takenUser = {}, takenCode = {};
+  existing.forEach(function (e) { takenUser[normalizeUsername_(e.Username)] = true; takenCode[normalizeStaffCode_(e.StaffCode)] = 'มีในระบบแล้ว'; });
+  var errors = [], items = [];
+  rows.forEach(function (r, i) {
+    r = r || {};
+    try {
+      var code = normalizeStaffCode_(r.staffCode);
+      if (code && takenCode[code]) throw appError_('รหัสบุคลากร ' + code + ' ' + (takenCode[code] === true ? 'ซ้ำในรายการ' : takenCode[code]), 'DUPLICATE');
+      var data = validateEmployeeInput_({ fullName: r.fullName, staffCode: code, position: mapPosition_(r.position), username: 'placeholder' }, { autoCode: true });
+      if (!data.staffCode) data.staffCode = nextStaffCode_(takenCode);
+      data.username = suggestUsername_(data.staffCode, takenUser);
+      takenCode[data.staffCode] = true;
+      items.push(data);
+    } catch (e) {
+      errors.push({ line: i + 1, message: e.message || String(e) });
+    }
+  });
+  if (errors.length) {
+    throw appError_('ข้อมูลไม่ถูกต้อง ' + errors.length + ' แถว — ยังไม่ได้สร้างบัญชีใด ๆ กรุณาแก้ไขแล้วกดใหม่', 'VALIDATION', { rows: errors });
+  }
+  items.forEach(function (it) {
+    it.temp = generateTempPassword_(12);
+    it.hash = hashPassword_(it.temp, Math.min(getConfiguredIterations_(), BULK_TEMP_ITERATIONS_));
+  });
+  var recs = withLock_(function () {
+    // ตรวจซ้ำอีกครั้งภายใต้ Lock (กันการสมัครพร้อมกัน)
+    items.forEach(function (it) { assertUniqueEmployee_(it.username, it.staffCode, null); });
+    var now = nowStamp_(), today = todayStr_();
+    var list = items.map(function (it) {
+      return {
+        EmployeeID: newId_('EMP'), StaffCode: it.staffCode, FullName: it.fullName, Position: it.position,
+        Username: it.username, PasswordHash: it.hash, Role: role, Status: EMP_STATUS.ACTIVE,
+        MustChangePassword: true, SessionVersion: 1, ActiveFrom: today, ActiveTo: '',
+        CreatedAt: now, CreatedBy: ctx.user.FullName, UpdatedAt: now,
+        ApprovedBy: ctx.user.FullName, ApprovedAt: now, LastLoginAt: '', Note: 'เพิ่มแบบหลายคน'
+      };
+    });
+    appendRecords_('Employees', list);
+    return list;
+  });
+  writeAudit_(ctx, 'EMPLOYEE_BULK_CREATE', 'Employee', '', {
+    count: recs.length, role: role, staff: recs.map(function (r) { return r.StaffCode + ' ' + r.FullName; })
+  });
+  return {
+    created: recs.map(function (r, i) {
+      return { employeeId: r.EmployeeID, staffCode: r.StaffCode, fullName: r.FullName, position: r.Position, username: r.Username, tempPassword: items[i].temp };
+    }),
+    message: 'เพิ่มบุคลากร ' + recs.length + ' คนเรียบร้อย — พิมพ์บัตรเข้าใช้งานหรือคัดลอกรหัสผ่านชั่วคราวก่อนปิดหน้าต่าง (แสดงครั้งเดียว)'
+  };
+}
+
+/** ลิงก์เว็บแอปสำหรับแชร์/ทำ QR Code (ใช้ /exec เสมอ) */
+function getAppLink_(ctx) {
+  var url = '';
+  try { url = String(ScriptApp.getService().getUrl() || ''); } catch (e) { url = ''; }
+  url = url.replace(/\/dev(\?.*)?$/, '/exec');
+  return { url: url, school: APP.SCHOOL_FULL, nameTh: APP.NAME_TH, allowRegistration: ctx.settings.allowRegistration };
 }
 
 function updateEmployee_(ctx, p) {
