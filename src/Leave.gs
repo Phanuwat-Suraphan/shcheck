@@ -103,7 +103,8 @@ function leaveView_(r) {
     requestedAt: r.RequestedAt, requestedLabel: thaiStamp_(r.RequestedAt),
     recordedBy: r.RecordedBy && r.RecordedBy !== 'SELF' ? r.RecordedBy : '',
     reviewedByName: r.ReviewedByName, reviewedAt: r.ReviewedAt, reviewedLabel: thaiStamp_(r.ReviewedAt), reviewNote: r.ReviewNote,
-    cancellable: leaveSelfCancellable_(r)
+    cancellable: leaveSelfCancellable_(r),
+    printable: leaveFormAvailable_(r)
   };
 }
 
@@ -136,9 +137,11 @@ function createLeave_(emp, p, opts) {
   if (period !== 'FULL' && start !== end) throw appError_('การลาครึ่งวันต้องเป็นวันเดียวกัน', 'VALIDATION', { field: 'period' });
   var reason = cleanText_(p.reason, 1000);
   if (reason.length > 500) throw appError_('เหตุผลต้องไม่เกิน 500 ตัวอักษร', 'VALIDATION', { field: 'reason' });
+  var calendarDays = !!CALENDAR_DAY_LEAVE_TYPES_[type];
+  if (calendarDays) period = 'FULL'; // ลาคลอดบุตรนับเป็นวันต่อเนื่อง ไม่มีลาครึ่งวัน
   var workdays = countWorkdays_(start, end);
-  if (!workdays) throw appError_('ช่วงวันที่เลือกเป็นวันหยุดทั้งหมด ไม่ต้องบันทึกการลา', 'VALIDATION', { field: 'startDate' });
-  var days = period === 'FULL' ? workdays : 0.5;
+  if (!workdays && !calendarDays) throw appError_('ช่วงวันที่เลือกเป็นวันหยุดทั้งหมด ไม่ต้องบันทึกการลา', 'VALIDATION', { field: 'startDate' });
+  var days = calendarDays ? daysBetween_(start, end) + 1 : (period === 'FULL' ? workdays : 0.5);
 
   var leaveId = newId_('LV');
   var att = saveAttachment_(p.attachment, leaveId);
@@ -262,6 +265,156 @@ function reviewLeave_(ctx, p) {
     employee: out.after.FullName, before: out.before.Status, after: out.after.Status, note: note
   });
   return { leave: leaveView_(out.after), message: decision === 'APPROVE' ? 'อนุมัติใบลาแล้ว' : (decision === 'REJECT' ? 'ไม่อนุมัติใบลาแล้ว' : 'ยกเลิกการอนุมัติแล้ว') };
+}
+
+/* ========================================================================== */
+/*  Leave statistics (ปีงบประมาณ / รอบการประเมิน) และแบบใบลาของทางราชการ        */
+/* ========================================================================== */
+
+/**
+ * ประเภทการลาที่นับเป็นวันต่อเนื่อง (รวมวันหยุด) ตามระเบียบว่าด้วยการลาของข้าราชการ
+ * ประเภทอื่นนับเฉพาะวันทำการ
+ */
+var CALENDAR_DAY_LEAVE_TYPES_ = { MATERNITY: true };
+
+/** ประเภทการลาที่มีแบบใบลาให้พิมพ์ */
+var LEAVE_FORM_TYPES_ = {
+  SICK: { form: 'GENERAL', word: 'ป่วย' },
+  PERSONAL: { form: 'GENERAL', word: 'กิจส่วนตัว' },
+  MATERNITY: { form: 'GENERAL', word: 'คลอดบุตร' },
+  VACATION: { form: 'VACATION', word: 'พักผ่อน' }
+};
+
+function leaveFormAvailable_(r) {
+  return !!LEAVE_FORM_TYPES_[r.LeaveType] && (r.Status === REQUEST_STATUS.PENDING || r.Status === REQUEST_STATUS.APPROVED);
+}
+
+/** จำนวนวันลาของใบลาที่อยู่ภายในช่วง from–to (ใบลาที่คร่อมช่วงนับเฉพาะส่วนที่อยู่ในช่วง) */
+function leaveDaysInRange_(l, from, to) {
+  var a = l.StartDate > from ? l.StartDate : from;
+  var b = l.EndDate < to ? l.EndDate : to;
+  if (a > b) return 0;
+  if (a === l.StartDate && b === l.EndDate) return Number(l.Days) || 0;
+  if ((l.Period || 'FULL') !== 'FULL') return 0.5;
+  if (CALENDAR_DAY_LEAVE_TYPES_[l.LeaveType]) return daysBetween_(a, b) + 1;
+  return countWorkdays_(a, b);
+}
+
+/** สรุปใบลาที่ "อนุมัติแล้ว" แยกตามประเภท → { SICK: {times, days}, ... } */
+function leaveTotals_(leaves, from, to) {
+  var t = {};
+  Object.keys(LEAVE_TYPES).forEach(function (k) { t[k] = { times: 0, days: 0 }; });
+  leaves.forEach(function (l) {
+    if (l.Status !== REQUEST_STATUS.APPROVED || l.EndDate < from || l.StartDate > to || !t[l.LeaveType]) return;
+    t[l.LeaveType].times++;
+    t[l.LeaveType].days = round_(t[l.LeaveType].days + leaveDaysInRange_(l, from, to), 1);
+  });
+  return t;
+}
+
+/** ปีงบประมาณจาก Browser (พ.ศ.) — ค่าไม่ถูกต้องใช้ปีงบประมาณปัจจุบัน */
+function parseFiscalYear_(v) {
+  var cur = fiscalYearOf_(todayStr_());
+  var fy = parseInt(v, 10);
+  return isFinite(fy) && fy >= cur - 20 && fy <= cur + 1 ? fy : cur;
+}
+
+/** สถิติการลา/มาสาย/ขาดงานของตนเอง แยกรอบการประเมิน (รอบที่ 1, รอบที่ 2, ทั้งปีงบประมาณ) */
+function getMyLeaveStats_(ctx, p) {
+  var emp = ctx.user;
+  var today = todayStr_();
+  var cur = fiscalYearOf_(today);
+  var fy = parseFiscalYear_(p.fiscalYear);
+  var ranges = [fiscalRange_(fy, 1), fiscalRange_(fy, 2), fiscalRange_(fy, 0)];
+  var mine = readAll_('LeaveRequests').filter(function (l) { return l.EmployeeID === emp.EmployeeID; });
+  var att = computeAttendance_({ employees: [emp], from: ranges[2].from, to: ranges[2].to });
+  var days = att.people.length ? att.people[0].days : [];
+  return {
+    fiscalYear: fy,
+    options: [cur, cur - 1, cur - 2],
+    pending: mine.filter(function (l) {
+      return l.Status === REQUEST_STATUS.PENDING && l.EndDate >= ranges[2].from && l.StartDate <= ranges[2].to;
+    }).length,
+    types: Object.keys(LEAVE_TYPES).map(function (k) { return { type: k, label: LEAVE_TYPES[k] }; }),
+    rounds: ranges.map(function (r) {
+      var late = 0, lateMinutes = 0, absent = 0;
+      days.forEach(function (d) {
+        if (d.date < r.from || d.date > r.to) return;
+        if (d.status === 'LATE') { late++; lateMinutes += d.lateMinutes || 0; }
+        if (d.status === 'ABSENT') absent++;
+      });
+      return {
+        round: r.round, label: r.round ? 'รอบที่ ' + r.round : 'ทั้งปีงบประมาณ', shortLabel: r.shortLabel,
+        from: r.from, to: r.to, rangeLabel: r.rangeLabel, started: r.from <= today, current: r.from <= today && today <= r.to,
+        leaves: leaveTotals_(mine, r.from, r.to), late: late, lateMinutes: Math.round(lateMinutes), absent: absent
+      };
+    })
+  };
+}
+
+/**
+ * ข้อมูลสำหรับพิมพ์ใบลาตามแบบของทางราชการ
+ * (แบบใบลาป่วย ลาคลอดบุตร ลากิจส่วนตัว / แบบใบลาพักผ่อน) พร้อมสถิติการลาในปีงบประมาณจากระบบ
+ * ผู้มีสิทธิ์: เจ้าของใบลา, ผู้บริหาร, ผู้ดูแลระบบ
+ */
+function getLeaveForm_(ctx, p) {
+  var l = findOne_('LeaveRequests', 'LeaveID', String(p.leaveId || ''));
+  if (!l) throw appError_('ไม่พบใบลา', 'NOT_FOUND');
+  var privileged = ctx.user.Role === ROLES.ADMIN || ctx.user.Role === ROLES.EXECUTIVE;
+  if (l.EmployeeID !== ctx.user.EmployeeID && !privileged) {
+    writeAudit_(ctx, 'ACCESS_DENIED', 'LeaveRequest', l.LeaveID, { reason: 'leave form' });
+    throw appError_('คุณไม่มีสิทธิ์เข้าถึงใบลานี้', 'FORBIDDEN');
+  }
+  var kind = LEAVE_FORM_TYPES_[l.LeaveType];
+  if (!kind) throw appError_('ประเภทการลานี้ไม่มีแบบใบลาให้พิมพ์ (พิมพ์ได้เฉพาะลาป่วย ลากิจ ลาคลอดบุตร และลาพักผ่อน)', 'VALIDATION');
+  if (!leaveFormAvailable_(l)) throw appError_('ใบลานี้' + (REQUEST_STATUS_LABELS[l.Status] || '') + 'แล้ว จึงพิมพ์ใบลาไม่ได้', 'VALIDATION');
+  var s = getSettings_();
+  var emp = getEmployeeById_(l.EmployeeID) || { FullName: l.FullName, Position: '' };
+  var fy = fiscalYearOf_(l.StartDate);
+  var range = fiscalRange_(fy, 0);
+  var others = readAll_('LeaveRequests').filter(function (r) {
+    return r.EmployeeID === l.EmployeeID && r.LeaveID !== l.LeaveID && r.Status === REQUEST_STATUS.APPROVED;
+  });
+  // "ลามาแล้ว" = ใบลาที่อนุมัติแล้วในปีงบประมาณเดียวกันที่เริ่มก่อนใบลานี้
+  var prev = leaveTotals_(others.filter(function (r) { return r.StartDate < l.StartDate; }), range.from, range.to);
+  var thisDays = leaveDaysInRange_(l, range.from, range.to);
+  var stats = (kind.form === 'GENERAL' ? ['SICK', 'PERSONAL', 'MATERNITY'] : ['VACATION']).map(function (k) {
+    var before = prev[k].days, now = k === l.LeaveType ? thisDays : null;
+    return { type: k, label: LEAVE_FORM_TYPES_[k].word, before: before, now: now, total: round_(before + (now || 0), 1) };
+  });
+  var last = null;
+  if (kind.form === 'GENERAL') {
+    others.forEach(function (r) {
+      var k = LEAVE_FORM_TYPES_[r.LeaveType];
+      if (k && k.form === 'GENERAL' && r.EndDate < l.StartDate && (!last || r.EndDate > last.EndDate)) last = r;
+    });
+  }
+  var written = parseYmd_(String(l.RequestedAt || nowStamp_()).substr(0, 10));
+  return {
+    form: kind.form,
+    title: kind.form === 'GENERAL' ? 'แบบใบลาป่วย ลาคลอดบุตร ลากิจส่วนตัว' : 'แบบใบลาพักผ่อน',
+    leaveId: l.LeaveID,
+    writtenAt: APP.SCHOOL_NAME,
+    writtenDay: written.d, writtenMonth: THAI_MONTHS[written.m - 1], writtenYear: written.y + 543,
+    subject: 'ขอลา' + kind.word,
+    // ผู้อำนวยการลาเอง: เรียนผู้บังคับบัญชาระดับเหนือขึ้นไป (ให้กรอกด้วยลายมือ)
+    to: emp.Position === 'ผู้อำนวยการ' ? '' : s.directorPosition,
+    fullName: emp.FullName, position: emp.Position || '',
+    affiliation: APP.SCHOOL_NAME + (s.affiliation ? ' ' + s.affiliation : ''),
+    type: l.LeaveType, word: kind.word,
+    reason: l.Reason || '',
+    startLabel: thaiDate_(l.StartDate), endLabel: thaiDate_(l.EndDate),
+    days: Number(l.Days) || 0,
+    periodLabel: l.Period && l.Period !== 'FULL' ? LEAVE_PERIODS[l.Period] : '',
+    last: last ? { type: last.LeaveType, startLabel: thaiDate_(last.StartDate), endLabel: thaiDate_(last.EndDate), days: Number(last.Days) || 0 } : null,
+    fiscalYear: fy,
+    stats: stats,
+    director: { name: s.directorName, position: s.directorPosition },
+    status: l.Status, statusLabel: REQUEST_STATUS_LABELS[l.Status],
+    reviewedByName: l.ReviewedBy === 'AUTO' ? '' : (l.ReviewedByName || ''), reviewedLabel: thaiStamp_(l.ReviewedAt),
+    printedAt: thaiStamp_(nowStamp_()),
+    school: APP.SCHOOL_FULL
+  };
 }
 
 /* ========================================================================== */

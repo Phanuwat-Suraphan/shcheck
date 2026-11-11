@@ -185,8 +185,12 @@ var SCHEMA_ = {
       ['Username', 'str', 'ชื่อผู้ใช้'],
       ['LoginAt', 'datetime', 'เวลาเข้าสู่ระบบ'],
       ['LogoutAt', 'datetime', 'เวลาออกจากระบบ'],
-      ['EndReason', 'str', 'LOGOUT / PASSWORD_CHANGED'],
-      ['UserAgent', 'str', 'อุปกรณ์/เบราว์เซอร์']
+      ['EndReason', 'str', 'LOGOUT / PASSWORD_CHANGED / LOGOUT_ALL'],
+      ['UserAgent', 'str', 'อุปกรณ์/เบราว์เซอร์'],
+      ['RememberUntil', 'datetime', 'จดจำการเข้าสู่ระบบบนอุปกรณ์นี้ถึงเวลา (ว่าง = ไม่จดจำ)'],
+      ['DeviceKeyHash', 'str', 'SHA-256 ของรหัสอุปกรณ์ (ไม่เก็บรหัสจริง)'],
+      ['SessionVersion', 'num', 'SessionVersion ของบัญชีขณะจดจำ (เปลี่ยนรหัสผ่าน = ใช้ไม่ได้)'],
+      ['LastSeenAt', 'datetime', 'ใช้งานล่าสุดผ่านการจดจำอุปกรณ์']
     ]
   }
 };
@@ -207,10 +211,14 @@ var DEFAULT_SETTINGS_ = [
   ['SESSION_TIMEOUT_MIN', '30', 'ออกจากระบบอัตโนมัติเมื่อไม่ได้ใช้งาน (นาที)'],
   ['MAX_LOGIN_ATTEMPTS', '5', 'จำนวนครั้งที่ใส่รหัสผ่านผิดได้ก่อนล็อกชั่วคราว'],
   ['LOCKOUT_MIN', '15', 'ระยะเวลาล็อกบัญชีชั่วคราว (นาที)'],
+  ['REMEMBER_DEVICE_DAYS', '30', 'จดจำการเข้าสู่ระบบบนอุปกรณ์ส่วนตัว (วันนับจากใช้งานล่าสุด) 0 = ปิด'],
   ['GPS_RETENTION_DAYS', '365', 'ระยะเวลาเก็บพิกัด GPS ก่อนลบอัตโนมัติ (วัน)'],
   ['CORRECTION_MAX_DAYS', '30', 'ยื่นคำร้องแก้ไขเวลาย้อนหลังได้ไม่เกิน (วัน)'],
   ['LEAVE_REQUIRES_APPROVAL', 'TRUE', 'การลาที่บุคลากรบันทึกเองต้องรอผู้บริหาร/ผู้ดูแลอนุมัติ (FALSE = มีผลทันทีเมื่อกดยืนยัน)'],
   ['ALLOW_REGISTRATION', 'TRUE', 'เปิดให้บุคลากรสมัครสมาชิกด้วยตนเอง'],
+  ['DIRECTOR_NAME', '', 'ชื่อ-นามสกุลผู้อำนวยการโรงเรียน (ใช้ในช่องลงนามของใบลาและรายงาน)'],
+  ['DIRECTOR_POSITION', 'ผู้อำนวยการโรงเรียนวัดเสาหิน', 'ตำแหน่งผู้ลงนามอนุญาตการลา/รับรองรายงาน'],
+  ['SCHOOL_AFFILIATION', '', 'สังกัดของโรงเรียน เช่น สำนักงานเขตพื้นที่การศึกษาประถมศึกษา... (ใช้ในใบลา)'],
   ['SETTINGS_CONFIRMED', 'FALSE', 'ผู้ดูแลยืนยันว่าได้ปรับค่าตามระเบียบโรงเรียนแล้ว']
 ];
 
@@ -582,9 +590,13 @@ function parseSettings_(raw) {
     sessionTimeoutMin: Math.min(360, Math.max(5, num('SESSION_TIMEOUT_MIN', 30))),
     maxLoginAttempts: Math.min(20, Math.max(3, num('MAX_LOGIN_ATTEMPTS', 5))),
     lockoutMin: Math.min(1440, Math.max(1, num('LOCKOUT_MIN', 15))),
+    rememberDays: Math.min(90, Math.max(0, num('REMEMBER_DEVICE_DAYS', 30))),
     gpsRetentionDays: Math.max(30, num('GPS_RETENTION_DAYS', 365)),
     correctionMaxDays: Math.max(1, num('CORRECTION_MAX_DAYS', 30)),
     allowRegistration: bool('ALLOW_REGISTRATION'),
+    directorName: String(raw.DIRECTOR_NAME || '').trim(),
+    directorPosition: String(raw.DIRECTOR_POSITION || '').trim() || 'ผู้อำนวยการ' + APP.SCHOOL_NAME,
+    affiliation: String(raw.SCHOOL_AFFILIATION || '').trim(),
     leaveRequiresApproval: String(raw.LEAVE_REQUIRES_APPROVAL === undefined ? 'TRUE' : raw.LEAVE_REQUIRES_APPROVAL).toUpperCase() !== 'FALSE',
     settingsConfirmed: bool('SETTINGS_CONFIRMED')
   };

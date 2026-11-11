@@ -10,7 +10,8 @@
  *   - ฟังก์ชันระดับบนสุดที่ "ไม่" ลงท้ายด้วย "_" สามารถถูกเรียกจาก Browser ผ่าน
  *     google.script.run ได้ทั้งหมด
  *   - ระบบนี้จึงเปิดเฉพาะฟังก์ชันสาธารณะที่จำเป็น ได้แก่
- *       doGet, include, getPublicConfig, login, register, firstRunSetup, requestPasswordReset, api
+ *       doGet, include, getPublicConfig, login, resumeSession, register, firstRunSetup,
+ *       requestPasswordReset, api
  *       และฟังก์ชันสำหรับผู้พัฒนา (SetupSystem, CreateFirstAdmin, EmergencyResetAdmin,
  *       BenchmarkPasswordHashing, DailyMaintenance) ซึ่งตรวจสอบว่าเรียกจาก
  *       Apps Script Editor โดยเจ้าของโปรเจกต์เท่านั้น
@@ -26,7 +27,7 @@ var APP = {
   SCHOOL_FULL: 'โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่',
   NAME_EN: 'Wat Sao Hin School Attendance System',
   SLOGAN: 'ระบบลงเวลาอัจฉริยะ สะดวก โปร่งใส ตรวจสอบได้',
-  VERSION: '1.5.0',
+  VERSION: '1.6.0',
   TZ: 'Asia/Bangkok'
 };
 
@@ -131,6 +132,7 @@ function getPublicConfig() {
         dbFileName: DB_FILE_NAME_,
         setupSheetName: SETUP_SHEET_,
         allowRegistration: s ? s.allowRegistration : false,
+        rememberDays: s ? s.rememberDays : 0,
         positions: POSITIONS,
         gpsRetentionDays: s ? s.gpsRetentionDays : 365,
         serverNow: nowMs_()
@@ -176,6 +178,8 @@ function getRoutes_() {
     'auth.session': { fn: authSession_, mc: true },
     'auth.ping': { fn: function () { return { alive: true }; }, mc: true },
     'auth.logout': { fn: logout_, mc: true },
+    'auth.logoutAll': { fn: logoutAll_, mc: true },
+    'auth.rememberDevice': { fn: rememberDevice_ },
     'auth.changePassword': { fn: changePassword_, mc: true },
     // ----- บุคลากร -----
     'me.dashboard': { fn: getMyDashboard_ },
@@ -186,6 +190,8 @@ function getRoutes_() {
     'leave.my': { fn: listMyLeaves_ },
     'leave.submit': { fn: submitLeave_ },
     'leave.cancel': { fn: cancelLeave_ },
+    'leave.myStats': { fn: getMyLeaveStats_ },
+    'leave.form': { fn: getLeaveForm_ },
     'corr.my': { fn: listMyCorrections_ },
     'corr.submit': { fn: submitCorrection_ },
     'corr.cancel': { fn: cancelCorrection_ },
@@ -203,6 +209,7 @@ function getRoutes_() {
     'report.monthly': { fn: reportMonthly_, roles: AE },
     'report.yearly': { fn: reportYearly_, roles: AE },
     'report.individual': { fn: reportIndividual_, roles: AE },
+    'report.leaveSummary': { fn: reportLeaveSummary_, roles: AE },
     'report.export': { fn: exportReport_, roles: AE },
     'cal.list': { fn: listCalendar_, roles: AE },
     // ----- ผู้ดูแลระบบเท่านั้น -----
@@ -339,6 +346,32 @@ function daysBetween_(a, b) { return Math.round((ymdToUtcMs_(b) - ymdToUtcMs_(a)
 function daysInMonth_(y, m) { return new Date(Date.UTC(y, m, 0)).getUTCDate(); }
 function monthStart_(y, m) { return y + '-' + pad2_(m) + '-01'; }
 function monthEnd_(y, m) { return y + '-' + pad2_(m) + '-' + pad2_(daysInMonth_(y, m)); }
+
+/**
+ * ปีงบประมาณ (พ.ศ.) ของวันที่ — ปีงบประมาณเริ่ม 1 ตุลาคม เช่น 1 ต.ค. 2569 – 30 ก.ย. 2570 = ปีงบประมาณ 2570
+ */
+function fiscalYearOf_(ymd) {
+  var p = parseYmd_(ymd);
+  return (p.m >= 10 ? p.y + 1 : p.y) + 543;
+}
+
+/**
+ * ช่วงวันที่ของปีงบประมาณ / รอบการประเมิน
+ * @param {number} fy ปีงบประมาณ (พ.ศ.)
+ * @param {number} round 0 = ทั้งปีงบประมาณ, 1 = รอบที่ 1 (1 ต.ค. – 31 มี.ค.), 2 = รอบที่ 2 (1 เม.ย. – 30 ก.ย.)
+ */
+function fiscalRange_(fy, round) {
+  var y = fy - 543; // ปี ค.ศ. ที่ปีงบประมาณสิ้นสุด
+  var r = {
+    fiscalYear: fy, round: round,
+    from: round === 2 ? y + '-04-01' : (y - 1) + '-10-01',
+    to: round === 1 ? y + '-03-31' : y + '-09-30'
+  };
+  r.label = round === 0 ? 'ปีงบประมาณ ' + fy : 'รอบที่ ' + round + ' ปีงบประมาณ ' + fy;
+  r.rangeLabel = thaiDate_(r.from) + ' – ' + thaiDate_(r.to);
+  r.shortLabel = round === 0 ? 'ทั้งปี' : (round === 1 ? 'ต.ค. – มี.ค.' : 'เม.ย. – ก.ย.');
+  return r;
+}
 function pad2_(n) { return (n < 10 ? '0' : '') + n; }
 
 /** รายการวันที่จาก a ถึง b (รวมปลายทั้งสองด้าน) */

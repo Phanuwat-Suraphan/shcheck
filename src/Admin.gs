@@ -391,10 +391,14 @@ var SETTING_RULES_ = {
   SESSION_TIMEOUT_MIN: { type: 'int', min: 5, max: 360, label: 'หมดเวลาการใช้งาน (นาที)' },
   MAX_LOGIN_ATTEMPTS: { type: 'int', min: 3, max: 20, label: 'จำนวนครั้งที่ใส่รหัสผิดได้' },
   LOCKOUT_MIN: { type: 'int', min: 1, max: 1440, label: 'ระยะเวลาล็อกบัญชี (นาที)' },
+  REMEMBER_DEVICE_DAYS: { type: 'int', min: 0, max: 90, label: 'จดจำการเข้าสู่ระบบ (วัน)' },
   GPS_RETENTION_DAYS: { type: 'int', min: 30, max: 3650, label: 'ระยะเวลาเก็บพิกัด GPS (วัน)' },
   CORRECTION_MAX_DAYS: { type: 'int', min: 1, max: 365, label: 'ยื่นคำร้องย้อนหลังได้ (วัน)' },
   ALLOW_REGISTRATION: { type: 'bool', label: 'เปิดรับสมัครสมาชิก' },
   LEAVE_REQUIRES_APPROVAL: { type: 'bool', label: 'การลาที่บุคลากรบันทึกเองต้องรออนุมัติ' },
+  DIRECTOR_NAME: { type: 'text', max: 80, label: 'ชื่อผู้อำนวยการ' },
+  DIRECTOR_POSITION: { type: 'text', max: 100, label: 'ตำแหน่งผู้ลงนาม' },
+  SCHOOL_AFFILIATION: { type: 'text', max: 100, label: 'สังกัด' },
   SETTINGS_CONFIRMED: { type: 'bool', label: 'ยืนยันการตั้งค่า' }
 };
 
@@ -444,6 +448,10 @@ function normalizeSetting_(key, value) {
       return uniq.sort().join(',');
     case 'bool':
       return (value === true || String(value).toUpperCase() === 'TRUE') ? 'TRUE' : 'FALSE';
+    case 'text':
+      var t = cleanLine_(value, 200);
+      if (t.length > rule.max) throw appError_(rule.label + 'ต้องไม่เกิน ' + rule.max + ' ตัวอักษร', 'VALIDATION', { field: key });
+      return t;
     default:
       throw appError_('การตั้งค่าไม่ถูกต้อง', 'VALIDATION');
   }

@@ -192,7 +192,9 @@ function validateDateParam_(v, label) {
 /* ========================================================================== */
 
 function reportHeader_(ctx, type, title, periodLabel, orientation) {
+  var s = getSettings_();
   return {
+    signer: { name: s.directorName, position: s.directorPosition },
     type: type,
     school: APP.SCHOOL_FULL,
     title: title,
@@ -528,11 +530,78 @@ function reportIndividual_(ctx, p) {
   return rep;
 }
 
+/**
+ * รายงานสรุปวันลา มาสาย และขาดงาน รายรอบการประเมิน
+ * (ใช้ประกอบการพิจารณาเลื่อนเงินเดือน: รอบที่ 1 = 1 ต.ค. – 31 มี.ค., รอบที่ 2 = 1 เม.ย. – 30 ก.ย.)
+ * นับเฉพาะใบลาที่อนุมัติแล้ว; ลาป่วย/ลากิจ/ลาพักผ่อนนับวันทำการ, ลาคลอดบุตรนับวันต่อเนื่อง
+ */
+function reportLeaveSummary_(ctx, p) {
+  var fy = parseFiscalYear_(p.fiscalYear);
+  var round = [0, 1, 2].indexOf(parseInt(p.round, 10)) >= 0 ? parseInt(p.round, 10) : 0;
+  var r = fiscalRange_(fy, round);
+  var emps = reportEmployees_(r.from, r.to);
+  var res = computeAttendance_({ employees: emps, from: r.from, to: r.to });
+  var byEmp = {};
+  readAll_('LeaveRequests').forEach(function (l) { (byEmp[l.EmployeeID] = byEmp[l.EmployeeID] || []).push(l); });
+  var tot = { sickT: 0, sickD: 0, persT: 0, persD: 0, late: 0, absent: 0, perfect: 0 };
+  var rows = res.people.map(function (pp, i) {
+    var lt = leaveTotals_(byEmp[pp.emp.employeeId] || [], r.from, r.to);
+    var late = 0, absent = 0;
+    pp.days.forEach(function (d) { if (d.status === 'LATE') late++; if (d.status === 'ABSENT') absent++; });
+    var leaveCount = Object.keys(lt).reduce(function (a, k) { return a + (k === 'OFFICIAL' ? 0 : lt[k].times); }, 0);
+    tot.sickT += lt.SICK.times; tot.sickD += lt.SICK.days; tot.persT += lt.PERSONAL.times; tot.persD += lt.PERSONAL.days;
+    tot.late += late; tot.absent += absent;
+    if (!leaveCount && !late && !absent && pp.totals.workdays > 0) tot.perfect++;
+    return {
+      no: i + 1, staffCode: pp.emp.staffCode, fullName: pp.emp.fullName, position: pp.emp.position,
+      sickT: lt.SICK.times, sickD: lt.SICK.days, persT: lt.PERSONAL.times, persD: lt.PERSONAL.days,
+      spT: lt.SICK.times + lt.PERSONAL.times, spD: round_(lt.SICK.days + lt.PERSONAL.days, 1),
+      vacD: lt.VACATION.days, matD: lt.MATERNITY.days, othD: lt.OTHER.days, offD: lt.OFFICIAL.days,
+      late: late, absent: absent, employeeId: pp.emp.employeeId
+    };
+  });
+  var rep = reportHeader_(ctx, 'leaveSummary', 'บัญชีสรุปวันลา มาสาย และขาดงาน', r.label + ' (' + r.rangeLabel + ')');
+  rep.tables.push({
+    key: 'people', title: 'นับเฉพาะใบลาที่อนุมัติแล้ว · ลาป่วย/ลากิจ/ลาพักผ่อนนับวันทำการ · ลาคลอดบุตรนับวันต่อเนื่อง',
+    columns: [
+      { key: 'no', label: 'ที่', align: 'center', width: 32 },
+      { key: 'fullName', label: 'ชื่อ-นามสกุล', width: 170 },
+      { key: 'position', label: 'ตำแหน่ง', width: 96 },
+      { key: 'sickT', label: 'ลาป่วย (ครั้ง)', align: 'center', width: 52, num: true },
+      { key: 'sickD', label: 'ลาป่วย (วัน)', align: 'center', width: 52, num: true },
+      { key: 'persT', label: 'ลากิจ (ครั้ง)', align: 'center', width: 52, num: true },
+      { key: 'persD', label: 'ลากิจ (วัน)', align: 'center', width: 52, num: true },
+      { key: 'spT', label: 'ป่วย+กิจ (ครั้ง)', align: 'center', width: 56, num: true },
+      { key: 'spD', label: 'ป่วย+กิจ (วัน)', align: 'center', width: 56, num: true },
+      { key: 'vacD', label: 'ลาพักผ่อน (วัน)', align: 'center', width: 56, num: true },
+      { key: 'matD', label: 'ลาคลอดบุตร (วัน)', align: 'center', width: 60, num: true },
+      { key: 'othD', label: 'ลาอื่น ๆ (วัน)', align: 'center', width: 52, num: true },
+      { key: 'offD', label: 'ไปราชการ (วัน)', align: 'center', width: 56, num: true },
+      { key: 'late', label: 'มาสาย (ครั้ง)', align: 'center', width: 52, num: true },
+      { key: 'absent', label: 'ขาดงาน (วัน)', align: 'center', width: 52, num: true }
+    ],
+    rows: rows
+  });
+  rep.summary = [
+    { label: 'จำนวนบุคลากร', value: rows.length, unit: 'คน', tone: 'navy' },
+    { label: 'ลาป่วยรวม', value: round_(tot.sickD, 1), unit: 'วัน (' + tot.sickT + ' ครั้ง)', tone: 'sky' },
+    { label: 'ลากิจรวม', value: round_(tot.persD, 1), unit: 'วัน (' + tot.persT + ' ครั้ง)', tone: 'sky' },
+    { label: 'มาสายรวม', value: tot.late, unit: 'ครั้ง', tone: 'warning' },
+    { label: 'ขาดงานรวม', value: tot.absent, unit: 'วัน', tone: 'danger' },
+    { label: 'ไม่ลา ไม่สาย ไม่ขาด', value: tot.perfect, unit: 'คน', tone: 'success' }
+  ];
+  if (r.from > res.today) rep.notice = 'รอบนี้ยังไม่เริ่ม';
+  else if (r.to > res.today) rep.notice = 'ข้อมูลถึงวันที่ ' + thaiDate_(res.today) + ' (รอบยังไม่สิ้นสุด)';
+  rep.params = { fiscalYear: fy, round: round };
+  return rep;
+}
+
 function buildReportByType_(ctx, type, params) {
   if (type === 'daily') return reportDaily_(ctx, params || {});
   if (type === 'monthly') return reportMonthly_(ctx, params || {});
   if (type === 'yearly') return reportYearly_(ctx, params || {});
   if (type === 'individual') return reportIndividual_(ctx, params || {});
+  if (type === 'leaveSummary') return reportLeaveSummary_(ctx, params || {});
   throw appError_('ประเภทรายงานไม่ถูกต้อง', 'VALIDATION');
 }
 
@@ -602,6 +671,7 @@ function exportFileBase_(report) {
   if (report.type === 'daily') name = 'Daily_' + p.date;
   else if (report.type === 'monthly') name = 'Monthly_' + p.year + '-' + pad2_(p.month);
   else if (report.type === 'yearly') name = 'Yearly_' + p.year;
+  else if (report.type === 'leaveSummary') name = 'LeaveSummary_FY' + p.fiscalYear + (p.round ? '_R' + p.round : '');
   else {
     var e = getEmployeeById_(p.employeeId);
     name = 'Individual_' + (e ? String(e.StaffCode).replace(/[^A-Za-z0-9-]/g, '') : 'staff') + '_' + p.from + '_' + p.to;
@@ -629,6 +699,7 @@ function writeReportToSheet_(sh, report) {
   pushRow([txt(report.school)], 'school');
   pushRow([txt(report.title)], 'title');
   pushRow([txt('ช่วงวันที่: ' + report.periodLabel)], 'meta');
+  if (report.notice) pushRow([txt('หมายเหตุ: ' + report.notice)], 'meta');
   pushRow([txt('วันที่จัดทำรายงาน: ' + report.generatedAt + '    ผู้จัดทำ: ' + report.generatedBy)], 'meta');
   pushRow([], 'blank');
   report.tables.forEach(function (t) {
@@ -653,8 +724,9 @@ function writeReportToSheet_(sh, report) {
   pushRow([txt('ลงชื่อ ......................................................... ผู้จัดทำรายงาน')], 'sign');
   pushRow([txt('( ' + report.generatedBy + ' )')], 'sign');
   pushRow([], 'blank');
-  pushRow([txt('ลงชื่อ ......................................................... ผู้อำนวยการโรงเรียน')], 'sign');
-  pushRow([txt('( ......................................................... )')], 'sign');
+  var signer = report.signer || {};
+  pushRow([txt('ลงชื่อ ......................................................... ' + (signer.position || 'ผู้อำนวยการโรงเรียน'))], 'sign');
+  pushRow([txt('( ' + (signer.name || '.........................................................') + ' )')], 'sign');
 
   ensureRows_(sh, values.length);
   if (sh.getMaxColumns() < ncols) sh.insertColumnsAfter(sh.getMaxColumns(), ncols - sh.getMaxColumns());

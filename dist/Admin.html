@@ -1,4 +1,4 @@
-<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.5.0
+<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.6.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Admin.html (หน้าผู้บริหาร/ผู้ดูแลระบบ)
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่ -->
 <!-- =====================================================================
@@ -161,6 +161,7 @@
         <div class="seg" id="repTypeSeg" style="margin-bottom:14px">
           <button type="button" data-val="daily" class="active">รายวัน</button><button type="button" data-val="monthly">รายเดือน</button>
           <button type="button" data-val="yearly">รายปี</button><button type="button" data-val="individual">รายบุคคล</button>
+          <button type="button" data-val="leaveSummary">สรุปวันลา/มาสาย (รอบประเมิน)</button>
         </div>
         <div class="toolbar">
           <div class="field" data-rep="daily"><label for="repDate">วันที่</label><input type="date" id="repDate"></div>
@@ -169,6 +170,9 @@
           <div class="field grow" data-rep="individual" hidden><label for="repEmp">บุคลากร</label><select id="repEmp"></select></div>
           <div class="field" data-rep="individual" hidden><label for="repFrom">ตั้งแต่วันที่</label><input type="date" id="repFrom"></div>
           <div class="field" data-rep="individual" hidden><label for="repTo">ถึงวันที่</label><input type="date" id="repTo"></div>
+          <div class="field" data-rep="leaveSummary" hidden><label for="repFy">ปีงบประมาณ</label><select id="repFy"></select></div>
+          <div class="field grow" data-rep="leaveSummary" hidden><label for="repRound">รอบการประเมิน</label>
+            <select id="repRound"><option value="1">รอบที่ 1 (1 ต.ค. – 31 มี.ค.)</option><option value="2">รอบที่ 2 (1 เม.ย. – 30 ก.ย.)</option><option value="0">ทั้งปีงบประมาณ</option></select></div>
           <button type="button" class="btn" id="repRunBtn"><span class="ms">search</span>แสดงรายงาน</button>
         </div>
       </div>
@@ -255,7 +259,18 @@
             <div class="field" data-field="MAX_LOGIN_ATTEMPTS"><label for="sAttempts">ใส่รหัสผ่านผิดได้ (ครั้ง)</label><input type="number" id="sAttempts" name="MAX_LOGIN_ATTEMPTS" min="3" max="20"><span class="err"></span></div>
             <div class="field" data-field="LOCKOUT_MIN"><label for="sLockout">ระยะเวลาล็อกบัญชี (นาที)</label><input type="number" id="sLockout" name="LOCKOUT_MIN" min="1" max="1440"><span class="err"></span></div>
           </div>
+          <div class="form-grid two">
+            <div class="field" data-field="REMEMBER_DEVICE_DAYS"><label for="sRemember">จำการเข้าสู่ระบบบนโทรศัพท์ส่วนตัว (วัน)</label><input type="number" id="sRemember" name="REMEMBER_DEVICE_DAYS" min="0" max="90"><span class="hint">นับจากใช้งานล่าสุด · 0 = ปิด (ต้องใส่รหัสผ่านทุกครั้ง)</span><span class="err"></span></div>
+          </div>
           <label class="switch"><input type="checkbox" name="ALLOW_REGISTRATION"><span class="track"></span>เปิดให้บุคลากรสมัครสมาชิกด้วยตนเอง</label>
+        </div>
+        <div class="set-group">
+          <h3><span class="ms">description</span>ข้อมูลสำหรับใบลาและรายงาน</h3>
+          <div class="form-grid two">
+            <div class="field" data-field="DIRECTOR_NAME"><label for="sDirName">ชื่อ-นามสกุลผู้อำนวยการ</label><input type="text" id="sDirName" name="DIRECTOR_NAME" maxlength="80" placeholder="เช่น นายสมชาย ใจดี"><span class="hint">พิมพ์ในช่องลงนามของใบลาและรายงาน (เว้นว่างได้)</span><span class="err"></span></div>
+            <div class="field" data-field="DIRECTOR_POSITION"><label for="sDirPos">ตำแหน่งผู้ลงนาม</label><input type="text" id="sDirPos" name="DIRECTOR_POSITION" maxlength="100" placeholder="ผู้อำนวยการโรงเรียนวัดเสาหิน"><span class="err"></span></div>
+          </div>
+          <div class="field" data-field="SCHOOL_AFFILIATION"><label for="sAffil">สังกัด</label><input type="text" id="sAffil" name="SCHOOL_AFFILIATION" maxlength="100" placeholder="เช่น สำนักงานเขตพื้นที่การศึกษาประถมศึกษาเชียงใหม่ เขต ..."><span class="hint">ต่อท้ายชื่อโรงเรียนในช่อง “สังกัด” ของใบลา</span><span class="err"></span></div>
         </div>
         <div class="set-group">
           <h3><span class="ms">database</span>ข้อมูลและความเป็นส่วนตัว</h3>
@@ -325,6 +340,7 @@ window.Admin = (function () {
     CORRECTION_SUBMIT: 'ยื่นคำร้องแก้ไขเวลา', CORRECTION_CANCEL: 'ยกเลิกคำร้อง', CORRECTION_APPROVE: 'อนุมัติคำร้องแก้ไขเวลา', CORRECTION_REJECT: 'ไม่อนุมัติคำร้อง',
     SETTINGS_UPDATE: 'แก้ไขการตั้งค่า', CALENDAR_ADD: 'เพิ่มวันในปฏิทิน', CALENDAR_REMOVE: 'ลบวันในปฏิทิน', CALENDAR_ADD_FIXED: 'เพิ่มวันหยุดราชการคงที่',
     REPORT_EXPORT: 'ส่งออกรายงาน', SUMMARY_REBUILD: 'คำนวณสรุปรายวันใหม่', MAINTENANCE: 'งานบำรุงรักษาข้อมูล',
+    LOGIN_REMEMBERED: 'เข้าสู่ระบบอัตโนมัติ (เครื่องที่จำไว้)', LOGOUT_ALL: 'ออกจากระบบทุกเครื่อง',
     BOOTSTRAP_ADMIN_CREATED: 'สร้างผู้ดูแลระบบคนแรก', FIRST_RUN_SETUP: 'ติดตั้งครั้งแรกผ่านหน้าเว็บ', EMERGENCY_ADMIN_RESET: 'กู้คืนสิทธิ์ผู้ดูแลระบบ'
   };
 
@@ -685,6 +701,7 @@ window.Admin = (function () {
         return A.leaveCard(l, false).replace(/<div class="actions">/, '<div class="actions">' + actions);
       }).join('') : A.emptyState('ไม่มีรายการ', 'event_available');
       bindAttachmentButtons(host);
+      A.bindPrintLeave(host);
       $$('[data-lv]', host).forEach(function (b) { b.addEventListener('click', function () { reviewLeave(b.getAttribute('data-id'), b.getAttribute('data-lv')); }); });
     }).catch(err);
   }
@@ -809,6 +826,12 @@ window.Admin = (function () {
     if (!$('#repDate').value) $('#repDate').value = today;
     $('#repDate').max = today;
     if (!$('#repFrom').value) { $('#repFrom').value = today.substr(0, 8) + '01'; $('#repTo').value = today; }
+    if (!$('#repFy').options.length) {
+      // ปีงบประมาณเริ่ม 1 ต.ค. · รอบปัจจุบัน: ต.ค.–มี.ค. = รอบที่ 1, เม.ย.–ก.ย. = รอบที่ 2
+      var y = +today.substr(0, 4), m = +today.substr(5, 2), fy = (m >= 10 ? y + 1 : y) + 543;
+      setOpts($('#repFy'), [fy, fy - 1, fy - 2, fy - 3].map(function (v) { return [v, String(v)]; }), fy);
+      $('#repRound').value = m >= 4 && m <= 9 ? '2' : '1';
+    }
     syncRepControls();
     return loadEmployeesForSelect();
   }
@@ -830,6 +853,7 @@ window.Admin = (function () {
     if (st.repType === 'daily') return { date: $('#repDate').value };
     if (st.repType === 'monthly') return { year: +$('#repYear').value, month: +$('#repMonth').value };
     if (st.repType === 'yearly') return { year: +$('#repYear').value };
+    if (st.repType === 'leaveSummary') return { fiscalYear: +$('#repFy').value, round: +$('#repRound').value };
     return { employeeId: $('#repEmp').value, from: $('#repFrom').value, to: $('#repTo').value };
   }
   function runReport() {
@@ -871,7 +895,8 @@ window.Admin = (function () {
     }
     var person = rep.person ? '<dl class="kv" style="margin-bottom:12px"><dt>ชื่อ-นามสกุล</dt><dd>' + esc(rep.person.fullName) + '</dd><dt>รหัส / ตำแหน่ง</dt><dd>' + esc(rep.person.staffCode) + ' · ' + esc(rep.person.position) + '</dd><dt>สถานะบัญชี</dt><dd>' + esc(rep.person.statusLabel) + '</dd></dl>' : '';
     $('#repResult').innerHTML = '<div class="report-doc"><div class="report-head"><div class="r-school">' + esc(rep.school) + '</div><div class="r-title">' + esc(rep.title) + '</div>' +
-      '<div class="r-meta">ช่วงวันที่: ' + esc(rep.periodLabel) + '</div><div class="r-meta">วันที่จัดทำรายงาน: ' + esc(rep.generatedAt) + ' · ผู้จัดทำ: ' + esc(rep.generatedBy) + '</div></div>' + person +
+      '<div class="r-meta">ช่วงวันที่: ' + esc(rep.periodLabel) + '</div><div class="r-meta">วันที่จัดทำรายงาน: ' + esc(rep.generatedAt) + ' · ผู้จัดทำ: ' + esc(rep.generatedBy) + '</div>' +
+      (rep.notice ? '<div class="r-meta"><b>หมายเหตุ:</b> ' + esc(rep.notice) + '</div>' : '') + '</div>' + person +
       '<h3>' + icon('summarize') + ' สรุปผล</h3><div class="grid grid-stats">' + rep.summary.map(function (s) {
         return statCard(s.tone || 'navy', toneIcon(s.tone), s.value, s.unit || '', s.label);
       }).join('') + '</div>' + charts + rep.tables.map(tableHtml).join('') + '</div>';
@@ -915,6 +940,7 @@ window.Admin = (function () {
     var area = document.getElementById('printArea');
     area.innerHTML = '<div class="print-doc"><div class="p-school">' + esc(rep.school) + '</div><div class="p-title">' + esc(rep.title) + '</div>' +
       '<div class="p-meta">ช่วงวันที่: ' + esc(rep.periodLabel) + '</div><div class="p-meta">วันที่จัดทำรายงาน: ' + esc(rep.generatedAt) + '  ผู้จัดทำ: ' + esc(rep.generatedBy) + '</div>' +
+      (rep.notice ? '<div class="p-meta">หมายเหตุ: ' + esc(rep.notice) + '</div>' : '') +
       rep.tables.map(function (t) {
         return (t.title ? '<h4>' + esc(t.title) + '</h4>' : '') + '<table><thead><tr>' + t.columns.map(function (c) { return '<th>' + esc(c.label) + '</th>'; }).join('') + '</tr></thead><tbody>' +
           (t.rows.length ? t.rows.map(function (r) { return '<tr>' + t.columns.map(function (c) { var v = r[c.key]; return '<td class="' + (c.align === 'center' ? 'c' : '') + '">' + esc(v === null || v === undefined || v === '' ? '-' : v) + '</td>'; }).join('') + '</tr>'; }).join('')
@@ -922,7 +948,7 @@ window.Admin = (function () {
       }).join('') +
       '<h4>สรุปผล</h4><div class="p-summary">' + rep.summary.map(function (s) { return '<div>• ' + esc(s.label) + ': <b>' + esc(s.value) + '</b> ' + esc(s.unit || '') + '</div>'; }).join('') + '</div>' +
       '<div class="p-sign"><div>ลงชื่อ ......................................................<br>( ' + esc(rep.generatedBy) + ' )<br>ผู้จัดทำรายงาน</div>' +
-      '<div>ลงชื่อ ......................................................<br>( ...................................................... )<br>ผู้อำนวยการโรงเรียน</div></div></div>';
+      '<div>ลงชื่อ ......................................................<br>( ' + esc(rep.signer && rep.signer.name ? rep.signer.name : '......................................................') + ' )<br>' + esc(rep.signer && rep.signer.position ? rep.signer.position : 'ผู้อำนวยการโรงเรียน') + '</div></div></div>';
     document.body.classList.add('printing');
     var cleanup = function () { document.body.classList.remove('printing'); area.innerHTML = ''; window.removeEventListener('afterprint', cleanup); };
     window.addEventListener('afterprint', cleanup);
@@ -1008,13 +1034,15 @@ window.Admin = (function () {
     var lat = parseFloat($('#sLat').value), lng = parseFloat($('#sLng').value), a = $('#sMapLink');
     if (isFinite(lat) && isFinite(lng)) { a.href = 'https://www.openstreetmap.org/?mlat=' + lat + '&mlon=' + lng + '#map=18/' + lat + '/' + lng; a.hidden = false; } else a.hidden = true;
   }
+  var TEXT_SETTINGS = ['SCHOOL_LAT', 'SCHOOL_LNG', 'GEOFENCE_RADIUS_M', 'MAX_GPS_ACCURACY_M', 'WORK_START_TIME', 'LATE_AFTER_TIME', 'WORK_END_TIME', 'CHECKIN_EARLIEST_TIME',
+    'SESSION_TIMEOUT_MIN', 'MAX_LOGIN_ATTEMPTS', 'LOCKOUT_MIN', 'REMEMBER_DEVICE_DAYS', 'GPS_RETENTION_DAYS', 'CORRECTION_MAX_DAYS',
+    'DIRECTOR_NAME', 'DIRECTOR_POSITION', 'SCHOOL_AFFILIATION'];
   function loadSettings() {
     A.api('settings.get', {}, { loadingText: 'กำลังโหลดการตั้งค่า...' }).then(function (s) {
       var f = $('#setForm'), v = s.values;
       A.clearFieldErrors(f);
       $('#setServerTime').textContent = 'เวลาเซิร์ฟเวอร์: ' + s.serverTime;
-      ['SCHOOL_LAT', 'SCHOOL_LNG', 'GEOFENCE_RADIUS_M', 'MAX_GPS_ACCURACY_M', 'WORK_START_TIME', 'LATE_AFTER_TIME', 'WORK_END_TIME', 'CHECKIN_EARLIEST_TIME',
-        'SESSION_TIMEOUT_MIN', 'MAX_LOGIN_ATTEMPTS', 'LOCKOUT_MIN', 'GPS_RETENTION_DAYS', 'CORRECTION_MAX_DAYS'].forEach(function (k) { if (f[k]) f[k].value = v[k] || ''; });
+      TEXT_SETTINGS.forEach(function (k) { if (f[k]) f[k].value = v[k] || ''; });
       ['ALLOW_HOLIDAY_CHECKIN', 'ALLOW_REGISTRATION', 'SETTINGS_CONFIRMED', 'LEAVE_REQUIRES_APPROVAL', 'CHECKOUT_REQUIRES_GPS'].forEach(function (k) { f[k].checked = String(v[k]).toUpperCase() === 'TRUE'; });
       if (s.storage) {
         $('#mtStorage').hidden = false;
@@ -1030,8 +1058,7 @@ window.Admin = (function () {
     e.preventDefault();
     var f = $('#setForm'); A.clearFieldErrors(f);
     var values = {};
-    ['SCHOOL_LAT', 'SCHOOL_LNG', 'GEOFENCE_RADIUS_M', 'MAX_GPS_ACCURACY_M', 'WORK_START_TIME', 'LATE_AFTER_TIME', 'WORK_END_TIME', 'CHECKIN_EARLIEST_TIME',
-      'SESSION_TIMEOUT_MIN', 'MAX_LOGIN_ATTEMPTS', 'LOCKOUT_MIN', 'GPS_RETENTION_DAYS', 'CORRECTION_MAX_DAYS'].forEach(function (k) { values[k] = f[k].value.trim(); });
+    TEXT_SETTINGS.forEach(function (k) { values[k] = f[k].value.trim(); });
     ['ALLOW_HOLIDAY_CHECKIN', 'ALLOW_REGISTRATION', 'SETTINGS_CONFIRMED', 'LEAVE_REQUIRES_APPROVAL', 'CHECKOUT_REQUIRES_GPS'].forEach(function (k) { values[k] = f[k].checked; });
     values.WORK_DAYS = $$('#sWorkDays input:checked').map(function (c) { return c.value; }).join(',');
     var btn = $('button[type=submit]', f);

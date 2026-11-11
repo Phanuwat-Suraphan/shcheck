@@ -511,6 +511,121 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
     await p.waitForSelector('#view-app:not([hidden])');
   });
 
+  let easy;
+  await step('E25', 'จำการเข้าสู่ระบบบนโทรศัพท์: เปิดแอปครั้งต่อไปเข้าได้ทันที, เซสชันหมดอายุก็เข้าใหม่ให้เอง, กดออกจากระบบแล้วเลิกจำ', async () => {
+    easy = await newPage();
+    assert.ok(await easy.isChecked('#rememberMe'), 'โทรศัพท์: เลือก "จำการเข้าสู่ระบบ" ไว้ให้');
+    await login(easy, 'somsri.j', 'SomsriNew2026');
+    await easy.waitForSelector('#view-app:not([hidden])');
+    assert.ok(await easy.evaluate(() => /^[a-f0-9]{16}\.[a-f0-9]{64}$/.test(localStorage.getItem('wsh_device') || '')));
+    // ปิดแอปแล้วเปิดใหม่ (sessionStorage หาย) → เข้าใช้งานได้เลย ไม่ต้องใส่รหัสผ่าน
+    await easy.evaluate(() => sessionStorage.clear());
+    await easy.reload();
+    await easy.waitForSelector('#view-app:not([hidden])', { timeout: 15000 });
+    assert.ok(!(await easy.isVisible('#view-login')));
+    // Session ฝั่ง Server หมดอายุ (12 ชม.) → กดเมนูต่อได้ ระบบเข้าสู่ระบบใหม่ให้เงียบ ๆ
+    app.env.clock.fixed = app.env.clock.now() + 13 * 3600e3;
+    await easy.click('#userTabs [data-tab="history"]');
+    await easy.waitForSelector('#histTable table, #histTable .empty-state');
+    assert.ok(await easy.isVisible('#view-app'));
+    await easy.click('#userTabs [data-tab="account"]');
+    assert.ok(/จำการเข้าสู่ระบบไว้แล้ว/.test(await easy.textContent('#accDeviceText')));
+    assert.ok(await easy.isHidden('#accRememberBtn'));
+  });
+
+  await step('E26', 'สถิติการลาตามปีงบประมาณ + พิมพ์ใบลาแบบราชการ (A4 หน้าเดียว)', async () => {
+    await easy.click('#userTabs [data-tab="leave"]');
+    await easy.waitForSelector('#lvStats table');
+    const stats = await easy.textContent('#lvStats');
+    ['รอบที่ 1', 'รอบที่ 2', 'ลาป่วย', 'ลากิจ', 'มาสาย', 'ต.ค. – มี.ค.'].forEach(t => assert.ok(stats.includes(t), t));
+    assert.strictEqual(await easy.inputValue('#lvStatsFy'), '2570');
+    await easy.evaluate(() => { const o = window.print; window.print = () => { window.__printHtml = document.getElementById('printArea').innerHTML; window.__pageCss = (document.getElementById('printPageStyle') || {}).textContent; o(); }; });
+    await easy.locator('#myLeaves [data-print-leave]').first().click();
+    await easy.waitForFunction(() => !!window.__printHtml);
+    const html = await easy.evaluate(() => window.__printHtml);
+    ['แบบใบลาป่วย ลาคลอดบุตร ลากิจส่วนตัว', 'เขียนที่', 'เรียน', 'ผู้อำนวยการโรงเรียนวัดเสาหิน', 'นางสาวสมศรี ใจดี', 'สถิติการลาในปีงบประมาณ 2570',
+      'ลามาแล้ว', 'ความเห็นผู้บังคับบัญชา', 'อนุญาต', 'ผู้ตรวจสอบ'].forEach(t => assert.ok(html.includes(t), t));
+    assert.ok(/A4 portrait/.test(await easy.evaluate(() => window.__pageCss)), 'ใบลาพิมพ์แนวตั้ง');
+    // เรนเดอร์เป็น PDF ด้วย CSS จริงของระบบ: ต้องได้ 1 หน้า A4
+    const css = await easy.evaluate(() => Array.from(document.querySelectorAll('style')).map(x => x.textContent).join('\n'));
+    const pg = await browser.newPage({ viewport: { width: 794, height: 1123 } });
+    await pg.setContent('<!doctype html><html><head><meta charset="utf-8"><style>' + css + '</style><style>@page { size: A4 portrait; margin: 14mm 16mm; }</style></head>' +
+      '<body class="printing"><div id="printArea" class="print-area">' + html + '</div></body></html>');
+    await pg.emulateMedia({ media: 'print' });
+    const pdf = await pg.pdf({ preferCSSPageSize: true, printBackground: true });
+    const pages = (pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length;
+    assert.strictEqual(pages, 1, 'ใบลาต้องพิมพ์ได้ในหน้าเดียว (ได้ ' + pages + ' หน้า)');
+    await pg.evaluate(() => { document.body.style.padding = '40px 52px'; });
+    fs.mkdirSync(SHOTS, { recursive: true });
+    await pg.screenshot({ path: path.join(SHOTS, '14-leave-form-print.png'), fullPage: true });
+    await pg.close();
+    await easy.evaluate(() => window.scrollTo(0, 0));
+    await easy.locator('#lvStatsCard').scrollIntoViewIfNeeded();
+    await shot(easy, '15-leave-stats-mobile.png');
+  });
+
+  await step('E27', 'ใช้งานง่าย: ปุ่มลัด "แจ้งลา" บนหน้าแรก, ปรับตัวอักษรใหญ่ (จอไม่ล้น), แนะนำเพิ่มไอคอนบนหน้าจอ, ออกจากระบบแล้วเครื่องเลิกจำ', async () => {
+    await easy.click('#userTabs [data-tab="home"]');
+    await easy.click('.quick-links [data-tab-go="leave"]');
+    await easy.waitForSelector('[data-panel="leave"]:not([hidden])');
+    await easy.click('#userTabs [data-tab="account"]');
+    await easy.click('#fontSizeSeg [data-val="1.25"]');
+    assert.strictEqual(await easy.evaluate(() => document.documentElement.style.fontSize), '125%');
+    assert.strictEqual(await easy.evaluate(() => localStorage.getItem('wsh_font')), '1.25');
+    await easy.click('#userTabs [data-tab="home"]');
+    await easy.waitForFunction(() => document.querySelector('#homeName').textContent.length > 1);
+    assert.ok(await easy.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'ตัวอักษรใหญ่แล้วหน้าจอไม่ล้นแนวนอน');
+    await easy.evaluate(() => window.scrollTo(0, 0));
+    await shot(easy, '16-large-text-mobile.png');
+    assert.ok(await easy.isVisible('#homeTip'));
+    await easy.click('#homeTipBtn');
+    await easy.locator('.modal', { hasText: 'เพิ่มไอคอนไว้บนหน้าจอ' }).waitFor();
+    assert.ok(/เพิ่มลงในหน้าจอหลัก/.test(await easy.textContent('.modal .howto')));
+    await modalAction(easy, 'เข้าใจแล้ว');
+    await easy.waitForSelector('#homeTip', { state: 'hidden' });
+    await easy.click('#userTabs [data-tab="account"]');
+    await easy.click('#fontSizeSeg [data-val="1"]');
+    await easy.click('#logoutBtn2');
+    await modalAction(easy, 'ออกจากระบบ');
+    await easy.waitForSelector('#view-login:not([hidden])');
+    assert.strictEqual(await easy.evaluate(() => localStorage.getItem('wsh_device')), null);
+    await easy.reload();
+    await easy.waitForSelector('#view-login:not([hidden])');
+    assert.strictEqual(await easy.inputValue('#loginUsername'), 'somsri.j'); // จำชื่อผู้ใช้ไว้ให้
+  });
+
+  await step('E28', 'ผู้บริหาร: บัญชีสรุปวันลา/มาสาย/ขาดงาน รายรอบการประเมิน (Export ได้) + ตั้งชื่อผู้อำนวยการ; คอมพิวเตอร์ไม่จำการเข้าสู่ระบบโดยอัตโนมัติ', async () => {
+    const d = await newPage({ desktop: true });
+    assert.ok(!(await d.isChecked('#rememberMe')), 'คอมพิวเตอร์: ไม่เลือกจำการเข้าสู่ระบบไว้ก่อน');
+    await login(d, DEFAULTS.adminUser, ADMIN_NEW_PW);
+    await d.waitForSelector('#view-app:not([hidden])');
+    assert.strictEqual(await d.evaluate(() => localStorage.getItem('wsh_device')), null);
+    await d.click('#toAdminBtn');
+    await d.waitForSelector('#view-admin:not([hidden])');
+    await d.click('#adminNav [data-sec="settings"]');
+    await d.waitForFunction(() => document.querySelector('#sRemember').value === '30');
+    await d.fill('#sDirName', 'นายสมชาย ใจดี');
+    await d.fill('#sAffil', 'สำนักงานเขตพื้นที่การศึกษาประถมศึกษาเชียงใหม่ เขต 1');
+    await d.click('#setForm button[type=submit]');
+    await toast(d, /บันทึกการตั้งค่าแล้ว/);
+    await d.click('#adminNav [data-sec="reports"]');
+    await d.click('#repTypeSeg [data-val="leaveSummary"]');
+    assert.ok(await d.isVisible('#repFy') && await d.isVisible('#repRound'));
+    assert.strictEqual(await d.inputValue('#repFy'), '2570');
+    await d.click('#repRunBtn');
+    await d.locator('#repResult .report-head', { hasText: 'บัญชีสรุปวันลา มาสาย และขาดงาน' }).waitFor();
+    const txt = await d.textContent('#repResult');
+    ['รอบที่ 1 ปีงบประมาณ 2570', 'ป่วย+กิจ (ครั้ง)', 'มาสาย (ครั้ง)', 'นางสาวสมศรี ใจดี', 'ไม่ลา ไม่สาย ไม่ขาด'].forEach(t => assert.ok(txt.includes(t), t));
+    const [dl] = await Promise.all([d.waitForEvent('download'), d.click('[data-export="xlsx"]')]);
+    assert.strictEqual(dl.suggestedFilename(), 'WatSaoHin_Attendance_LeaveSummary_FY2570_R1.xlsx');
+    await d.evaluate(() => { const o = window.print; window.print = () => { window.__printHtml = document.getElementById('printArea').innerHTML; o(); }; });
+    await d.click('#repPrintBtn');
+    await d.waitForFunction(() => !!window.__printHtml);
+    assert.ok((await d.evaluate(() => window.__printHtml)).includes('นายสมชาย ใจดี'), 'ชื่อผู้อำนวยการในช่องลงนาม');
+    await d.evaluate(() => { document.querySelectorAll('.toast').forEach(t => t.remove()); document.querySelector('#repExportBar').scrollIntoView(); });
+    await shot(d, '17-leave-summary-desktop.png');
+  });
+
   await step('E20', 'ไม่มี JavaScript error ในทุกหน้าที่ทดสอบ', async () => {
     assert.deepStrictEqual(pageErrors, []);
   });

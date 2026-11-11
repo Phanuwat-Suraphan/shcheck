@@ -372,6 +372,83 @@ test('L08', 'คำขอรีเซ็ตรหัสผ่านจำกั�
   void t;
 });
 
+test('L09', 'จำการเข้าสู่ระบบบนเครื่องนี้: เปิดแอปแล้วเข้าได้ทันที, เก็บเฉพาะค่าแฮช, รหัสเครื่องผิดใช้ไม่ได้, ออกจากระบบแล้วเลิกจำ', () => {
+  const sys = newSystem({ realSessions: true });
+  addTeacher(sys, 1);
+  const plain = ok(sys.env.call('login', 'teacher1', 'Teach3rPass1', { ua: 'phone' }));
+  assert.strictEqual(plain.device, null); // ไม่เลือกจำ → ไม่มีรหัสเครื่อง
+  const r = ok(sys.env.call('login', 'teacher1', 'Teach3rPass1', { ua: 'phone', remember: true }));
+  assert.ok(/^[a-f0-9]{16}\.[a-f0-9]{64}$/.test(r.device), r.device);
+  const secret = r.device.split('.')[1];
+  const row = records(sys, 'Sessions').find(x => x.SessionRef === r.device.split('.')[0]);
+  assert.ok(row.DeviceKeyHash && row.DeviceKeyHash !== secret && row.RememberUntil, JSON.stringify(row));
+  const ss = sys.env.SpreadsheetApp.openById(sys.env.state.props.SPREADSHEET_ID);
+  ss.getSheets().forEach(sh => assert.ok(!JSON.stringify(sh.getDataRange().getValues()).includes(secret), 'secret stored in ' + sh.getName()));
+  // พ้นอายุ Session ปกติ (12 ชม.) → เปิดแอปอีกครั้งเข้าได้โดยไม่ต้องใส่รหัสผ่าน
+  sys.env.clock.advanceMinutes(13 * 60);
+  expectErr(sys.api(r.token, 'auth.ping', {}), 'AUTH');
+  const res = ok(sys.env.call('resumeSession', r.device, { ua: 'phone' }));
+  assert.strictEqual(res.user.username, 'teacher1');
+  ok(sys.api(res.token, 'me.dashboard', {}));
+  assert.ok(records(sys, 'AuditLogs').some(a => a.Action === 'LOGIN_REMEMBERED'));
+  // รหัสเครื่องปลอม/ผิดรูปแบบ
+  expectErr(sys.env.call('resumeSession', r.device.slice(0, -1) + (r.device.slice(-1) === 'a' ? 'b' : 'a'), {}), 'AUTH');
+  for (const bad of ['', null, 'abc', { x: 1 }, 'f'.repeat(16) + '.' + 'f'.repeat(64)]) expectErr(sys.env.call('resumeSession', bad, {}), 'AUTH');
+  // ออกจากระบบ → เครื่องนี้เลิกจำ
+  ok(sys.api(res.token, 'auth.logout', {}));
+  expectErr(sys.env.call('resumeSession', r.device, {}), 'AUTH');
+});
+
+test('L10', 'การจำเครื่องสิ้นสุดเมื่อ: เปลี่ยน/รีเซ็ตรหัสผ่าน, ออกจากระบบทุกเครื่อง, ปิดบัญชี, ไม่ใช้งานเกินกำหนด, ครบ 180 วัน, ผู้ดูแลปิดฟีเจอร์', () => {
+  const sys = newSystem({ realSessions: true });
+  const t = addTeacher(sys, 1);
+  const remember = () => ok(sys.env.call('login', 'teacher1', 'Teach3rPass1', { remember: true }));
+  // เปลี่ยนรหัสผ่าน → เครื่องเดิมใช้ไม่ได้ แต่จำเครื่องนี้ใหม่ได้ด้วย auth.rememberDevice
+  let a = remember();
+  const ch = ok(sys.api(a.token, 'auth.changePassword', { currentPassword: 'Teach3rPass1', newPassword: 'NewTeach3rPw', confirmPassword: 'NewTeach3rPw' }));
+  expectErr(sys.env.call('resumeSession', a.device, {}), 'AUTH');
+  const again = ok(sys.api(ch.token, 'auth.rememberDevice', {}));
+  assert.strictEqual(again.days, 30);
+  ok(sys.env.call('resumeSession', again.device, {}));
+  // ผู้ดูแลรีเซ็ตรหัสผ่าน → ใช้ไม่ได้
+  ok(sys.api(sys.admin, 'emp.resetPassword', { employeeId: t.id }));
+  expectErr(sys.env.call('resumeSession', again.device, {}), 'AUTH');
+  addTeacher(sys, 2);
+  const remember2 = () => ok(sys.env.call('login', 'teacher2', 'Teach3rPass2', { remember: true }));
+  // ออกจากระบบทุกเครื่อง
+  a = remember2(); const b = remember2();
+  const out = ok(sys.api(a.token, 'auth.logoutAll', {}));
+  assert.ok(out.loggedOut);
+  expectErr(sys.api(b.token, 'auth.ping', {}), 'AUTH');
+  expectErr(sys.env.call('resumeSession', a.device, {}), 'AUTH');
+  expectErr(sys.env.call('resumeSession', b.device, {}), 'AUTH');
+  assert.ok(records(sys, 'AuditLogs').some(x => x.Action === 'LOGOUT_ALL'));
+  // ไม่ใช้งานเกิน 30 วัน → หมดอายุ; ใช้งานทุก 25 วันต่ออายุได้ แต่ไม่เกิน 180 วันนับจากใส่รหัสผ่าน
+  a = remember2();
+  sys.env.clock.advanceMinutes(31 * 1440);
+  expectErr(sys.env.call('resumeSession', a.device, {}), 'AUTH');
+  a = remember2();
+  for (let i = 1; i <= 8; i++) {
+    sys.env.clock.advanceMinutes(25 * 1440);
+    const r = sys.env.call('resumeSession', a.device, {});
+    if (i <= 7) assert.ok(r.ok, 'day ' + i * 25 + ' ' + r.error); else expectErr(r, 'AUTH'); // วันที่ 200 > 180
+  }
+  // ปิดบัญชี (เวลาผ่านไปกว่า 200 วัน ผู้ดูแลเข้าสู่ระบบใหม่)
+  const adm = ok(sys.login('admin.saohin', ADMIN_PW2)).token;
+  a = remember2();
+  const id2 = records(sys, 'Employees').find(e => e.Username === 'teacher2').EmployeeID;
+  ok(sys.api(adm, 'emp.setStatus', { employeeId: id2, status: 'INACTIVE' }));
+  expectErr(sys.env.call('resumeSession', a.device, {}), 'AUTH');
+  ok(sys.api(adm, 'emp.setStatus', { employeeId: id2, status: 'ACTIVE' }));
+  // ผู้ดูแลปิดฟีเจอร์ (0 วัน) → login ไม่ออกรหัสเครื่อง และรหัสเดิมใช้ไม่ได้
+  a = remember2();
+  ok(sys.api(adm, 'settings.save', { values: { REMEMBER_DEVICE_DAYS: '0' } }));
+  expectErr(sys.env.call('resumeSession', a.device, {}), 'AUTH');
+  assert.strictEqual(remember2().device, null);
+  assert.strictEqual(ok(sys.env.call('getPublicConfig')).rememberDays, 0);
+  expectErr(sys.api(adm, 'settings.save', { values: { REMEMBER_DEVICE_DAYS: '91' } }), 'VALIDATION');
+});
+
 test('L03', 'Token ปลอม/ว่าง/รูปแบบผิด ถูกปฏิเสธ', () => {
   const sys = newSystem();
   for (const tk of ['', null, 'abc', 'a'.repeat(64), sys.admin.slice(0, 63) + 'x', { x: 1 }]) {
@@ -444,7 +521,8 @@ test('A03', 'ฟังก์ชันที่ Browser เรียกได้ 
   const injected = ['Date', 'Intl']; // global ที่ simulator ใส่ให้ ไม่ใช่โค้ดของระบบ
   const publicFns = Object.keys(c).filter(k => typeof c[k] === 'function' && !k.endsWith('_') && !injected.includes(k)).sort();
   assert.deepStrictEqual(publicFns, ['BenchmarkPasswordHashing', 'CreateFirstAdmin', 'DailyMaintenance', 'EmergencyResetAdmin',
-    'SetupSystem', 'api', 'doGet', 'firstRunSetup', 'getPublicConfig', 'include', 'login', 'register', 'requestPasswordReset'].sort());
+    'SetupSystem', 'api', 'doGet', 'firstRunSetup', 'getPublicConfig', 'include', 'login', 'register', 'requestPasswordReset',
+    'resumeSession'].sort());
   assert.throws(() => sys.env.call('recordAttendance_'), /Private/);
 });
 
@@ -674,6 +752,85 @@ test('T14', 'Dashboard บุคลากร: ข้อมูลวันนี�
 });
 
 /* ================================================================== LEAVE */
+/** ข้อมูลการลาสำหรับทดสอบสถิติ/ใบลา/รายงานรอบประเมิน (ปีงบประมาณ 2570 = 1 ต.ค. 69 – 30 ก.ย. 70) */
+function leaveFixture() {
+  const sys = newSystem({ now: '2026-11-09 07:00:00' });
+  const t = addTeacher(sys, 1), t2 = addTeacher(sys, 2);
+  const rec = (p) => ok(sys.api(sys.admin, 'leave.adminCreate', Object.assign({ employeeId: t.id }, p))).leave;
+  const cross = rec({ type: 'SICK', startDate: '2026-09-29', endDate: '2026-10-02' });       // อ.–ศ. 4 วัน: ปีงบ 69 = 2, ปีงบ 70 = 2
+  const sick = rec({ type: 'SICK', startDate: '2026-10-05', endDate: '2026-10-06' });        // 2 วัน
+  const half = rec({ type: 'PERSONAL', startDate: '2026-11-10', endDate: '2026-11-10', period: 'MORNING' }); // 0.5 วัน
+  const r2 = rec({ type: 'SICK', startDate: '2027-04-05', endDate: '2027-04-05' });          // รอบที่ 2
+  const pend = ok(sys.api(t.token, 'leave.submit', { type: 'PERSONAL', startDate: '2026-11-12', endDate: '2026-11-12' })).leave;
+  sys.at('2026-11-09 08:45:00'); ok(sys.api(t.token, 'att.checkIn', INSIDE));              // มาสาย
+  sys.at('2026-11-09 08:10:00'); ok(sys.api(t2.token, 'att.checkIn', INSIDE));
+  sys.at('2026-11-11 18:00:00');                                                              // 11 พ.ย. ไม่มา = ขาดงาน
+  return { sys, t, t2, cross, sick, half, r2, pend };
+}
+
+test('V08', 'สถิติการลาของฉัน: แยกรอบการประเมิน/ทั้งปีงบประมาณ, ใบลาคร่อมปีงบนับเฉพาะส่วนในปี, ไม่นับใบลารออนุมัติ, นับมาสาย/ขาดงาน', () => {
+  const { sys, t } = leaveFixture();
+  const st = ok(sys.api(t.token, 'leave.myStats', {}));
+  assert.strictEqual(st.fiscalYear, 2570); assert.deepStrictEqual(st.options, [2570, 2569, 2568]);
+  const [r1, r2, all] = st.rounds;
+  assert.deepStrictEqual([r1.from, r1.to, r2.from, r2.to, all.from, all.to], ['2026-10-01', '2027-03-31', '2027-04-01', '2027-09-30', '2026-10-01', '2027-09-30']);
+  assert.deepStrictEqual(r1.leaves.SICK, { times: 2, days: 4 });
+  assert.deepStrictEqual(r1.leaves.PERSONAL, { times: 1, days: 0.5 });
+  assert.deepStrictEqual(r2.leaves.SICK, { times: 1, days: 1 });
+  assert.deepStrictEqual(all.leaves.SICK, { times: 3, days: 5 });
+  assert.strictEqual(st.pending, 1);
+  assert.strictEqual(r1.late, 1); assert.strictEqual(r1.absent, 1); assert.strictEqual(r2.late, 0);
+  assert.ok(r1.current && !r2.started);
+  const prev = ok(sys.api(t.token, 'leave.myStats', { fiscalYear: 2569 }));
+  assert.deepStrictEqual(prev.rounds[2].leaves.SICK, { times: 1, days: 2 }); // 29–30 ก.ย. 69
+  assert.strictEqual(ok(sys.api(t.token, 'leave.myStats', { fiscalYear: 'x' })).fiscalYear, 2570);
+});
+
+test('V09', 'ลาคลอดบุตรนับวันต่อเนื่อง (รวมวันหยุด) และไม่มีลาครึ่งวัน; ลาป่วยยังนับเฉพาะวันทำการ', () => {
+  const sys = newSystem();
+  const t = addTeacher(sys, 1);
+  const m = ok(sys.api(sys.admin, 'leave.adminCreate', { employeeId: t.id, type: 'MATERNITY', startDate: '2026-11-14', endDate: '2026-11-15' })).leave; // ส.–อา.
+  assert.strictEqual(m.days, 2); assert.strictEqual(m.period, 'FULL');
+  const h = ok(sys.api(sys.admin, 'leave.adminCreate', { employeeId: t.id, type: 'MATERNITY', startDate: '2026-11-20', endDate: '2026-11-20', period: 'MORNING' })).leave;
+  assert.strictEqual(h.period, 'FULL'); assert.strictEqual(h.days, 1);
+  expectErr(sys.api(sys.admin, 'leave.adminCreate', { employeeId: t.id, type: 'SICK', startDate: '2026-11-21', endDate: '2026-11-22' }), 'VALIDATION'); // ส.–อา. ล้วน
+});
+
+test('V10', 'พิมพ์ใบลา: ข้อมูลตามแบบราชการ (ลามาแล้ว/ครั้งนี้/รวม, ครั้งสุดท้าย, ผู้ลงนาม), แบบลาพักผ่อน, สิทธิ์การเข้าถึง', () => {
+  const { sys, t, t2, half } = leaveFixture();
+  ok(sys.api(sys.admin, 'settings.save', { values: { DIRECTOR_NAME: 'นายสมชาย ใจดี', SCHOOL_AFFILIATION: 'สพป.เชียงใหม่ เขต 1' } }));
+  const lv = ok(sys.api(t.token, 'leave.submit', { type: 'SICK', startDate: '2026-11-16', endDate: '2026-11-16', reason: 'ไข้หวัด' })).leave;
+  assert.strictEqual(lv.printable, true);
+  const f = ok(sys.api(t.token, 'leave.form', { leaveId: lv.leaveId }));
+  assert.strictEqual(f.form, 'GENERAL'); assert.strictEqual(f.title, 'แบบใบลาป่วย ลาคลอดบุตร ลากิจส่วนตัว');
+  assert.strictEqual(f.subject, 'ขอลาป่วย'); assert.strictEqual(f.to, 'ผู้อำนวยการโรงเรียนวัดเสาหิน');
+  assert.strictEqual(f.fullName, 'นางสาวครู ทดสอบที่หนึ่ง'); assert.strictEqual(f.position, 'ครู');
+  assert.strictEqual(f.affiliation, 'โรงเรียนวัดเสาหิน สพป.เชียงใหม่ เขต 1');
+  assert.strictEqual(f.reason, 'ไข้หวัด'); assert.strictEqual(f.startLabel, '16 พฤศจิกายน 2569'); assert.strictEqual(f.days, 1);
+  assert.strictEqual(f.fiscalYear, 2570);
+  assert.deepStrictEqual(f.stats.map(x => [x.type, x.before, x.now, x.total]), [['SICK', 4, 1, 5], ['PERSONAL', 0.5, null, 0.5], ['MATERNITY', 0, null, 0]]);
+  assert.strictEqual(f.last.type, 'PERSONAL'); assert.strictEqual(f.last.days, 0.5); assert.strictEqual(f.last.startLabel, '10 พฤศจิกายน 2569');
+  assert.deepStrictEqual(f.director, { name: 'นายสมชาย ใจดี', position: 'ผู้อำนวยการโรงเรียนวัดเสาหิน' });
+  assert.strictEqual(f.writtenYear, 2569); assert.strictEqual(f.writtenMonth, 'พฤศจิกายน');
+  // ใบลาพักผ่อน
+  const vac = ok(sys.api(t.token, 'leave.submit', { type: 'VACATION', startDate: '2026-12-14', endDate: '2026-12-15' })).leave;
+  const fv = ok(sys.api(t.token, 'leave.form', { leaveId: vac.leaveId }));
+  assert.strictEqual(fv.form, 'VACATION'); assert.strictEqual(fv.subject, 'ขอลาพักผ่อน');
+  assert.deepStrictEqual(fv.stats.map(x => [x.type, x.before, x.now, x.total]), [['VACATION', 0, 2, 2]]);
+  // ผู้ดูแลพิมพ์ให้ได้ / ผู้อื่นไม่ได้
+  ok(sys.api(sys.admin, 'leave.form', { leaveId: lv.leaveId }));
+  expectErr(sys.api(t2.token, 'leave.form', { leaveId: lv.leaveId }), 'FORBIDDEN');
+  assert.ok(records(sys, 'AuditLogs').some(a => a.Action === 'ACCESS_DENIED' && a.TargetID === lv.leaveId));
+  expectErr(sys.api(t.token, 'leave.form', { leaveId: 'LV-NOPE' }), 'NOT_FOUND');
+  // ไปราชการ/ใบลาที่ยกเลิก พิมพ์ไม่ได้
+  const off = ok(sys.api(sys.admin, 'leave.adminCreate', { employeeId: t.id, type: 'OFFICIAL', startDate: '2026-11-18', endDate: '2026-11-18' })).leave;
+  assert.strictEqual(off.printable, false);
+  expectErr(sys.api(t.token, 'leave.form', { leaveId: off.leaveId }), 'VALIDATION');
+  ok(sys.api(t.token, 'leave.cancel', { leaveId: lv.leaveId }));
+  expectErr(sys.api(t.token, 'leave.form', { leaveId: lv.leaveId }), 'VALIDATION');
+  void half;
+});
+
 test('V01', 'ยื่นใบลา: ตรวจสอบข้อมูล (วันที่, ครึ่งวัน, เหตุผล, วันหยุดล้วน, ไฟล์ปลอม)', () => {
   const sys = newSystem();
   const t = addTeacher(sys, 1);
@@ -741,7 +898,7 @@ test('V05', 'ลาแบบง่าย: ย้อนหลังนานไ�
   const old = ok(sys.api(t.token, 'leave.submit', { type: 'PERSONAL', startDate: '2026-03-02', endDate: '2026-03-02' })).leave; // ย้อนหลัง ~8 เดือน ไม่มีเหตุผล
   assert.strictEqual(old.status, 'PENDING'); assert.strictEqual(old.reason, '');
   const mat = ok(sys.api(m.token, 'leave.submit', { type: 'MATERNITY', startDate: '2026-12-01', endDate: '2027-02-28' })).leave;
-  assert.strictEqual(mat.typeLabel, 'ลาคลอดบุตร'); assert.ok(mat.days > 55, mat.days);
+  assert.strictEqual(mat.typeLabel, 'ลาคลอดบุตร'); assert.strictEqual(mat.days, 90); // ลาคลอดบุตรนับวันต่อเนื่อง (รวมวันหยุด)
   const other = ok(sys.api(t.token, 'leave.submit', { type: 'OTHER', typeDetail: 'ลาอุปสมบท', startDate: '2026-11-09', endDate: '2026-11-09' })).leave;
   assert.strictEqual(other.typeLabel, 'ลาอุปสมบท');
   ok(sys.api(sys.admin, 'leave.review', { leaveId: other.leaveId, decision: 'APPROVE' }));
@@ -1104,6 +1261,39 @@ test('P06', 'สร้างตารางสรุปรายวันให�
 });
 
 /* ================================================================== MAINTENANCE / PRIVACY */
+test('P07', 'บัญชีสรุปวันลา มาสาย ขาดงาน รายรอบการประเมิน + ส่งออก Excel (ผู้ลงนามจากการตั้งค่า); บุคลากรทั่วไปเรียกไม่ได้', () => {
+  const { sys, t, t2 } = leaveFixture();
+  ok(sys.api(sys.admin, 'settings.save', { values: { DIRECTOR_NAME: 'นายสมชาย ใจดี' } }));
+  const rep = ok(sys.api(sys.admin, 'report.leaveSummary', { fiscalYear: 2570, round: 1 }));
+  assert.ok(rep.periodLabel.startsWith('รอบที่ 1 ปีงบประมาณ 2570'), rep.periodLabel);
+  assert.ok(/รอบยังไม่สิ้นสุด/.test(rep.notice));
+  assert.deepStrictEqual(rep.signer, { name: 'นายสมชาย ใจดี', position: 'ผู้อำนวยการโรงเรียนวัดเสาหิน' });
+  const row = rep.tables[0].rows.find(r => r.employeeId === t.id);
+  assert.deepStrictEqual([row.sickT, row.sickD, row.persT, row.persD, row.spT, row.spD, row.late, row.absent], [2, 4, 1, 0.5, 3, 4.5, 1, 1]);
+  const row2 = rep.tables[0].rows.find(r => r.employeeId === t2.id);
+  assert.deepStrictEqual([row2.spT, row2.late], [0, 0]);
+  const r2 = ok(sys.api(sys.admin, 'report.leaveSummary', { fiscalYear: 2570, round: 2 }));
+  assert.strictEqual(r2.tables[0].rows.find(r => r.employeeId === t.id).sickD, 1);
+  assert.strictEqual(r2.notice, 'รอบนี้ยังไม่เริ่ม');
+  const all = ok(sys.api(sys.admin, 'report.leaveSummary', { fiscalYear: 2570, round: 0 }));
+  assert.strictEqual(all.tables[0].rows.find(r => r.employeeId === t.id).sickD, 5);
+  const x = ok(sys.api(sys.admin, 'report.export', { reportType: 'leaveSummary', params: { fiscalYear: 2570, round: 1 }, format: 'xlsx' }));
+  assert.strictEqual(x.fileName, 'WatSaoHin_Attendance_LeaveSummary_FY2570_R1.xlsx');
+  const tmp = [...sys.env.state.driveFiles.values()].filter(f => /^TEMP-/.test(f.name || ''));
+  assert.ok(tmp.length && tmp.every(f => f.trashed));
+  expectErr(sys.api(t.token, 'report.leaveSummary', { fiscalYear: 2570, round: 1 }), 'FORBIDDEN');
+});
+
+test('M09', 'ตั้งค่าชื่อผู้อำนวยการ/ตำแหน่ง/สังกัด: ตรวจความยาว, เก็บเป็นข้อความ (กันสูตร), แสดงในรายงานพิมพ์', () => {
+  const sys = newSystem();
+  expectErr(sys.api(sys.admin, 'settings.save', { values: { DIRECTOR_NAME: 'ก'.repeat(81) } }), 'VALIDATION');
+  ok(sys.api(sys.admin, 'settings.save', { values: { DIRECTOR_NAME: '=HYPERLINK("x")', SCHOOL_AFFILIATION: '  สพป.  เชียงใหม่ ' } }));
+  const v = ok(sys.api(sys.admin, 'settings.get', {})).values;
+  assert.strictEqual(v.DIRECTOR_NAME, '=HYPERLINK("x")'); assert.strictEqual(v.SCHOOL_AFFILIATION, 'สพป. เชียงใหม่');
+  assert.strictEqual(v.DIRECTOR_POSITION, 'ผู้อำนวยการโรงเรียนวัดเสาหิน');
+  assert.strictEqual(records(sys, 'Settings').find(r => r.Key === 'DIRECTOR_NAME').Value, '=HYPERLINK("x")'); // เก็บเป็นข้อความ ไม่ใช่สูตร
+});
+
 test('D01', 'ลบพิกัด GPS อัตโนมัติเมื่อเกินระยะเวลาเก็บรักษา (คงระยะทาง/เวลาไว้)', () => {
   const sys = newSystem();
   const t = addTeacher(sys, 1);

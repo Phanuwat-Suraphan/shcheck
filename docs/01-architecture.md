@@ -264,3 +264,7 @@ flowchart LR
 | Admin: ภาพรวม | Admin: รายงานรายเดือน |
 |---|---|
 | ![](screenshots/07-admin-overview-desktop.png) | ![](screenshots/08-report-monthly-desktop.png) |
+
+| ใบลาแบบราชการ (พิมพ์ A4) | มือถือ: สถิติการลา | มือถือ: ตัวอักษรใหญ่มาก | ผู้บริหาร: สรุปวันลา/มาสายรายรอบ |
+|---|---|---|---|
+| ![](screenshots/14-leave-form-print.png) | ![](screenshots/15-leave-stats-mobile.png) | ![](screenshots/16-large-text-mobile.png) | ![](screenshots/17-leave-summary-desktop.png) |

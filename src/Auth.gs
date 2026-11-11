@@ -241,17 +241,10 @@ function login(username, password, clientInfo) {
       if (newHash) patch.PasswordHash = newHash;
       return updateById_('Employees', 'EmployeeID', emp.EmployeeID, patch);
     });
-    var token = createSession_(emp, clientInfo);
-    writeAudit_({ user: emp }, 'LOGIN', 'Employee', emp.EmployeeID, { rehashed: !!newHash });
-    return {
-      ok: true,
-      data: {
-        token: token,
-        user: publicUser_(emp),
-        mustChangePassword: !!emp.MustChangePassword,
-        sessionTimeoutMin: s.sessionTimeoutMin
-      }
-    };
+    var remember = !!(clientInfo && typeof clientInfo === 'object' && clientInfo.remember) && s.rememberDays > 0;
+    var sess = createSessionEx_(emp, clientInfo, { remember: remember });
+    writeAudit_({ user: emp }, 'LOGIN', 'Employee', emp.EmployeeID, { rehashed: !!newHash, remember: remember });
+    return { ok: true, data: sessionPayload_(emp, sess, s) };
   } catch (err) {
     return toErrorResponse_(err, 'login');
   }
@@ -311,19 +304,134 @@ function requestPasswordReset(form) {
 /* ========================================================================== */
 
 function sessionKey_(token) { return 'sess_' + sha256Hex_('session:' + token); }
+function deviceKeyHash_(secret) { return sha256Hex_('device:' + secret); }
 
-function createSession_(emp, clientInfo) {
-  var s = getSettings_();
+/** เก็บ Session ใน CacheService → token (ref = รหัสอ้างอิงแถวในชีต Sessions) */
+function putCacheSession_(emp, ref) {
   var token = randomHex_(32);
-  var key = sessionKey_(token);
-  var sess = { uid: emp.EmployeeID, sv: Number(emp.SessionVersion) || 0, iat: nowMs_(), ref: key.substr(5, 16) };
-  CacheService.getScriptCache().put(key, JSON.stringify(sess), s.sessionTimeoutMin * 60);
+  var sess = { uid: emp.EmployeeID, sv: Number(emp.SessionVersion) || 0, iat: nowMs_(), ref: ref || sessionKey_(token).substr(5, 16) };
+  CacheService.getScriptCache().put(sessionKey_(token), JSON.stringify(sess), getSettings_().sessionTimeoutMin * 60);
+  return { token: token, ref: sess.ref };
+}
+
+/**
+ * สร้าง Session ใหม่ + บันทึกประวัติในชีต Sessions
+ * opts.remember = จดจำการเข้าสู่ระบบบนอุปกรณ์นี้ → คืน device token (ref.secret) ให้ Browser เก็บไว้
+ * Server เก็บเฉพาะ SHA-256 ของ secret
+ */
+function createSessionEx_(emp, clientInfo, opts) {
+  var s = getSettings_();
+  var c = putCacheSession_(emp, null);
   var ua = clientInfo && typeof clientInfo === 'object' ? cleanLine_(clientInfo.ua, 250) : '';
-  appendRecord_('Sessions', {
-    SessionRef: sess.ref, EmployeeID: emp.EmployeeID, Username: emp.Username,
-    LoginAt: nowStamp_(), LogoutAt: '', EndReason: '', UserAgent: ua
+  var rec = {
+    SessionRef: c.ref, EmployeeID: emp.EmployeeID, Username: emp.Username,
+    LoginAt: nowStamp_(), LogoutAt: '', EndReason: '', UserAgent: ua,
+    RememberUntil: '', DeviceKeyHash: '', SessionVersion: Number(emp.SessionVersion) || 0, LastSeenAt: ''
+  };
+  var device = null;
+  if (opts && opts.remember && s.rememberDays > 0) {
+    var secret = randomHex_(32);
+    rec.DeviceKeyHash = deviceKeyHash_(secret);
+    rec.RememberUntil = msToStamp_(nowMs_() + s.rememberDays * 86400000);
+    device = c.ref + '.' + secret;
+  }
+  appendRecord_('Sessions', rec);
+  return { token: c.token, device: device };
+}
+
+function createSession_(emp, clientInfo) { return createSessionEx_(emp, clientInfo, null).token; }
+
+function sessionPayload_(emp, sess, s) {
+  return {
+    token: sess.token,
+    device: sess.device || null,
+    user: publicUser_(emp),
+    mustChangePassword: !!emp.MustChangePassword,
+    sessionTimeoutMin: s.sessionTimeoutMin
+  };
+}
+
+function stampToMs_(stamp) {
+  var m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(String(stamp || ''));
+  if (!m) return NaN;
+  return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4] - 7, +m[5], +m[6]); // Asia/Bangkok = UTC+7 (ไม่มีเวลาออมแสง)
+}
+function msToStamp_(ms) { return fmt_(new Date(ms), 'yyyy-MM-dd HH:mm:ss'); }
+
+/** อายุสูงสุดของการจดจำอุปกรณ์นับจากการเข้าสู่ระบบด้วยรหัสผ่าน (วัน) */
+var REMEMBER_MAX_DAYS_ = 180;
+
+/**
+ * เข้าสู่ระบบอัตโนมัติบน "อุปกรณ์ที่จดจำไว้" (ฟังก์ชันสาธารณะ — ไม่ต้องกรอกรหัสผ่าน)
+ * ใช้ไม่ได้เมื่อ: ออกจากระบบ, เปลี่ยน/รีเซ็ตรหัสผ่าน, ออกจากระบบทุกอุปกรณ์, บัญชีถูกปิด,
+ *               ไม่ได้ใช้งานเกิน REMEMBER_DEVICE_DAYS วัน หรือเกิน 180 วันนับจากเข้าสู่ระบบด้วยรหัสผ่าน
+ * @param {string} deviceToken 'ref(16 hex).secret(64 hex)'
+ */
+function resumeSession(deviceToken, clientInfo) {
+  resetMemo_();
+  try {
+    ensureReady_();
+    var m = /^([a-f0-9]{16})\.([a-f0-9]{64})$/.exec(String(deviceToken || ''));
+    if (!m) throw appError_('กรุณาเข้าสู่ระบบ', 'AUTH');
+    var cache = CacheService.getScriptCache();
+    var failKey = 'resume_fail_' + fmt_(now_(), 'yyyyMMddHH');
+    var fails = parseInt(cache.get(failKey) || '0', 10);
+    if (fails >= 300) throw appError_('กรุณาเข้าสู่ระบบด้วยชื่อผู้ใช้และรหัสผ่าน', 'AUTH');
+    var expired = function () {
+      cache.put(failKey, String(fails + 1), 3700);
+      return appError_('การจดจำเครื่องนี้สิ้นสุดแล้ว กรุณาเข้าสู่ระบบด้วยรหัสผ่านอีกครั้ง', 'AUTH');
+    };
+    var s = getSettings_();
+    if (!s.rememberDays) throw expired();
+    var rec = findOne_('Sessions', 'SessionRef', m[1]);
+    if (!rec || !rec.DeviceKeyHash || rec.LogoutAt) throw expired();
+    if (!constantTimeEquals_(String(rec.DeviceKeyHash), deviceKeyHash_(m[2]))) throw expired();
+    var nowMs = nowMs_();
+    var until = stampToMs_(rec.RememberUntil);
+    if (!(until > nowMs)) throw expired();
+    var emp = getEmployeeById_(rec.EmployeeID);
+    if (!emp || emp.Status !== EMP_STATUS.ACTIVE || (Number(emp.SessionVersion) || 0) !== (Number(rec.SessionVersion) || 0)) throw expired();
+    var cap = stampToMs_(rec.LoginAt) + REMEMBER_MAX_DAYS_ * 86400000;
+    var nextUntil = Math.min(nowMs + s.rememberDays * 86400000, isFinite(cap) ? cap : nowMs);
+    withLock_(function () {
+      updateRecord_('Sessions', rec._row, { LastSeenAt: nowStamp_(), RememberUntil: msToStamp_(nextUntil) });
+    });
+    var c = putCacheSession_(emp, rec.SessionRef);
+    writeAudit_({ user: emp }, 'LOGIN_REMEMBERED', 'Employee', emp.EmployeeID, { ref: rec.SessionRef });
+    return { ok: true, data: sessionPayload_(emp, { token: c.token, device: deviceToken }, s) };
+  } catch (err) {
+    return toErrorResponse_(err, 'resumeSession');
+  }
+}
+
+/** เปิดการจดจำอุปกรณ์ให้ Session ปัจจุบัน (ใช้หลังเปลี่ยนรหัสผ่าน หรือเลือกภายหลังจากหน้าบัญชีผู้ใช้) */
+function rememberDevice_(ctx) {
+  if (!ctx.settings.rememberDays) throw appError_('ผู้ดูแลระบบปิดการจดจำการเข้าสู่ระบบไว้', 'VALIDATION');
+  var secret = randomHex_(32);
+  var ok = withLock_(function () {
+    var rec = findOne_('Sessions', 'SessionRef', ctx.sess.ref);
+    if (!rec || rec.LogoutAt) return false;
+    updateRecord_('Sessions', rec._row, {
+      DeviceKeyHash: deviceKeyHash_(secret), SessionVersion: Number(ctx.user.SessionVersion) || 0,
+      RememberUntil: msToStamp_(nowMs_() + ctx.settings.rememberDays * 86400000)
+    });
+    return true;
   });
-  return token;
+  if (!ok) throw appError_('กรุณาเข้าสู่ระบบใหม่', 'AUTH');
+  return { device: ctx.sess.ref + '.' + secret, days: ctx.settings.rememberDays };
+}
+
+/** ออกจากระบบทุกอุปกรณ์ (เช่น โทรศัพท์หาย) — ยกเลิกการจดจำทุกเครื่องด้วย */
+function logoutAll_(ctx) {
+  withLock_(function () {
+    updateById_('Employees', 'EmployeeID', ctx.user.EmployeeID, {
+      SessionVersion: (Number(ctx.user.SessionVersion) || 0) + 1, UpdatedAt: nowStamp_()
+    });
+  });
+  CacheService.getScriptCache().remove(ctx.sessionKey);
+  endSessionLog_(ctx.sess.ref, 'LOGOUT_ALL');
+  writeAudit_(ctx, 'LOGOUT_ALL', 'Employee', ctx.user.EmployeeID, null);
+  return { loggedOut: true, message: 'ออกจากระบบทุกอุปกรณ์แล้ว' };
 }
 
 /**

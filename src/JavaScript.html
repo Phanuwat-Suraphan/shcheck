@@ -87,6 +87,14 @@
       if (!opts.silent) hideLoading();
       if (!res) throw appErr('ไม่ได้รับข้อมูลจากเซิร์ฟเวอร์', 'EMPTY');
       if (!res.ok) {
+        if (res.code === 'AUTH' && !opts.retried && S.token && hasDevice() && action !== 'auth.logout') {
+          // เครื่องที่จำการเข้าสู่ระบบไว้: เข้าสู่ระบบใหม่อัตโนมัติแล้วทำคำสั่งเดิมต่อ
+          return silentResume().then(function (ok) {
+            if (ok) return api(action, params, { silent: opts.silent, loadingText: opts.loadingText, retried: true });
+            forceLogout(res.error);
+            throw appErr(res.error, res.code, res.data);
+          });
+        }
         if (res.code === 'AUTH') { forceLogout(res.error); }
         else if (res.code === 'MUST_CHANGE_PASSWORD') { showView('force-password'); }
         throw appErr(res.error, res.code, res.data);
@@ -94,6 +102,56 @@
       S.lastApi = Date.now();
       return res.data;
     }, function (e) { if (!opts.silent) hideLoading(); throw e; });
+  }
+
+  /* ---------- จำการเข้าสู่ระบบบนเครื่องนี้ ---------- */
+  function hasDevice() { return !!local.get('wsh_device'); }
+  function clientInfo(extra) {
+    var o = { ua: navigator.userAgent.substr(0, 240) };
+    if (extra) Object.keys(extra).forEach(function (k) { o[k] = extra[k]; });
+    return o;
+  }
+  /** เข้าสู่ระบบใหม่เงียบ ๆ ด้วยรหัสอุปกรณ์ที่จำไว้ → Promise<boolean> (เรียกพร้อมกันหลายจุดใช้ผลเดียวกัน) */
+  function silentResume() {
+    var dev = local.get('wsh_device');
+    if (!dev) return Promise.resolve(false);
+    if (!S.resuming) {
+      S.resuming = run('resumeSession', [dev, clientInfo()]).then(function (res) {
+        S.resuming = null;
+        if (res && res.ok) {
+          S.token = res.data.token; session.set('wsh_token', S.token); S.lastApi = Date.now();
+          S.timeoutMin = res.data.sessionTimeoutMin || S.timeoutMin;
+          return res.data;
+        }
+        if (res && res.code === 'AUTH') local.del('wsh_device');
+        return false;
+      }, function () { S.resuming = null; return false; });
+    }
+    return S.resuming;
+  }
+  function setDevice(dev) { if (dev) local.set('wsh_device', dev); else local.del('wsh_device'); }
+  /* ---------- ขนาดตัวอักษร (เก็บในเครื่องนี้) ---------- */
+  var FONT_SCALES = ['1', '1.125', '1.25'];
+  function applyFontScale(v) {
+    if (FONT_SCALES.indexOf(v) < 0) v = '1';
+    document.documentElement.style.fontSize = v === '1' ? '' : (parseFloat(v) * 100) + '%';
+    $$('#fontSizeSeg button').forEach(function (b) { b.classList.toggle('active', b.getAttribute('data-val') === v); });
+  }
+  function bindFontScale() {
+    applyFontScale(local.get('wsh_font') || '1');
+    $$('#fontSizeSeg button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var v = b.getAttribute('data-val');
+        local.set('wsh_font', v); applyFontScale(v);
+        toast('เปลี่ยนขนาดตัวอักษรแล้ว', 'success', 1800);
+      });
+    });
+  }
+  /** ค่าเริ่มต้นของช่อง "จำการเข้าสู่ระบบ": เลือกไว้บนโทรศัพท์/แท็บเล็ต ไม่เลือกบนคอมพิวเตอร์ */
+  function rememberDefault() {
+    var pref = local.get('wsh_remember');
+    if (pref === '1' || pref === '0') return pref === '1';
+    try { return window.matchMedia('(pointer: coarse)').matches; } catch (e) { return false; }
   }
   function publicCall(fn, args, loadingText) {
     showLoading(loadingText);
@@ -359,6 +417,7 @@
   /* ------------------------------------------------------------------ boot */
   function boot() {
     bindStatic();
+    bindFontScale();
     $('#bootText').textContent = 'กำลังเชื่อมต่อเซิร์ฟเวอร์...';
     run('getPublicConfig', []).then(function (res) {
       if (!res || !res.ok) throw appErr(res ? res.error : 'โหลดข้อมูลไม่สำเร็จ');
@@ -373,6 +432,13 @@
         S.token = token;
         return api('auth.session', {}, { silent: true }).then(enterApp).catch(function () { clearSession(); showLogin(); });
       }
+      if (hasDevice() && S.cfg.setupComplete) {
+        $('#bootText').textContent = 'กำลังเข้าสู่ระบบอัตโนมัติ...';
+        return silentResume().then(function (data) {
+          if (data) enterApp(data);
+          else { showLogin(); showLoginAlert(hasDevice() ? 'เชื่อมต่อไม่สำเร็จ กรุณาลองใหม่ หรือเข้าสู่ระบบด้วยรหัสผ่าน' : 'กรุณาเข้าสู่ระบบอีกครั้ง (การจำเครื่องนี้สิ้นสุดแล้ว)'); }
+        });
+      }
       showLogin();
     }).catch(function (e) {
       showLogin();
@@ -382,7 +448,10 @@
 
   function showLogin() {
     var remembered = local.get('wsh_user');
-    if (remembered) { $('#loginUsername').value = remembered; $('#rememberUser').checked = true; }
+    if (remembered) $('#loginUsername').value = remembered;
+    $('#rememberMe').checked = rememberDefault();
+    $('#rememberHint').hidden = S.cfg && S.cfg.rememberDays === 0;
+    $('#rememberMe').closest('label').hidden = S.cfg && S.cfg.rememberDays === 0;
     showView('login');
     setTimeout(function () { (remembered ? $('#loginPassword') : $('#loginUsername')).focus(); }, 60);
   }
@@ -417,6 +486,11 @@
     $('#pwForm').addEventListener('submit', function (e) { submitPasswordChange(e, false); });
     $('#logoutBtn').addEventListener('click', doLogout);
     $('#logoutBtn2').addEventListener('click', doLogout);
+    $('#accRememberBtn').addEventListener('click', rememberThisDevice);
+    $('#accLogoutAllBtn').addEventListener('click', logoutAllDevices);
+    $('#accHomeIconBtn').addEventListener('click', openHomeIconGuide);
+    $('#homeTipBtn').addEventListener('click', openHomeIconGuide);
+    $('#homeTipClose').addEventListener('click', function () { local.set('wsh_tip_home', '1'); renderHomeTip(); });
     $('#toAdminBtn').addEventListener('click', openAdmin);
     $$('#userTabs [data-tab]').forEach(function (b) { b.addEventListener('click', function () { switchTab(b.getAttribute('data-tab')); }); });
     $('#checkInBtn').addEventListener('click', function () { doAttendance('IN'); });
@@ -426,6 +500,7 @@
     $('#histMonth').addEventListener('change', loadHistory);
     $('#histYear').addEventListener('change', loadHistory);
     bindLeaveForm();
+    $('#lvStatsFy').addEventListener('change', loadLeaveStats);
     bindCorrectionForm();
     ['click', 'keydown', 'touchstart'].forEach(function (ev) { document.addEventListener(ev, onUserActivity, { passive: true }); });
     setInterval(checkIdle, 20000);
@@ -439,10 +514,13 @@
     if (!u || !p) { showLoginAlert('กรุณากรอกชื่อผู้ใช้และรหัสผ่าน'); return; }
     var btn = $('#loginBtn');
     setBtnLoading(btn, true);
-    run('login', [u, p, { ua: navigator.userAgent.substr(0, 240) }]).then(function (res) {
+    var remember = $('#rememberMe').checked && !$('#rememberMe').closest('label').hidden;
+    run('login', [u, p, clientInfo({ remember: remember })]).then(function (res) {
       setBtnLoading(btn, false);
       if (!res || !res.ok) { showLoginAlert(res ? res.error : 'เข้าสู่ระบบไม่สำเร็จ'); $('#loginPassword').select(); return; }
-      if ($('#rememberUser').checked) local.set('wsh_user', u); else local.del('wsh_user');
+      local.set('wsh_remember', remember ? '1' : '0');
+      if (remember) local.set('wsh_user', u); else local.del('wsh_user');
+      setDevice(res.data.device);
       $('#loginPassword').value = '';
       S.token = res.data.token;
       session.set('wsh_token', S.token);
@@ -463,6 +541,8 @@
       return;
     }
     renderUserChrome();
+    renderDeviceBox();
+    renderHomeTip();
     showView('app');
     switchTab('home', true);
   }
@@ -592,9 +672,10 @@
   }
 
   function doLogout() {
-    confirmDialog({ title: 'ออกจากระบบ', message: 'ต้องการออกจากระบบใช่หรือไม่', confirmText: 'ออกจากระบบ', icon: 'logout' }).then(function (yes) {
+    confirmDialog({ title: 'ออกจากระบบ', message: hasDevice() ? 'ต้องการออกจากระบบใช่หรือไม่ (เครื่องนี้จะเลิกจำการเข้าสู่ระบบ ครั้งหน้าต้องใส่รหัสผ่าน)' : 'ต้องการออกจากระบบใช่หรือไม่', confirmText: 'ออกจากระบบ', icon: 'logout' }).then(function (yes) {
       if (!yes) return;
       var t = S.token;
+      setDevice(null);
       clearSession();
       showLogin();
       if (t) run('api', [t, 'auth.logout', {}]).catch(function () { /* ignore */ });
@@ -611,7 +692,57 @@
     }
   }
   function checkIdle() {
-    if (S.token && Date.now() - S.lastApi > S.timeoutMin * 60000) forceLogout('ออกจากระบบอัตโนมัติ เนื่องจากไม่ได้ใช้งานเกิน ' + S.timeoutMin + ' นาที');
+    // เครื่องที่จำการเข้าสู่ระบบไว้: ไม่ต้องออกจากระบบ ระบบจะเข้าสู่ระบบใหม่ให้อัตโนมัติเมื่อใช้งาน
+    if (S.token && !hasDevice() && Date.now() - S.lastApi > S.timeoutMin * 60000) forceLogout('ออกจากระบบอัตโนมัติ เนื่องจากไม่ได้ใช้งานเกิน ' + S.timeoutMin + ' นาที');
+  }
+
+  /* ---------- บัญชี: เครื่องนี้ / ทุกเครื่อง / ไอคอนหน้าจอ ---------- */
+  function renderDeviceBox() {
+    var on = hasDevice();
+    var off = S.cfg && S.cfg.rememberDays === 0;
+    $('#accDeviceIcon').textContent = on ? 'verified_user' : 'smartphone';
+    $('#accDeviceText').textContent = on ? 'จำการเข้าสู่ระบบไว้แล้ว — เปิดแอปแล้วใช้งานได้ทันที (กด “ออกจากระบบ” เพื่อเลิกจำ)'
+      : (off ? 'ผู้ดูแลระบบปิดการจำการเข้าสู่ระบบไว้' : 'ยังไม่ได้จำ — ต้องใส่รหัสผ่านทุกครั้งที่เปิดแอป');
+    $('#accRememberBtn').hidden = on || off;
+  }
+  function rememberThisDevice() {
+    api('auth.rememberDevice', {}, { loadingText: 'กำลังบันทึก...' }).then(function (r) {
+      setDevice(r.device); local.set('wsh_remember', '1');
+      if (S.user) local.set('wsh_user', S.user.username);
+      renderDeviceBox();
+      toast('เครื่องนี้จะจำการเข้าสู่ระบบไว้ ' + r.days + ' วันนับจากใช้งานล่าสุด', 'success', 5000);
+    }).catch(function (e) { if (e.code !== 'AUTH') toast(e.message, 'error'); });
+  }
+  function logoutAllDevices() {
+    confirmDialog({ title: 'ออกจากระบบทุกเครื่อง', message: 'ใช้เมื่อโทรศัพท์หายหรือเคยเข้าระบบบนเครื่องผู้อื่น — ทุกเครื่อง (รวมเครื่องนี้) จะออกจากระบบและเลิกจำการเข้าสู่ระบบ', confirmText: 'ออกจากระบบทุกเครื่อง', danger: true, icon: 'devices' }).then(function (yes) {
+      if (!yes) return;
+      api('auth.logoutAll', {}, { loadingText: 'กำลังออกจากระบบ...' }).then(function (r) {
+        setDevice(null); clearSession(); showLogin(); toast(r.message, 'success', 5000);
+      }).catch(function (e) { if (e.code !== 'AUTH') toast(e.message, 'error'); });
+    });
+  }
+  function isIOS() { return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); }
+  function openHomeIconGuide() {
+    var ios = isIOS();
+    var steps = ios
+      ? ['เปิดลิงก์ระบบด้วย <b>Safari</b>', 'แตะปุ่ม <b>แชร์</b> ' + icon('ios_share') + ' (ด้านล่างหรือด้านบนของจอ)', 'เลือก <b>เพิ่มไปยังหน้าจอโฮม</b> แล้วแตะ <b>เพิ่ม</b>']
+      : ['เปิดลิงก์ระบบด้วย <b>Chrome</b>', 'แตะปุ่ม <b>เมนู</b> ' + icon('more_vert') + ' มุมขวาบน', 'เลือก <b>เพิ่มลงในหน้าจอหลัก</b> แล้วแตะ <b>เพิ่ม</b>'];
+    modal({
+      title: 'เพิ่มไอคอนไว้บนหน้าจอ', icon: 'add_to_home_screen',
+      body: '<p class="mb-0">ครั้งต่อไปแตะไอคอนเดียวก็เปิดหน้าลงเวลาได้เลย ไม่ต้องหาลิงก์</p>' +
+        '<ol class="howto">' + steps.map(function (s) { return '<li>' + s + '</li>'; }).join('') + '</ol>' +
+        '<p class="small muted mb-0">' + (ios ? 'ใช้ Android? แตะเมนู ⋮ ใน Chrome → เพิ่มลงในหน้าจอหลัก' : 'ใช้ iPhone? เปิดด้วย Safari → ปุ่มแชร์ → เพิ่มไปยังหน้าจอโฮม') +
+        ' · แนะนำให้เลือก “จำการเข้าสู่ระบบบนเครื่องนี้” ด้วย จะได้ไม่ต้องใส่รหัสผ่านทุกวัน</p>',
+      actions: [{ label: 'เข้าใจแล้ว', onClick: function () { local.set('wsh_tip_home', '1'); renderHomeTip(); } }]
+    });
+  }
+  /** แถบแนะนำบนหน้าแรก (แสดงจนกว่าจะกดดูวิธี หรือปิด) */
+  function renderHomeTip() {
+    var el = $('#homeTip');
+    if (!el) return;
+    var touch = false;
+    try { touch = window.matchMedia('(pointer: coarse)').matches; } catch (e) { /* ignore */ }
+    el.hidden = !touch || local.get('wsh_tip_home') === '1';
   }
 
   /* ---------- Register ---------- */
@@ -708,6 +839,11 @@
       S.token = r.token;
       session.set('wsh_token', S.token);
       toast(r.message + ' — ระบบได้ออกจากระบบบนอุปกรณ์อื่นทั้งหมดแล้ว', 'success', 5000);
+      // รหัสผ่านใหม่ทำให้การจำเครื่องเดิมใช้ไม่ได้ → จำเครื่องนี้ใหม่ (ถ้าผู้ใช้เลือกจำไว้)
+      if (hasDevice() || (forced && local.get('wsh_remember') === '1')) {
+        setDevice(null);
+        api('auth.rememberDevice', {}, { silent: true }).then(function (x) { setDevice(x.device); renderDeviceBox(); }).catch(function () { /* ใช้งานต่อได้ตามปกติ */ });
+      }
       if (forced) enterApp({ user: r.user, sessionTimeoutMin: S.timeoutMin, mustChangePassword: false });
     }).catch(function (err) { setBtnLoading(btn, false); if (err.code !== 'AUTH') handleFormError(f, err); });
   }
@@ -1210,7 +1346,8 @@
       '<div class="meta">' + (l.recordedBy ? 'บันทึกโดย ' + esc(l.recordedBy) + ' ' : 'ยื่นเมื่อ ') + esc(l.requestedLabel) +
         (l.reviewedByName && l.reviewedByName !== l.recordedBy ? ' · พิจารณาโดย ' + esc(l.reviewedByName) + ' ' + esc(l.reviewedLabel) : '') + '</div>' +
       (l.reviewNote ? '<div class="meta">ความเห็น: ' + esc(l.reviewNote) + '</div>' : '') +
-      '<div class="actions">' + (l.hasAttachment ? '<button type="button" class="btn outline sm" data-view-att="leave" data-id="' + esc(l.leaveId) + '">' + icon('attach_file') + 'เอกสารแนบ</button>' : '') +
+      '<div class="actions">' + (l.printable ? '<button type="button" class="btn outline sm" data-print-leave="' + esc(l.leaveId) + '">' + icon('print') + 'พิมพ์ใบลา</button>' : '') +
+      (l.hasAttachment ? '<button type="button" class="btn outline sm" data-view-att="leave" data-id="' + esc(l.leaveId) + '">' + icon('attach_file') + 'เอกสารแนบ</button>' : '') +
       (mine && l.cancellable ? '<button type="button" class="btn ghost sm" data-cancel-leave="' + esc(l.leaveId) + '">' + icon('close') + 'ยกเลิกใบลา</button>' : '') + '</div></div>';
   }
   function loadMyLeaves() {
@@ -1219,8 +1356,124 @@
       host.innerHTML = list.length ? list.map(function (l) { return leaveCard(l, true); }).join('') : emptyState('ยังไม่มีรายการลา', 'event_available');
       bindRequestButtons(host, loadMyLeaves);
     }).catch(function (e) { if (e.code !== 'AUTH') toast(e.message, 'error'); });
+    loadLeaveStats();
+  }
+
+  /* ---------- สถิติการลา (ปีงบประมาณ / รอบการประเมิน) ---------- */
+  function loadLeaveStats() {
+    var sel = $('#lvStatsFy');
+    api('leave.myStats', { fiscalYear: sel.value || '' }, { silent: true }).then(function (st) {
+      if (!sel.options.length) {
+        sel.innerHTML = st.options.map(function (y) { return '<option value="' + y + '">ปีงบประมาณ ' + y + '</option>'; }).join('');
+      }
+      sel.value = String(st.fiscalYear);
+      renderLeaveStats(st);
+    }).catch(function (e) { if (e.code !== 'AUTH') $('#lvStats').innerHTML = '<div class="small muted">โหลดสถิติไม่สำเร็จ</div>'; });
+  }
+  function renderLeaveStats(st) {
+    var r1 = st.rounds[0], r2 = st.rounds[1], all = st.rounds[2];
+    function cell(r, v, unit, times) {
+      if (!v) return '<td class="c muted">' + (r.started ? '0' : '–') + '</td>';
+      return '<td class="c"><b>' + esc(v) + '</b> ' + unit + (times ? '<div class="tiny muted">' + times + ' ครั้ง</div>' : '') + '</td>';
+    }
+    var rows = st.types.filter(function (t) {
+      // แสดงลาป่วย/ลากิจเสมอ ประเภทอื่นแสดงเมื่อมีการลา
+      return t.type === 'SICK' || t.type === 'PERSONAL' || all.leaves[t.type].times > 0;
+    }).map(function (t) {
+      return '<tr><td>' + esc(t.label) + '</td>' + [r1, r2, all].map(function (r) {
+        var x = r.leaves[t.type]; return cell(r, x.days, 'วัน', x.times);
+      }).join('') + '</tr>';
+    }).join('') +
+      '<tr><td>มาสาย</td>' + [r1, r2, all].map(function (r) { return cell(r, r.late, 'ครั้ง'); }).join('') + '</tr>' +
+      (all.absent ? '<tr><td>ขาดงาน</td>' + [r1, r2, all].map(function (r) { return cell(r, r.absent, 'วัน'); }).join('') + '</tr>' : '');
+    function head(r, title) { return '<th class="c' + (r.current ? ' cur' : '') + '">' + title + '<div class="th-sub">' + esc(r.shortLabel) + '</div></th>'; }
+    $('#lvStats').innerHTML = '<div class="table-wrap"><table class="table compact stats-table"><thead><tr><th>ประเภท</th>' +
+      head(r1, 'รอบที่ 1') + head(r2, 'รอบที่ 2') + head({ shortLabel: 'ทั้งปี' }, 'รวม') + '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+      '<p class="tiny muted" style="margin:8px 0 0">นับเฉพาะใบลาที่อนุมัติแล้ว · ลาป่วย/ลากิจนับวันทำการ' +
+      (st.pending ? ' · <b>มีใบลารออนุมัติ ' + st.pending + ' รายการ (ยังไม่นับ)</b>' : '') + '</p>';
+  }
+
+  /* ---------- พิมพ์ใบลา (แบบของทางราชการ) ---------- */
+  function bindPrintLeave(host) {
+    $$('[data-print-leave]', host).forEach(function (b) {
+      b.addEventListener('click', function () { printLeaveForm(b.getAttribute('data-print-leave')); });
+    });
+  }
+  function printLeaveForm(leaveId) {
+    api('leave.form', { leaveId: leaveId }, { loadingText: 'กำลังเตรียมใบลา...' }).then(function (f) {
+      printHtml(leaveFormHtml(f), 'portrait');
+    }).catch(function (e) { if (e.code !== 'AUTH') toast(e.message, 'error', 5000); });
+  }
+  /** พิมพ์ HTML ผ่าน #printArea (orientation: 'portrait' | 'landscape') */
+  function printHtml(html, orientation) {
+    var area = document.getElementById('printArea');
+    area.innerHTML = html;
+    var pageStyle = document.createElement('style');
+    pageStyle.id = 'printPageStyle';
+    pageStyle.textContent = '@page { size: A4 ' + (orientation || 'landscape') + '; margin: ' + (orientation === 'portrait' ? '14mm 16mm' : '12mm') + '; }';
+    document.head.appendChild(pageStyle);
+    document.body.classList.add('printing');
+    var done = false;
+    var cleanup = function () {
+      if (done) return; done = true;
+      document.body.classList.remove('printing'); area.innerHTML = '';
+      if (pageStyle.parentNode) pageStyle.parentNode.removeChild(pageStyle);
+      window.removeEventListener('afterprint', cleanup);
+    };
+    window.addEventListener('afterprint', cleanup);
+    setTimeout(function () { window.print(); setTimeout(cleanup, 1500); }, 100);
+  }
+  function leaveFormHtml(f) {
+    var dots = function (n) { return '<span class="lf-dots">' + new Array(n || 30).join('.') + '</span>'; };
+    var val = function (v, n) { return v || v === 0 ? '<span class="lf-val">' + esc(v) + '</span>' : dots(n); };
+    var box = function (on) { return '<span class="lf-cb' + (on ? ' on' : '') + '"></span>'; };
+    var types = [['SICK', 'ป่วย'], ['PERSONAL', 'กิจส่วนตัว'], ['MATERNITY', 'คลอดบุตร']];
+    var typeBoxes = function (sel) { return types.map(function (t) { return box(sel === t[0]) + ' ' + t[1]; }).join('&nbsp;&nbsp;&nbsp;'); };
+    var signBlock = function (role, name, pos) {
+      return '<div>(ลงชื่อ) ' + dots(40) + (role ? ' ' + role : '') + '</div>' +
+        '<div class="lf-paren">( ' + (name ? esc(name) : dots(36)) + ' )</div>' +
+        '<div>ตำแหน่ง ' + (pos ? esc(pos) : dots(36)) + '</div><div>วันที่ ' + dots(10) + '/' + dots(10) + '/' + dots(10) + '</div>';
+    };
+    var general = f.form === 'GENERAL';
+    var body = '<div class="lf-title">' + esc(f.title) + '</div>' +
+      '<div class="lf-r">เขียนที่ ' + val(f.writtenAt) + '</div>' +
+      '<div class="lf-r">วันที่ ' + val(f.writtenDay) + ' เดือน ' + val(f.writtenMonth) + ' พ.ศ. ' + val(f.writtenYear) + '</div>' +
+      '<p>เรื่อง&nbsp;&nbsp;' + esc(f.subject) + '</p>' +
+      '<p>เรียน&nbsp;&nbsp;' + (f.to ? esc(f.to) : dots(60)) + '</p>' +
+      '<p class="lf-ind">ข้าพเจ้า ' + val(f.fullName) + ' ตำแหน่ง ' + val(f.position, 30) + ' สังกัด ' + val(f.affiliation) + '</p>';
+    if (general) {
+      body += '<p>ขอลา&nbsp;&nbsp;' + typeBoxes(f.type) + '&nbsp;&nbsp; เนื่องจาก ' + val(f.reason, 50) + '</p>';
+    } else {
+      body += '<p>มีวันลาพักผ่อนสะสม ' + dots(12) + ' วันทำการ มีสิทธิลาพักผ่อนประจำปีนี้อีก ' + dots(12) + ' วันทำการ รวมเป็น ' + dots(12) + ' วันทำการ</p>' +
+        '<p>ขอลาพักผ่อน' + (f.reason ? ' เนื่องจาก ' + val(f.reason) : '') + '</p>';
+    }
+    body += '<p>ตั้งแต่วันที่ ' + val(f.startLabel) + ' ถึงวันที่ ' + val(f.endLabel) + ' มีกำหนด ' + val(f.days) + ' วัน' + (f.periodLabel ? ' (' + esc(f.periodLabel) + ')' : '') + '</p>';
+    if (general) {
+      var l = f.last;
+      body += '<p>ข้าพเจ้าได้ลา&nbsp;&nbsp;' + typeBoxes(l ? l.type : '') + '&nbsp;&nbsp; ครั้งสุดท้ายตั้งแต่วันที่ ' + (l ? val(l.startLabel) : dots(24)) +
+        ' ถึงวันที่ ' + (l ? val(l.endLabel) : dots(24)) + ' มีกำหนด ' + (l ? val(l.days) : dots(8)) + ' วัน</p>';
+    }
+    body += '<p>ในระหว่างลาจะติดต่อข้าพเจ้าได้ที่ ' + dots(64) + '</p>' +
+      '<div class="lf-sign"><div>ขอแสดงความนับถือ</div><div class="lf-gap"></div>' +
+      '<div>(ลงชื่อ) ' + dots(40) + '</div><div class="lf-paren">( ' + esc(f.fullName) + ' )</div>' +
+      '<div>ตำแหน่ง ' + (f.position ? esc(f.position) : dots(30)) + '</div></div>';
+    var statRows = f.stats.map(function (s) {
+      return '<tr><td>' + esc(s.label) + '</td><td class="c">' + esc(s.before) + '</td><td class="c">' + (s.now === null ? '-' : esc(s.now)) + '</td><td class="c">' + esc(s.total) + '</td></tr>';
+    }).join('');
+    body += '<div class="lf-bottom"><div>' +
+      '<div class="lf-h">สถิติการลาในปีงบประมาณ ' + esc(f.fiscalYear) + '</div>' +
+      '<table class="lf-table"><thead><tr><th>ประเภทลา</th><th>ลามาแล้ว<br>(วันทำการ)</th><th>ลาครั้งนี้<br>(วันทำการ)</th><th>รวมเป็น<br>(วันทำการ)</th></tr></thead><tbody>' + statRows + '</tbody></table>' +
+      '<div class="lf-sign-s">' + signBlock('ผู้ตรวจสอบ', '', '') + '</div></div>' +
+      '<div><div class="lf-h">ความเห็นผู้บังคับบัญชา</div><div>' + dots(56) + '</div><div>' + dots(56) + '</div>' +
+      '<div class="lf-sign-s">' + signBlock('', '', '') + '</div>' +
+      '<div class="lf-h" style="margin-top:10px">คำสั่ง</div><div>' + box(false) + ' อนุญาต&nbsp;&nbsp;&nbsp;&nbsp;' + box(false) + ' ไม่อนุญาต</div><div>' + dots(56) + '</div>' +
+      '<div class="lf-sign-s">' + signBlock('', f.director.name, f.director.position) + '</div></div></div>' +
+      '<div class="lf-foot">พิมพ์จากระบบลงเวลาปฏิบัติงานออนไลน์ ' + esc(f.school) + ' · เลขที่ใบลา ' + esc(f.leaveId) +
+      ' · สถานะในระบบ: ' + esc(f.statusLabel) + (f.reviewedByName ? ' (' + esc(f.reviewedByName) + ' ' + esc(f.reviewedLabel) + ')' : '') + ' · พิมพ์เมื่อ ' + esc(f.printedAt) + '</div>';
+    return '<div class="lf-doc">' + body + '</div>';
   }
   function bindRequestButtons(host, reload) {
+    bindPrintLeave(host);
     $$('[data-view-att]', host).forEach(function (b) { b.addEventListener('click', function () { viewAttachment(b.getAttribute('data-view-att'), b.getAttribute('data-id')); }); });
     $$('[data-cancel-leave]', host).forEach(function (b) {
       b.addEventListener('click', function () {
@@ -1319,7 +1572,7 @@
     leaveCard: leaveCard, corrCard: corrCard, bkkToday: bkkToday, bkkParts: bkkParts, serverNow: serverNow,
     fillMonthYear: fillMonthYear, TH_M: TH_M, TH_MS: TH_MS, backToUser: backToUser, doLogout: doLogout, showGeoHelp: showGeoHelp,
     parseYmd: parseYmd, LEAVE_TYPE_META: LEAVE_TYPE_META, leaveConfirmDialog: leaveConfirmDialog, addDaysYmd: addDaysYmd,
-    segSelect: segSelect, setThaiHint: setThaiHint
+    segSelect: segSelect, setThaiHint: setThaiHint, bindPrintLeave: bindPrintLeave, printHtml: printHtml
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();

@@ -1,5 +1,5 @@
 /*
- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.5.0
+ * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.6.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Code.gs (โค้ดฝั่ง Server ทั้งหมด)
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่
  */
@@ -18,7 +18,8 @@
  *   - ฟังก์ชันระดับบนสุดที่ "ไม่" ลงท้ายด้วย "_" สามารถถูกเรียกจาก Browser ผ่าน
  *     google.script.run ได้ทั้งหมด
  *   - ระบบนี้จึงเปิดเฉพาะฟังก์ชันสาธารณะที่จำเป็น ได้แก่
- *       doGet, include, getPublicConfig, login, register, firstRunSetup, requestPasswordReset, api
+ *       doGet, include, getPublicConfig, login, resumeSession, register, firstRunSetup,
+ *       requestPasswordReset, api
  *       และฟังก์ชันสำหรับผู้พัฒนา (SetupSystem, CreateFirstAdmin, EmergencyResetAdmin,
  *       BenchmarkPasswordHashing, DailyMaintenance) ซึ่งตรวจสอบว่าเรียกจาก
  *       Apps Script Editor โดยเจ้าของโปรเจกต์เท่านั้น
@@ -34,7 +35,7 @@ var APP = {
   SCHOOL_FULL: 'โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่',
   NAME_EN: 'Wat Sao Hin School Attendance System',
   SLOGAN: 'ระบบลงเวลาอัจฉริยะ สะดวก โปร่งใส ตรวจสอบได้',
-  VERSION: '1.5.0',
+  VERSION: '1.6.0',
   TZ: 'Asia/Bangkok'
 };
 
@@ -139,6 +140,7 @@ function getPublicConfig() {
         dbFileName: DB_FILE_NAME_,
         setupSheetName: SETUP_SHEET_,
         allowRegistration: s ? s.allowRegistration : false,
+        rememberDays: s ? s.rememberDays : 0,
         positions: POSITIONS,
         gpsRetentionDays: s ? s.gpsRetentionDays : 365,
         serverNow: nowMs_()
@@ -184,6 +186,8 @@ function getRoutes_() {
     'auth.session': { fn: authSession_, mc: true },
     'auth.ping': { fn: function () { return { alive: true }; }, mc: true },
     'auth.logout': { fn: logout_, mc: true },
+    'auth.logoutAll': { fn: logoutAll_, mc: true },
+    'auth.rememberDevice': { fn: rememberDevice_ },
     'auth.changePassword': { fn: changePassword_, mc: true },
     // ----- บุคลากร -----
     'me.dashboard': { fn: getMyDashboard_ },
@@ -194,6 +198,8 @@ function getRoutes_() {
     'leave.my': { fn: listMyLeaves_ },
     'leave.submit': { fn: submitLeave_ },
     'leave.cancel': { fn: cancelLeave_ },
+    'leave.myStats': { fn: getMyLeaveStats_ },
+    'leave.form': { fn: getLeaveForm_ },
     'corr.my': { fn: listMyCorrections_ },
     'corr.submit': { fn: submitCorrection_ },
     'corr.cancel': { fn: cancelCorrection_ },
@@ -211,6 +217,7 @@ function getRoutes_() {
     'report.monthly': { fn: reportMonthly_, roles: AE },
     'report.yearly': { fn: reportYearly_, roles: AE },
     'report.individual': { fn: reportIndividual_, roles: AE },
+    'report.leaveSummary': { fn: reportLeaveSummary_, roles: AE },
     'report.export': { fn: exportReport_, roles: AE },
     'cal.list': { fn: listCalendar_, roles: AE },
     // ----- ผู้ดูแลระบบเท่านั้น -----
@@ -347,6 +354,32 @@ function daysBetween_(a, b) { return Math.round((ymdToUtcMs_(b) - ymdToUtcMs_(a)
 function daysInMonth_(y, m) { return new Date(Date.UTC(y, m, 0)).getUTCDate(); }
 function monthStart_(y, m) { return y + '-' + pad2_(m) + '-01'; }
 function monthEnd_(y, m) { return y + '-' + pad2_(m) + '-' + pad2_(daysInMonth_(y, m)); }
+
+/**
+ * ปีงบประมาณ (พ.ศ.) ของวันที่ — ปีงบประมาณเริ่ม 1 ตุลาคม เช่น 1 ต.ค. 2569 – 30 ก.ย. 2570 = ปีงบประมาณ 2570
+ */
+function fiscalYearOf_(ymd) {
+  var p = parseYmd_(ymd);
+  return (p.m >= 10 ? p.y + 1 : p.y) + 543;
+}
+
+/**
+ * ช่วงวันที่ของปีงบประมาณ / รอบการประเมิน
+ * @param {number} fy ปีงบประมาณ (พ.ศ.)
+ * @param {number} round 0 = ทั้งปีงบประมาณ, 1 = รอบที่ 1 (1 ต.ค. – 31 มี.ค.), 2 = รอบที่ 2 (1 เม.ย. – 30 ก.ย.)
+ */
+function fiscalRange_(fy, round) {
+  var y = fy - 543; // ปี ค.ศ. ที่ปีงบประมาณสิ้นสุด
+  var r = {
+    fiscalYear: fy, round: round,
+    from: round === 2 ? y + '-04-01' : (y - 1) + '-10-01',
+    to: round === 1 ? y + '-03-31' : y + '-09-30'
+  };
+  r.label = round === 0 ? 'ปีงบประมาณ ' + fy : 'รอบที่ ' + round + ' ปีงบประมาณ ' + fy;
+  r.rangeLabel = thaiDate_(r.from) + ' – ' + thaiDate_(r.to);
+  r.shortLabel = round === 0 ? 'ทั้งปี' : (round === 1 ? 'ต.ค. – มี.ค.' : 'เม.ย. – ก.ย.');
+  return r;
+}
 function pad2_(n) { return (n < 10 ? '0' : '') + n; }
 
 /** รายการวันที่จาก a ถึง b (รวมปลายทั้งสองด้าน) */
@@ -647,8 +680,12 @@ var SCHEMA_ = {
       ['Username', 'str', 'ชื่อผู้ใช้'],
       ['LoginAt', 'datetime', 'เวลาเข้าสู่ระบบ'],
       ['LogoutAt', 'datetime', 'เวลาออกจากระบบ'],
-      ['EndReason', 'str', 'LOGOUT / PASSWORD_CHANGED'],
-      ['UserAgent', 'str', 'อุปกรณ์/เบราว์เซอร์']
+      ['EndReason', 'str', 'LOGOUT / PASSWORD_CHANGED / LOGOUT_ALL'],
+      ['UserAgent', 'str', 'อุปกรณ์/เบราว์เซอร์'],
+      ['RememberUntil', 'datetime', 'จดจำการเข้าสู่ระบบบนอุปกรณ์นี้ถึงเวลา (ว่าง = ไม่จดจำ)'],
+      ['DeviceKeyHash', 'str', 'SHA-256 ของรหัสอุปกรณ์ (ไม่เก็บรหัสจริง)'],
+      ['SessionVersion', 'num', 'SessionVersion ของบัญชีขณะจดจำ (เปลี่ยนรหัสผ่าน = ใช้ไม่ได้)'],
+      ['LastSeenAt', 'datetime', 'ใช้งานล่าสุดผ่านการจดจำอุปกรณ์']
     ]
   }
 };
@@ -669,10 +706,14 @@ var DEFAULT_SETTINGS_ = [
   ['SESSION_TIMEOUT_MIN', '30', 'ออกจากระบบอัตโนมัติเมื่อไม่ได้ใช้งาน (นาที)'],
   ['MAX_LOGIN_ATTEMPTS', '5', 'จำนวนครั้งที่ใส่รหัสผ่านผิดได้ก่อนล็อกชั่วคราว'],
   ['LOCKOUT_MIN', '15', 'ระยะเวลาล็อกบัญชีชั่วคราว (นาที)'],
+  ['REMEMBER_DEVICE_DAYS', '30', 'จดจำการเข้าสู่ระบบบนอุปกรณ์ส่วนตัว (วันนับจากใช้งานล่าสุด) 0 = ปิด'],
   ['GPS_RETENTION_DAYS', '365', 'ระยะเวลาเก็บพิกัด GPS ก่อนลบอัตโนมัติ (วัน)'],
   ['CORRECTION_MAX_DAYS', '30', 'ยื่นคำร้องแก้ไขเวลาย้อนหลังได้ไม่เกิน (วัน)'],
   ['LEAVE_REQUIRES_APPROVAL', 'TRUE', 'การลาที่บุคลากรบันทึกเองต้องรอผู้บริหาร/ผู้ดูแลอนุมัติ (FALSE = มีผลทันทีเมื่อกดยืนยัน)'],
   ['ALLOW_REGISTRATION', 'TRUE', 'เปิดให้บุคลากรสมัครสมาชิกด้วยตนเอง'],
+  ['DIRECTOR_NAME', '', 'ชื่อ-นามสกุลผู้อำนวยการโรงเรียน (ใช้ในช่องลงนามของใบลาและรายงาน)'],
+  ['DIRECTOR_POSITION', 'ผู้อำนวยการโรงเรียนวัดเสาหิน', 'ตำแหน่งผู้ลงนามอนุญาตการลา/รับรองรายงาน'],
+  ['SCHOOL_AFFILIATION', '', 'สังกัดของโรงเรียน เช่น สำนักงานเขตพื้นที่การศึกษาประถมศึกษา... (ใช้ในใบลา)'],
   ['SETTINGS_CONFIRMED', 'FALSE', 'ผู้ดูแลยืนยันว่าได้ปรับค่าตามระเบียบโรงเรียนแล้ว']
 ];
 
@@ -1044,9 +1085,13 @@ function parseSettings_(raw) {
     sessionTimeoutMin: Math.min(360, Math.max(5, num('SESSION_TIMEOUT_MIN', 30))),
     maxLoginAttempts: Math.min(20, Math.max(3, num('MAX_LOGIN_ATTEMPTS', 5))),
     lockoutMin: Math.min(1440, Math.max(1, num('LOCKOUT_MIN', 15))),
+    rememberDays: Math.min(90, Math.max(0, num('REMEMBER_DEVICE_DAYS', 30))),
     gpsRetentionDays: Math.max(30, num('GPS_RETENTION_DAYS', 365)),
     correctionMaxDays: Math.max(1, num('CORRECTION_MAX_DAYS', 30)),
     allowRegistration: bool('ALLOW_REGISTRATION'),
+    directorName: String(raw.DIRECTOR_NAME || '').trim(),
+    directorPosition: String(raw.DIRECTOR_POSITION || '').trim() || 'ผู้อำนวยการ' + APP.SCHOOL_NAME,
+    affiliation: String(raw.SCHOOL_AFFILIATION || '').trim(),
     leaveRequiresApproval: String(raw.LEAVE_REQUIRES_APPROVAL === undefined ? 'TRUE' : raw.LEAVE_REQUIRES_APPROVAL).toUpperCase() !== 'FALSE',
     settingsConfirmed: bool('SETTINGS_CONFIRMED')
   };
@@ -1995,17 +2040,10 @@ function login(username, password, clientInfo) {
       if (newHash) patch.PasswordHash = newHash;
       return updateById_('Employees', 'EmployeeID', emp.EmployeeID, patch);
     });
-    var token = createSession_(emp, clientInfo);
-    writeAudit_({ user: emp }, 'LOGIN', 'Employee', emp.EmployeeID, { rehashed: !!newHash });
-    return {
-      ok: true,
-      data: {
-        token: token,
-        user: publicUser_(emp),
-        mustChangePassword: !!emp.MustChangePassword,
-        sessionTimeoutMin: s.sessionTimeoutMin
-      }
-    };
+    var remember = !!(clientInfo && typeof clientInfo === 'object' && clientInfo.remember) && s.rememberDays > 0;
+    var sess = createSessionEx_(emp, clientInfo, { remember: remember });
+    writeAudit_({ user: emp }, 'LOGIN', 'Employee', emp.EmployeeID, { rehashed: !!newHash, remember: remember });
+    return { ok: true, data: sessionPayload_(emp, sess, s) };
   } catch (err) {
     return toErrorResponse_(err, 'login');
   }
@@ -2065,19 +2103,134 @@ function requestPasswordReset(form) {
 /* ========================================================================== */
 
 function sessionKey_(token) { return 'sess_' + sha256Hex_('session:' + token); }
+function deviceKeyHash_(secret) { return sha256Hex_('device:' + secret); }
 
-function createSession_(emp, clientInfo) {
-  var s = getSettings_();
+/** เก็บ Session ใน CacheService → token (ref = รหัสอ้างอิงแถวในชีต Sessions) */
+function putCacheSession_(emp, ref) {
   var token = randomHex_(32);
-  var key = sessionKey_(token);
-  var sess = { uid: emp.EmployeeID, sv: Number(emp.SessionVersion) || 0, iat: nowMs_(), ref: key.substr(5, 16) };
-  CacheService.getScriptCache().put(key, JSON.stringify(sess), s.sessionTimeoutMin * 60);
+  var sess = { uid: emp.EmployeeID, sv: Number(emp.SessionVersion) || 0, iat: nowMs_(), ref: ref || sessionKey_(token).substr(5, 16) };
+  CacheService.getScriptCache().put(sessionKey_(token), JSON.stringify(sess), getSettings_().sessionTimeoutMin * 60);
+  return { token: token, ref: sess.ref };
+}
+
+/**
+ * สร้าง Session ใหม่ + บันทึกประวัติในชีต Sessions
+ * opts.remember = จดจำการเข้าสู่ระบบบนอุปกรณ์นี้ → คืน device token (ref.secret) ให้ Browser เก็บไว้
+ * Server เก็บเฉพาะ SHA-256 ของ secret
+ */
+function createSessionEx_(emp, clientInfo, opts) {
+  var s = getSettings_();
+  var c = putCacheSession_(emp, null);
   var ua = clientInfo && typeof clientInfo === 'object' ? cleanLine_(clientInfo.ua, 250) : '';
-  appendRecord_('Sessions', {
-    SessionRef: sess.ref, EmployeeID: emp.EmployeeID, Username: emp.Username,
-    LoginAt: nowStamp_(), LogoutAt: '', EndReason: '', UserAgent: ua
+  var rec = {
+    SessionRef: c.ref, EmployeeID: emp.EmployeeID, Username: emp.Username,
+    LoginAt: nowStamp_(), LogoutAt: '', EndReason: '', UserAgent: ua,
+    RememberUntil: '', DeviceKeyHash: '', SessionVersion: Number(emp.SessionVersion) || 0, LastSeenAt: ''
+  };
+  var device = null;
+  if (opts && opts.remember && s.rememberDays > 0) {
+    var secret = randomHex_(32);
+    rec.DeviceKeyHash = deviceKeyHash_(secret);
+    rec.RememberUntil = msToStamp_(nowMs_() + s.rememberDays * 86400000);
+    device = c.ref + '.' + secret;
+  }
+  appendRecord_('Sessions', rec);
+  return { token: c.token, device: device };
+}
+
+function createSession_(emp, clientInfo) { return createSessionEx_(emp, clientInfo, null).token; }
+
+function sessionPayload_(emp, sess, s) {
+  return {
+    token: sess.token,
+    device: sess.device || null,
+    user: publicUser_(emp),
+    mustChangePassword: !!emp.MustChangePassword,
+    sessionTimeoutMin: s.sessionTimeoutMin
+  };
+}
+
+function stampToMs_(stamp) {
+  var m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(String(stamp || ''));
+  if (!m) return NaN;
+  return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4] - 7, +m[5], +m[6]); // Asia/Bangkok = UTC+7 (ไม่มีเวลาออมแสง)
+}
+function msToStamp_(ms) { return fmt_(new Date(ms), 'yyyy-MM-dd HH:mm:ss'); }
+
+/** อายุสูงสุดของการจดจำอุปกรณ์นับจากการเข้าสู่ระบบด้วยรหัสผ่าน (วัน) */
+var REMEMBER_MAX_DAYS_ = 180;
+
+/**
+ * เข้าสู่ระบบอัตโนมัติบน "อุปกรณ์ที่จดจำไว้" (ฟังก์ชันสาธารณะ — ไม่ต้องกรอกรหัสผ่าน)
+ * ใช้ไม่ได้เมื่อ: ออกจากระบบ, เปลี่ยน/รีเซ็ตรหัสผ่าน, ออกจากระบบทุกอุปกรณ์, บัญชีถูกปิด,
+ *               ไม่ได้ใช้งานเกิน REMEMBER_DEVICE_DAYS วัน หรือเกิน 180 วันนับจากเข้าสู่ระบบด้วยรหัสผ่าน
+ * @param {string} deviceToken 'ref(16 hex).secret(64 hex)'
+ */
+function resumeSession(deviceToken, clientInfo) {
+  resetMemo_();
+  try {
+    ensureReady_();
+    var m = /^([a-f0-9]{16})\.([a-f0-9]{64})$/.exec(String(deviceToken || ''));
+    if (!m) throw appError_('กรุณาเข้าสู่ระบบ', 'AUTH');
+    var cache = CacheService.getScriptCache();
+    var failKey = 'resume_fail_' + fmt_(now_(), 'yyyyMMddHH');
+    var fails = parseInt(cache.get(failKey) || '0', 10);
+    if (fails >= 300) throw appError_('กรุณาเข้าสู่ระบบด้วยชื่อผู้ใช้และรหัสผ่าน', 'AUTH');
+    var expired = function () {
+      cache.put(failKey, String(fails + 1), 3700);
+      return appError_('การจดจำเครื่องนี้สิ้นสุดแล้ว กรุณาเข้าสู่ระบบด้วยรหัสผ่านอีกครั้ง', 'AUTH');
+    };
+    var s = getSettings_();
+    if (!s.rememberDays) throw expired();
+    var rec = findOne_('Sessions', 'SessionRef', m[1]);
+    if (!rec || !rec.DeviceKeyHash || rec.LogoutAt) throw expired();
+    if (!constantTimeEquals_(String(rec.DeviceKeyHash), deviceKeyHash_(m[2]))) throw expired();
+    var nowMs = nowMs_();
+    var until = stampToMs_(rec.RememberUntil);
+    if (!(until > nowMs)) throw expired();
+    var emp = getEmployeeById_(rec.EmployeeID);
+    if (!emp || emp.Status !== EMP_STATUS.ACTIVE || (Number(emp.SessionVersion) || 0) !== (Number(rec.SessionVersion) || 0)) throw expired();
+    var cap = stampToMs_(rec.LoginAt) + REMEMBER_MAX_DAYS_ * 86400000;
+    var nextUntil = Math.min(nowMs + s.rememberDays * 86400000, isFinite(cap) ? cap : nowMs);
+    withLock_(function () {
+      updateRecord_('Sessions', rec._row, { LastSeenAt: nowStamp_(), RememberUntil: msToStamp_(nextUntil) });
+    });
+    var c = putCacheSession_(emp, rec.SessionRef);
+    writeAudit_({ user: emp }, 'LOGIN_REMEMBERED', 'Employee', emp.EmployeeID, { ref: rec.SessionRef });
+    return { ok: true, data: sessionPayload_(emp, { token: c.token, device: deviceToken }, s) };
+  } catch (err) {
+    return toErrorResponse_(err, 'resumeSession');
+  }
+}
+
+/** เปิดการจดจำอุปกรณ์ให้ Session ปัจจุบัน (ใช้หลังเปลี่ยนรหัสผ่าน หรือเลือกภายหลังจากหน้าบัญชีผู้ใช้) */
+function rememberDevice_(ctx) {
+  if (!ctx.settings.rememberDays) throw appError_('ผู้ดูแลระบบปิดการจดจำการเข้าสู่ระบบไว้', 'VALIDATION');
+  var secret = randomHex_(32);
+  var ok = withLock_(function () {
+    var rec = findOne_('Sessions', 'SessionRef', ctx.sess.ref);
+    if (!rec || rec.LogoutAt) return false;
+    updateRecord_('Sessions', rec._row, {
+      DeviceKeyHash: deviceKeyHash_(secret), SessionVersion: Number(ctx.user.SessionVersion) || 0,
+      RememberUntil: msToStamp_(nowMs_() + ctx.settings.rememberDays * 86400000)
+    });
+    return true;
   });
-  return token;
+  if (!ok) throw appError_('กรุณาเข้าสู่ระบบใหม่', 'AUTH');
+  return { device: ctx.sess.ref + '.' + secret, days: ctx.settings.rememberDays };
+}
+
+/** ออกจากระบบทุกอุปกรณ์ (เช่น โทรศัพท์หาย) — ยกเลิกการจดจำทุกเครื่องด้วย */
+function logoutAll_(ctx) {
+  withLock_(function () {
+    updateById_('Employees', 'EmployeeID', ctx.user.EmployeeID, {
+      SessionVersion: (Number(ctx.user.SessionVersion) || 0) + 1, UpdatedAt: nowStamp_()
+    });
+  });
+  CacheService.getScriptCache().remove(ctx.sessionKey);
+  endSessionLog_(ctx.sess.ref, 'LOGOUT_ALL');
+  writeAudit_(ctx, 'LOGOUT_ALL', 'Employee', ctx.user.EmployeeID, null);
+  return { loggedOut: true, message: 'ออกจากระบบทุกอุปกรณ์แล้ว' };
 }
 
 /**
@@ -2752,7 +2905,8 @@ function leaveView_(r) {
     requestedAt: r.RequestedAt, requestedLabel: thaiStamp_(r.RequestedAt),
     recordedBy: r.RecordedBy && r.RecordedBy !== 'SELF' ? r.RecordedBy : '',
     reviewedByName: r.ReviewedByName, reviewedAt: r.ReviewedAt, reviewedLabel: thaiStamp_(r.ReviewedAt), reviewNote: r.ReviewNote,
-    cancellable: leaveSelfCancellable_(r)
+    cancellable: leaveSelfCancellable_(r),
+    printable: leaveFormAvailable_(r)
   };
 }
 
@@ -2785,9 +2939,11 @@ function createLeave_(emp, p, opts) {
   if (period !== 'FULL' && start !== end) throw appError_('การลาครึ่งวันต้องเป็นวันเดียวกัน', 'VALIDATION', { field: 'period' });
   var reason = cleanText_(p.reason, 1000);
   if (reason.length > 500) throw appError_('เหตุผลต้องไม่เกิน 500 ตัวอักษร', 'VALIDATION', { field: 'reason' });
+  var calendarDays = !!CALENDAR_DAY_LEAVE_TYPES_[type];
+  if (calendarDays) period = 'FULL'; // ลาคลอดบุตรนับเป็นวันต่อเนื่อง ไม่มีลาครึ่งวัน
   var workdays = countWorkdays_(start, end);
-  if (!workdays) throw appError_('ช่วงวันที่เลือกเป็นวันหยุดทั้งหมด ไม่ต้องบันทึกการลา', 'VALIDATION', { field: 'startDate' });
-  var days = period === 'FULL' ? workdays : 0.5;
+  if (!workdays && !calendarDays) throw appError_('ช่วงวันที่เลือกเป็นวันหยุดทั้งหมด ไม่ต้องบันทึกการลา', 'VALIDATION', { field: 'startDate' });
+  var days = calendarDays ? daysBetween_(start, end) + 1 : (period === 'FULL' ? workdays : 0.5);
 
   var leaveId = newId_('LV');
   var att = saveAttachment_(p.attachment, leaveId);
@@ -2911,6 +3067,156 @@ function reviewLeave_(ctx, p) {
     employee: out.after.FullName, before: out.before.Status, after: out.after.Status, note: note
   });
   return { leave: leaveView_(out.after), message: decision === 'APPROVE' ? 'อนุมัติใบลาแล้ว' : (decision === 'REJECT' ? 'ไม่อนุมัติใบลาแล้ว' : 'ยกเลิกการอนุมัติแล้ว') };
+}
+
+/* ========================================================================== */
+/*  Leave statistics (ปีงบประมาณ / รอบการประเมิน) และแบบใบลาของทางราชการ        */
+/* ========================================================================== */
+
+/**
+ * ประเภทการลาที่นับเป็นวันต่อเนื่อง (รวมวันหยุด) ตามระเบียบว่าด้วยการลาของข้าราชการ
+ * ประเภทอื่นนับเฉพาะวันทำการ
+ */
+var CALENDAR_DAY_LEAVE_TYPES_ = { MATERNITY: true };
+
+/** ประเภทการลาที่มีแบบใบลาให้พิมพ์ */
+var LEAVE_FORM_TYPES_ = {
+  SICK: { form: 'GENERAL', word: 'ป่วย' },
+  PERSONAL: { form: 'GENERAL', word: 'กิจส่วนตัว' },
+  MATERNITY: { form: 'GENERAL', word: 'คลอดบุตร' },
+  VACATION: { form: 'VACATION', word: 'พักผ่อน' }
+};
+
+function leaveFormAvailable_(r) {
+  return !!LEAVE_FORM_TYPES_[r.LeaveType] && (r.Status === REQUEST_STATUS.PENDING || r.Status === REQUEST_STATUS.APPROVED);
+}
+
+/** จำนวนวันลาของใบลาที่อยู่ภายในช่วง from–to (ใบลาที่คร่อมช่วงนับเฉพาะส่วนที่อยู่ในช่วง) */
+function leaveDaysInRange_(l, from, to) {
+  var a = l.StartDate > from ? l.StartDate : from;
+  var b = l.EndDate < to ? l.EndDate : to;
+  if (a > b) return 0;
+  if (a === l.StartDate && b === l.EndDate) return Number(l.Days) || 0;
+  if ((l.Period || 'FULL') !== 'FULL') return 0.5;
+  if (CALENDAR_DAY_LEAVE_TYPES_[l.LeaveType]) return daysBetween_(a, b) + 1;
+  return countWorkdays_(a, b);
+}
+
+/** สรุปใบลาที่ "อนุมัติแล้ว" แยกตามประเภท → { SICK: {times, days}, ... } */
+function leaveTotals_(leaves, from, to) {
+  var t = {};
+  Object.keys(LEAVE_TYPES).forEach(function (k) { t[k] = { times: 0, days: 0 }; });
+  leaves.forEach(function (l) {
+    if (l.Status !== REQUEST_STATUS.APPROVED || l.EndDate < from || l.StartDate > to || !t[l.LeaveType]) return;
+    t[l.LeaveType].times++;
+    t[l.LeaveType].days = round_(t[l.LeaveType].days + leaveDaysInRange_(l, from, to), 1);
+  });
+  return t;
+}
+
+/** ปีงบประมาณจาก Browser (พ.ศ.) — ค่าไม่ถูกต้องใช้ปีงบประมาณปัจจุบัน */
+function parseFiscalYear_(v) {
+  var cur = fiscalYearOf_(todayStr_());
+  var fy = parseInt(v, 10);
+  return isFinite(fy) && fy >= cur - 20 && fy <= cur + 1 ? fy : cur;
+}
+
+/** สถิติการลา/มาสาย/ขาดงานของตนเอง แยกรอบการประเมิน (รอบที่ 1, รอบที่ 2, ทั้งปีงบประมาณ) */
+function getMyLeaveStats_(ctx, p) {
+  var emp = ctx.user;
+  var today = todayStr_();
+  var cur = fiscalYearOf_(today);
+  var fy = parseFiscalYear_(p.fiscalYear);
+  var ranges = [fiscalRange_(fy, 1), fiscalRange_(fy, 2), fiscalRange_(fy, 0)];
+  var mine = readAll_('LeaveRequests').filter(function (l) { return l.EmployeeID === emp.EmployeeID; });
+  var att = computeAttendance_({ employees: [emp], from: ranges[2].from, to: ranges[2].to });
+  var days = att.people.length ? att.people[0].days : [];
+  return {
+    fiscalYear: fy,
+    options: [cur, cur - 1, cur - 2],
+    pending: mine.filter(function (l) {
+      return l.Status === REQUEST_STATUS.PENDING && l.EndDate >= ranges[2].from && l.StartDate <= ranges[2].to;
+    }).length,
+    types: Object.keys(LEAVE_TYPES).map(function (k) { return { type: k, label: LEAVE_TYPES[k] }; }),
+    rounds: ranges.map(function (r) {
+      var late = 0, lateMinutes = 0, absent = 0;
+      days.forEach(function (d) {
+        if (d.date < r.from || d.date > r.to) return;
+        if (d.status === 'LATE') { late++; lateMinutes += d.lateMinutes || 0; }
+        if (d.status === 'ABSENT') absent++;
+      });
+      return {
+        round: r.round, label: r.round ? 'รอบที่ ' + r.round : 'ทั้งปีงบประมาณ', shortLabel: r.shortLabel,
+        from: r.from, to: r.to, rangeLabel: r.rangeLabel, started: r.from <= today, current: r.from <= today && today <= r.to,
+        leaves: leaveTotals_(mine, r.from, r.to), late: late, lateMinutes: Math.round(lateMinutes), absent: absent
+      };
+    })
+  };
+}
+
+/**
+ * ข้อมูลสำหรับพิมพ์ใบลาตามแบบของทางราชการ
+ * (แบบใบลาป่วย ลาคลอดบุตร ลากิจส่วนตัว / แบบใบลาพักผ่อน) พร้อมสถิติการลาในปีงบประมาณจากระบบ
+ * ผู้มีสิทธิ์: เจ้าของใบลา, ผู้บริหาร, ผู้ดูแลระบบ
+ */
+function getLeaveForm_(ctx, p) {
+  var l = findOne_('LeaveRequests', 'LeaveID', String(p.leaveId || ''));
+  if (!l) throw appError_('ไม่พบใบลา', 'NOT_FOUND');
+  var privileged = ctx.user.Role === ROLES.ADMIN || ctx.user.Role === ROLES.EXECUTIVE;
+  if (l.EmployeeID !== ctx.user.EmployeeID && !privileged) {
+    writeAudit_(ctx, 'ACCESS_DENIED', 'LeaveRequest', l.LeaveID, { reason: 'leave form' });
+    throw appError_('คุณไม่มีสิทธิ์เข้าถึงใบลานี้', 'FORBIDDEN');
+  }
+  var kind = LEAVE_FORM_TYPES_[l.LeaveType];
+  if (!kind) throw appError_('ประเภทการลานี้ไม่มีแบบใบลาให้พิมพ์ (พิมพ์ได้เฉพาะลาป่วย ลากิจ ลาคลอดบุตร และลาพักผ่อน)', 'VALIDATION');
+  if (!leaveFormAvailable_(l)) throw appError_('ใบลานี้' + (REQUEST_STATUS_LABELS[l.Status] || '') + 'แล้ว จึงพิมพ์ใบลาไม่ได้', 'VALIDATION');
+  var s = getSettings_();
+  var emp = getEmployeeById_(l.EmployeeID) || { FullName: l.FullName, Position: '' };
+  var fy = fiscalYearOf_(l.StartDate);
+  var range = fiscalRange_(fy, 0);
+  var others = readAll_('LeaveRequests').filter(function (r) {
+    return r.EmployeeID === l.EmployeeID && r.LeaveID !== l.LeaveID && r.Status === REQUEST_STATUS.APPROVED;
+  });
+  // "ลามาแล้ว" = ใบลาที่อนุมัติแล้วในปีงบประมาณเดียวกันที่เริ่มก่อนใบลานี้
+  var prev = leaveTotals_(others.filter(function (r) { return r.StartDate < l.StartDate; }), range.from, range.to);
+  var thisDays = leaveDaysInRange_(l, range.from, range.to);
+  var stats = (kind.form === 'GENERAL' ? ['SICK', 'PERSONAL', 'MATERNITY'] : ['VACATION']).map(function (k) {
+    var before = prev[k].days, now = k === l.LeaveType ? thisDays : null;
+    return { type: k, label: LEAVE_FORM_TYPES_[k].word, before: before, now: now, total: round_(before + (now || 0), 1) };
+  });
+  var last = null;
+  if (kind.form === 'GENERAL') {
+    others.forEach(function (r) {
+      var k = LEAVE_FORM_TYPES_[r.LeaveType];
+      if (k && k.form === 'GENERAL' && r.EndDate < l.StartDate && (!last || r.EndDate > last.EndDate)) last = r;
+    });
+  }
+  var written = parseYmd_(String(l.RequestedAt || nowStamp_()).substr(0, 10));
+  return {
+    form: kind.form,
+    title: kind.form === 'GENERAL' ? 'แบบใบลาป่วย ลาคลอดบุตร ลากิจส่วนตัว' : 'แบบใบลาพักผ่อน',
+    leaveId: l.LeaveID,
+    writtenAt: APP.SCHOOL_NAME,
+    writtenDay: written.d, writtenMonth: THAI_MONTHS[written.m - 1], writtenYear: written.y + 543,
+    subject: 'ขอลา' + kind.word,
+    // ผู้อำนวยการลาเอง: เรียนผู้บังคับบัญชาระดับเหนือขึ้นไป (ให้กรอกด้วยลายมือ)
+    to: emp.Position === 'ผู้อำนวยการ' ? '' : s.directorPosition,
+    fullName: emp.FullName, position: emp.Position || '',
+    affiliation: APP.SCHOOL_NAME + (s.affiliation ? ' ' + s.affiliation : ''),
+    type: l.LeaveType, word: kind.word,
+    reason: l.Reason || '',
+    startLabel: thaiDate_(l.StartDate), endLabel: thaiDate_(l.EndDate),
+    days: Number(l.Days) || 0,
+    periodLabel: l.Period && l.Period !== 'FULL' ? LEAVE_PERIODS[l.Period] : '',
+    last: last ? { type: last.LeaveType, startLabel: thaiDate_(last.StartDate), endLabel: thaiDate_(last.EndDate), days: Number(last.Days) || 0 } : null,
+    fiscalYear: fy,
+    stats: stats,
+    director: { name: s.directorName, position: s.directorPosition },
+    status: l.Status, statusLabel: REQUEST_STATUS_LABELS[l.Status],
+    reviewedByName: l.ReviewedBy === 'AUTO' ? '' : (l.ReviewedByName || ''), reviewedLabel: thaiStamp_(l.ReviewedAt),
+    printedAt: thaiStamp_(nowStamp_()),
+    school: APP.SCHOOL_FULL
+  };
 }
 
 /* ========================================================================== */
@@ -3480,10 +3786,14 @@ var SETTING_RULES_ = {
   SESSION_TIMEOUT_MIN: { type: 'int', min: 5, max: 360, label: 'หมดเวลาการใช้งาน (นาที)' },
   MAX_LOGIN_ATTEMPTS: { type: 'int', min: 3, max: 20, label: 'จำนวนครั้งที่ใส่รหัสผิดได้' },
   LOCKOUT_MIN: { type: 'int', min: 1, max: 1440, label: 'ระยะเวลาล็อกบัญชี (นาที)' },
+  REMEMBER_DEVICE_DAYS: { type: 'int', min: 0, max: 90, label: 'จดจำการเข้าสู่ระบบ (วัน)' },
   GPS_RETENTION_DAYS: { type: 'int', min: 30, max: 3650, label: 'ระยะเวลาเก็บพิกัด GPS (วัน)' },
   CORRECTION_MAX_DAYS: { type: 'int', min: 1, max: 365, label: 'ยื่นคำร้องย้อนหลังได้ (วัน)' },
   ALLOW_REGISTRATION: { type: 'bool', label: 'เปิดรับสมัครสมาชิก' },
   LEAVE_REQUIRES_APPROVAL: { type: 'bool', label: 'การลาที่บุคลากรบันทึกเองต้องรออนุมัติ' },
+  DIRECTOR_NAME: { type: 'text', max: 80, label: 'ชื่อผู้อำนวยการ' },
+  DIRECTOR_POSITION: { type: 'text', max: 100, label: 'ตำแหน่งผู้ลงนาม' },
+  SCHOOL_AFFILIATION: { type: 'text', max: 100, label: 'สังกัด' },
   SETTINGS_CONFIRMED: { type: 'bool', label: 'ยืนยันการตั้งค่า' }
 };
 
@@ -3533,6 +3843,10 @@ function normalizeSetting_(key, value) {
       return uniq.sort().join(',');
     case 'bool':
       return (value === true || String(value).toUpperCase() === 'TRUE') ? 'TRUE' : 'FALSE';
+    case 'text':
+      var t = cleanLine_(value, 200);
+      if (t.length > rule.max) throw appError_(rule.label + 'ต้องไม่เกิน ' + rule.max + ' ตัวอักษร', 'VALIDATION', { field: key });
+      return t;
     default:
       throw appError_('การตั้งค่าไม่ถูกต้อง', 'VALIDATION');
   }
@@ -4070,7 +4384,9 @@ function validateDateParam_(v, label) {
 /* ========================================================================== */
 
 function reportHeader_(ctx, type, title, periodLabel, orientation) {
+  var s = getSettings_();
   return {
+    signer: { name: s.directorName, position: s.directorPosition },
     type: type,
     school: APP.SCHOOL_FULL,
     title: title,
@@ -4406,11 +4722,78 @@ function reportIndividual_(ctx, p) {
   return rep;
 }
 
+/**
+ * รายงานสรุปวันลา มาสาย และขาดงาน รายรอบการประเมิน
+ * (ใช้ประกอบการพิจารณาเลื่อนเงินเดือน: รอบที่ 1 = 1 ต.ค. – 31 มี.ค., รอบที่ 2 = 1 เม.ย. – 30 ก.ย.)
+ * นับเฉพาะใบลาที่อนุมัติแล้ว; ลาป่วย/ลากิจ/ลาพักผ่อนนับวันทำการ, ลาคลอดบุตรนับวันต่อเนื่อง
+ */
+function reportLeaveSummary_(ctx, p) {
+  var fy = parseFiscalYear_(p.fiscalYear);
+  var round = [0, 1, 2].indexOf(parseInt(p.round, 10)) >= 0 ? parseInt(p.round, 10) : 0;
+  var r = fiscalRange_(fy, round);
+  var emps = reportEmployees_(r.from, r.to);
+  var res = computeAttendance_({ employees: emps, from: r.from, to: r.to });
+  var byEmp = {};
+  readAll_('LeaveRequests').forEach(function (l) { (byEmp[l.EmployeeID] = byEmp[l.EmployeeID] || []).push(l); });
+  var tot = { sickT: 0, sickD: 0, persT: 0, persD: 0, late: 0, absent: 0, perfect: 0 };
+  var rows = res.people.map(function (pp, i) {
+    var lt = leaveTotals_(byEmp[pp.emp.employeeId] || [], r.from, r.to);
+    var late = 0, absent = 0;
+    pp.days.forEach(function (d) { if (d.status === 'LATE') late++; if (d.status === 'ABSENT') absent++; });
+    var leaveCount = Object.keys(lt).reduce(function (a, k) { return a + (k === 'OFFICIAL' ? 0 : lt[k].times); }, 0);
+    tot.sickT += lt.SICK.times; tot.sickD += lt.SICK.days; tot.persT += lt.PERSONAL.times; tot.persD += lt.PERSONAL.days;
+    tot.late += late; tot.absent += absent;
+    if (!leaveCount && !late && !absent && pp.totals.workdays > 0) tot.perfect++;
+    return {
+      no: i + 1, staffCode: pp.emp.staffCode, fullName: pp.emp.fullName, position: pp.emp.position,
+      sickT: lt.SICK.times, sickD: lt.SICK.days, persT: lt.PERSONAL.times, persD: lt.PERSONAL.days,
+      spT: lt.SICK.times + lt.PERSONAL.times, spD: round_(lt.SICK.days + lt.PERSONAL.days, 1),
+      vacD: lt.VACATION.days, matD: lt.MATERNITY.days, othD: lt.OTHER.days, offD: lt.OFFICIAL.days,
+      late: late, absent: absent, employeeId: pp.emp.employeeId
+    };
+  });
+  var rep = reportHeader_(ctx, 'leaveSummary', 'บัญชีสรุปวันลา มาสาย และขาดงาน', r.label + ' (' + r.rangeLabel + ')');
+  rep.tables.push({
+    key: 'people', title: 'นับเฉพาะใบลาที่อนุมัติแล้ว · ลาป่วย/ลากิจ/ลาพักผ่อนนับวันทำการ · ลาคลอดบุตรนับวันต่อเนื่อง',
+    columns: [
+      { key: 'no', label: 'ที่', align: 'center', width: 32 },
+      { key: 'fullName', label: 'ชื่อ-นามสกุล', width: 170 },
+      { key: 'position', label: 'ตำแหน่ง', width: 96 },
+      { key: 'sickT', label: 'ลาป่วย (ครั้ง)', align: 'center', width: 52, num: true },
+      { key: 'sickD', label: 'ลาป่วย (วัน)', align: 'center', width: 52, num: true },
+      { key: 'persT', label: 'ลากิจ (ครั้ง)', align: 'center', width: 52, num: true },
+      { key: 'persD', label: 'ลากิจ (วัน)', align: 'center', width: 52, num: true },
+      { key: 'spT', label: 'ป่วย+กิจ (ครั้ง)', align: 'center', width: 56, num: true },
+      { key: 'spD', label: 'ป่วย+กิจ (วัน)', align: 'center', width: 56, num: true },
+      { key: 'vacD', label: 'ลาพักผ่อน (วัน)', align: 'center', width: 56, num: true },
+      { key: 'matD', label: 'ลาคลอดบุตร (วัน)', align: 'center', width: 60, num: true },
+      { key: 'othD', label: 'ลาอื่น ๆ (วัน)', align: 'center', width: 52, num: true },
+      { key: 'offD', label: 'ไปราชการ (วัน)', align: 'center', width: 56, num: true },
+      { key: 'late', label: 'มาสาย (ครั้ง)', align: 'center', width: 52, num: true },
+      { key: 'absent', label: 'ขาดงาน (วัน)', align: 'center', width: 52, num: true }
+    ],
+    rows: rows
+  });
+  rep.summary = [
+    { label: 'จำนวนบุคลากร', value: rows.length, unit: 'คน', tone: 'navy' },
+    { label: 'ลาป่วยรวม', value: round_(tot.sickD, 1), unit: 'วัน (' + tot.sickT + ' ครั้ง)', tone: 'sky' },
+    { label: 'ลากิจรวม', value: round_(tot.persD, 1), unit: 'วัน (' + tot.persT + ' ครั้ง)', tone: 'sky' },
+    { label: 'มาสายรวม', value: tot.late, unit: 'ครั้ง', tone: 'warning' },
+    { label: 'ขาดงานรวม', value: tot.absent, unit: 'วัน', tone: 'danger' },
+    { label: 'ไม่ลา ไม่สาย ไม่ขาด', value: tot.perfect, unit: 'คน', tone: 'success' }
+  ];
+  if (r.from > res.today) rep.notice = 'รอบนี้ยังไม่เริ่ม';
+  else if (r.to > res.today) rep.notice = 'ข้อมูลถึงวันที่ ' + thaiDate_(res.today) + ' (รอบยังไม่สิ้นสุด)';
+  rep.params = { fiscalYear: fy, round: round };
+  return rep;
+}
+
 function buildReportByType_(ctx, type, params) {
   if (type === 'daily') return reportDaily_(ctx, params || {});
   if (type === 'monthly') return reportMonthly_(ctx, params || {});
   if (type === 'yearly') return reportYearly_(ctx, params || {});
   if (type === 'individual') return reportIndividual_(ctx, params || {});
+  if (type === 'leaveSummary') return reportLeaveSummary_(ctx, params || {});
   throw appError_('ประเภทรายงานไม่ถูกต้อง', 'VALIDATION');
 }
 
@@ -4480,6 +4863,7 @@ function exportFileBase_(report) {
   if (report.type === 'daily') name = 'Daily_' + p.date;
   else if (report.type === 'monthly') name = 'Monthly_' + p.year + '-' + pad2_(p.month);
   else if (report.type === 'yearly') name = 'Yearly_' + p.year;
+  else if (report.type === 'leaveSummary') name = 'LeaveSummary_FY' + p.fiscalYear + (p.round ? '_R' + p.round : '');
   else {
     var e = getEmployeeById_(p.employeeId);
     name = 'Individual_' + (e ? String(e.StaffCode).replace(/[^A-Za-z0-9-]/g, '') : 'staff') + '_' + p.from + '_' + p.to;
@@ -4507,6 +4891,7 @@ function writeReportToSheet_(sh, report) {
   pushRow([txt(report.school)], 'school');
   pushRow([txt(report.title)], 'title');
   pushRow([txt('ช่วงวันที่: ' + report.periodLabel)], 'meta');
+  if (report.notice) pushRow([txt('หมายเหตุ: ' + report.notice)], 'meta');
   pushRow([txt('วันที่จัดทำรายงาน: ' + report.generatedAt + '    ผู้จัดทำ: ' + report.generatedBy)], 'meta');
   pushRow([], 'blank');
   report.tables.forEach(function (t) {
@@ -4531,8 +4916,9 @@ function writeReportToSheet_(sh, report) {
   pushRow([txt('ลงชื่อ ......................................................... ผู้จัดทำรายงาน')], 'sign');
   pushRow([txt('( ' + report.generatedBy + ' )')], 'sign');
   pushRow([], 'blank');
-  pushRow([txt('ลงชื่อ ......................................................... ผู้อำนวยการโรงเรียน')], 'sign');
-  pushRow([txt('( ......................................................... )')], 'sign');
+  var signer = report.signer || {};
+  pushRow([txt('ลงชื่อ ......................................................... ' + (signer.position || 'ผู้อำนวยการโรงเรียน'))], 'sign');
+  pushRow([txt('( ' + (signer.name || '.........................................................') + ' )')], 'sign');
 
   ensureRows_(sh, values.length);
   if (sh.getMaxColumns() < ncols) sh.insertColumnsAfter(sh.getMaxColumns(), ncols - sh.getMaxColumns());
