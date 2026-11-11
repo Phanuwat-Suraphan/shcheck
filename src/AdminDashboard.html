@@ -42,6 +42,19 @@
   .qr-box svg { width: min(260px, 100%); height: auto; }
   tr.row-error td { background: var(--danger-bg) !important; }
   .mono { font-family: 'Courier New', monospace; font-weight: 700; letter-spacing: .5px; }
+  .tasks-card { border: 1.5px solid var(--sky-200); margin-bottom: 14px; }
+  .task-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .task-chip { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--border-strong); background: #fff; border-radius: 12px; padding: 8px 12px; font-weight: 600; cursor: pointer; min-height: 44px; color: var(--navy-800); }
+  .task-chip b { background: var(--danger-500); color: #fff; border-radius: 10px; padding: 0 8px; font-size: .82rem; }
+  .task-chip .ms { color: var(--sky-500); }
+  .setup-progress { height: 8px; background: #EEF2F7; border-radius: 6px; overflow: hidden; margin: 6px 0 10px; }
+  .setup-progress > div { height: 100%; background: var(--success-500); }
+  .setup-item { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); }
+  .setup-item:first-of-type { border-top: 0; }
+  .setup-item .st-icon { width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; background: #EEF2F7; color: var(--muted); }
+  .setup-item.done .st-icon { background: var(--success-bg); color: var(--success); }
+  .setup-item .st-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .setup-item.done .st-text b { color: var(--muted); text-decoration: line-through; }
   .mini-link { display: inline-flex; align-items: center; gap: 2px; font-size: .8rem; color: var(--navy-700); text-decoration: none; }
   .mini-link .ms { font-size: 16px; }
   @media (min-width: 1024px) {
@@ -89,6 +102,7 @@
         <h2><span class="ms">dashboard</span>ภาพรวมวันนี้</h2>
         <div class="row"><span class="badge navy" id="ovDate">-</span><button type="button" class="btn outline sm" id="ovRefresh"><span class="ms">refresh</span>รีเฟรช</button></div>
       </div>
+      <div id="ovTasks"></div>
       <div id="ovWarnings" class="stack" style="margin-bottom:14px"></div>
       <div class="grid grid-stats" id="ovStats"></div>
       <div class="admin-grid-2">
@@ -142,6 +156,7 @@
       <div class="toolbar">
         <div class="seg" id="lvStatusSeg"><button type="button" data-val="PENDING" class="active">รออนุมัติ</button><button type="button" data-val="APPROVED">อนุมัติแล้ว</button><button type="button" data-val="REJECTED">ไม่อนุมัติ</button><button type="button" data-val="ALL">ทั้งหมด</button></div>
         <div class="field grow"><input type="search" id="lvSearch" placeholder="ค้นหาชื่อ / รหัส" aria-label="ค้นหา"></div>
+        <button type="button" class="btn success" id="lvApproveAllBtn" hidden><span class="ms">done_all</span><span>อนุมัติทั้งหมด</span></button>
       </div>
       <div class="list" id="lvList"></div>
     </section>
@@ -154,6 +169,7 @@
       <div class="toolbar">
         <div class="seg" id="crStatusSeg"><button type="button" data-val="PENDING" class="active">รออนุมัติ</button><button type="button" data-val="APPROVED">อนุมัติแล้ว</button><button type="button" data-val="REJECTED">ไม่อนุมัติ</button><button type="button" data-val="ALL">ทั้งหมด</button></div>
         <div class="field grow"><input type="search" id="crSearch" placeholder="ค้นหาชื่อ / รหัส" aria-label="ค้นหา"></div>
+        <button type="button" class="btn success" id="crApproveAllBtn" hidden><span class="ms">done_all</span><span>อนุมัติทั้งหมด</span></button>
       </div>
       <div class="list" id="crList"></div>
     </section>

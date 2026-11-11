@@ -1376,6 +1376,76 @@ test('P07', 'บัญชีสรุปวันลา มาสาย ขา�
   expectErr(sys.api(t.token, 'report.leaveSummary', { fiscalYear: 2570, round: 1 }), 'FORBIDDEN');
 });
 
+test('M12', 'รายการตั้งค่าเริ่มต้นของผู้ดูแลระบบ: ตรวจจากข้อมูลจริง (พิกัด, ยืนยันเวลา, ชื่อ ผอ., วันปิดภาคเรียน, มีครู, ครูเริ่มลงเวลา) จนครบ 6/6', () => {
+  const sys = newSystem({ now: '2026-11-09 07:00:00' });
+  let set = ok(sys.api(sys.admin, 'admin.overview', {})).setup;
+  const state = () => Object.fromEntries(set.items.map(i => [i.key, i.done]));
+  assert.deepStrictEqual(state(), { geo: true, confirm: true, director: false, break: false, staff: false, firstUse: false });
+  assert.strictEqual(set.done, 2); assert.strictEqual(set.complete, false);
+  assert.ok(set.items.every(i => i.title && i.hint && ['settings', 'calendar', 'share'].includes(i.sec)));
+  ok(sys.api(sys.admin, 'settings.save', { values: { DIRECTOR_NAME: 'นายสมชาย ใจดี' } }));
+  ok(sys.api(sys.admin, 'cal.add', { startDate: '2027-03-15', endDate: '2027-05-15', type: 'SPECIAL_HOLIDAY', title: 'ปิดภาคเรียนที่ 2' }));
+  const t = addTeacher(sys, 1);
+  set = ok(sys.api(sys.admin, 'admin.overview', {})).setup;
+  assert.deepStrictEqual(state(), { geo: true, confirm: true, director: true, break: true, staff: true, firstUse: false });
+  sys.at('2026-11-09 07:50:00'); ok(sys.api(t.token, 'att.checkIn', INSIDE));
+  set = ok(sys.api(sys.admin, 'admin.overview', {})).setup;
+  assert.strictEqual(set.complete, true); assert.strictEqual(set.done, 6);
+  const ex = addTeacher(sys, 2, 'EXECUTIVE');
+  assert.strictEqual(ok(sys.api(ex.token, 'admin.overview', {})).setup, null, 'ผู้บริหารไม่เห็นรายการตั้งค่า');
+});
+
+test('H02', 'หน้าแรกของผู้บริหาร/ผู้ดูแลแสดงงานรออนุมัติ (ไม่นับคำขอของตนเอง); บุคลากรทั่วไปไม่เห็น', () => {
+  const sys = newSystem({ now: '2026-11-09 07:00:00' });
+  const t = addTeacher(sys, 1), ex = addTeacher(sys, 2, 'EXECUTIVE');
+  ok(sys.api(t.token, 'leave.submit', { type: 'SICK', startDate: '2026-11-10', endDate: '2026-11-10' }));
+  ok(sys.api(ex.token, 'leave.submit', { type: 'PERSONAL', startDate: '2026-11-11', endDate: '2026-11-11' }));
+  sys.at('2026-11-09 10:00:00');
+  ok(sys.api(t.token, 'corr.submit', { date: '2026-11-09', type: 'IN', time: '07:40', reason: 'ลืมกดลงเวลาเข้า' }));
+  ok(sys.register(regForm(3)));
+  ok(sys.env.call('requestPasswordReset', { identifier: 'teacher1' }));
+  assert.strictEqual(ok(sys.api(t.token, 'me.dashboard', {})).approvals, null);
+  const e = ok(sys.api(ex.token, 'me.dashboard', {})).approvals;
+  assert.deepStrictEqual([e.leaves, e.corrections, e.registrations, e.passwordResets, e.total], [1, 1, 0, 0, 2]); // ใบลาของตนเองไม่นับ
+  const a = ok(sys.api(sys.admin, 'me.dashboard', {})).approvals;
+  assert.deepStrictEqual([a.leaves, a.corrections, a.registrations, a.passwordResets, a.total], [2, 1, 1, 1, 5]);
+  assert.strictEqual(ok(sys.api(sys.admin, 'admin.overview', {})).approvals.total, 5);
+});
+
+test('V11', 'อนุมัติใบลาทั้งหมดในครั้งเดียว: ข้ามใบลาของตนเองพร้อมเหตุผล, บันทึก Audit ทุกรายการ, จำกัด 50 รายการ, บุคลากรทั่วไปทำไม่ได้', () => {
+  const sys = newSystem({ now: '2026-11-09 07:00:00' });
+  const t = addTeacher(sys, 1), t2 = addTeacher(sys, 2), ex = addTeacher(sys, 3, 'EXECUTIVE');
+  const ids = [
+    ok(sys.api(t.token, 'leave.submit', { type: 'SICK', startDate: '2026-11-10', endDate: '2026-11-10' })).leave.leaveId,
+    ok(sys.api(t2.token, 'leave.submit', { type: 'PERSONAL', startDate: '2026-11-11', endDate: '2026-11-12' })).leave.leaveId,
+    ok(sys.api(ex.token, 'leave.submit', { type: 'PERSONAL', startDate: '2026-11-13', endDate: '2026-11-13' })).leave.leaveId
+  ];
+  const r = ok(sys.api(ex.token, 'leave.approveMany', { ids: ids.concat([ids[0]]) }));
+  assert.strictEqual(r.approved, 2); assert.strictEqual(r.skipped.length, 1);
+  assert.strictEqual(r.skipped[0].id, ids[2]); assert.ok(/ตนเอง/.test(r.skipped[0].reason));
+  const st = records(sys, 'LeaveRequests').map(l => l.Status);
+  assert.deepStrictEqual(st, ['APPROVED', 'APPROVED', 'PENDING']);
+  assert.strictEqual(records(sys, 'AuditLogs').filter(a => a.Action === 'LEAVE_APPROVE').length, 2);
+  expectErr(sys.api(t.token, 'leave.approveMany', { ids: [ids[2]] }), 'FORBIDDEN');
+  expectErr(sys.api(ex.token, 'leave.approveMany', { ids: [] }), 'VALIDATION');
+  expectErr(sys.api(ex.token, 'leave.approveMany', { ids: Array.from({ length: 51 }, (_, i) => 'LV-' + i) }), 'VALIDATION');
+});
+
+test('K07', 'อนุมัติคำร้องแก้ไขเวลาทั้งหมด: ปรับเวลาทุกรายการที่ถูกต้อง, ข้ามรายการที่เวลาไม่สมเหตุสมผลพร้อมเหตุผล', () => {
+  const sys = newSystem({ now: '2026-11-09 07:00:00' });
+  const t = addTeacher(sys, 1), t2 = addTeacher(sys, 2);
+  sys.at('2026-11-09 07:50:00'); ok(sys.api(t2.token, 'att.checkIn', INSIDE));
+  sys.at('2026-11-09 18:00:00');
+  ok(sys.api(t.token, 'corr.submit', { date: '2026-11-09', type: 'IN', time: '07:45', reason: 'ลืมกดลงเวลาเข้า' }));
+  ok(sys.api(t.token, 'corr.submit', { date: '2026-11-09', type: 'OUT', time: '16:35', reason: 'ลืมกดลงเวลาออก' }));
+  ok(sys.api(t2.token, 'corr.submit', { date: '2026-11-09', type: 'OUT', time: '07:30', reason: 'กดผิด แจ้งเวลาออก' })); // ก่อนเวลาเข้า → ข้าม
+  const ids = ok(sys.api(sys.admin, 'corr.adminList', { status: 'PENDING' })).map(c => c.requestId);
+  const r = ok(sys.api(sys.admin, 'corr.approveMany', { ids }));
+  assert.strictEqual(r.approved, 2); assert.strictEqual(r.skipped.length, 1); assert.ok(/หลังเวลาเข้างาน/.test(r.skipped[0].reason), r.skipped[0].reason);
+  const row = records(sys, 'DailySummary').find(x => x.EmployeeID === t.id);
+  assert.ok(row.CheckInTime.startsWith('07:45') && row.CheckOutTime.startsWith('16:35'));
+});
+
 test('M09', 'ตั้งค่าชื่อผู้อำนวยการ/ตำแหน่ง/สังกัด: ตรวจความยาว, เก็บเป็นข้อความ (กันสูตร), แสดงในรายงานพิมพ์', () => {
   const sys = newSystem();
   expectErr(sys.api(sys.admin, 'settings.save', { values: { DIRECTOR_NAME: 'ก'.repeat(81) } }), 'VALIDATION');

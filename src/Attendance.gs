@@ -248,8 +248,30 @@ function getMyDashboard_(ctx) {
     month: { year: y, month: m, label: thaiMonthYear_(y, m), totals: me.totals },
     recent: recent,
     pending: { leaves: myLeaves, corrections: myCorr, todayIn: hasPendingInCorrection_(emp.EmployeeID, today) },
+    approvals: approvalCounts_(emp),
     issues: myAttendanceIssues_(emp, s, today)
   };
+}
+
+/**
+ * งานที่ผู้บริหาร/ผู้ดูแลต้องพิจารณา (ไม่นับคำขอของตนเองซึ่งพิจารณาเองไม่ได้) — บุคลากรทั่วไปได้ null
+ */
+function approvalCounts_(emp) {
+  if (emp.Role !== ROLES.ADMIN && emp.Role !== ROLES.EXECUTIVE) return null;
+  var notMine = function (r) { return r.Status === REQUEST_STATUS.PENDING && r.EmployeeID !== emp.EmployeeID; };
+  var out = {
+    leaves: readAll_('LeaveRequests').filter(notMine).length,
+    corrections: readAll_('CorrectionRequests').filter(notMine).length,
+    registrations: 0, passwordResets: 0
+  };
+  if (emp.Role === ROLES.ADMIN) {
+    getEmployees_().forEach(function (e) {
+      if (e.Status === EMP_STATUS.PENDING) out.registrations++;
+      if (e.Status === EMP_STATUS.ACTIVE && e.ResetRequestedAt) out.passwordResets++;
+    });
+  }
+  out.total = out.leaves + out.corrections + out.registrations + out.passwordResets;
+  return out;
 }
 
 /** มีคำร้องแก้ไข "เวลาเข้า" ของวันที่ระบุรอพิจารณาอยู่หรือไม่ */

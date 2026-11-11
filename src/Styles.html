@@ -468,6 +468,13 @@ table.table { width: 100%; border-collapse: collapse; font-size: .9rem; }
 .stats-table td:first-child { font-weight: 600; white-space: nowrap; }
 .stats-table td.muted { color: var(--muted); }
 
+/* ---------- งานรออนุมัติ (ผู้บริหาร) ---------- */
+.approvals-card { display: flex; align-items: center; gap: 12px; padding: 12px 12px 12px 16px; border-radius: 18px; color: #fff;
+  background: linear-gradient(135deg, #B45309, #D97706); box-shadow: var(--shadow-sm); }
+.approvals-card > .ms { font-size: 30px; }
+.approvals-card .ap-text { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.35; }
+.approvals-card .ap-text .small { opacity: .95; }
+
 /* ---------- วันที่ลงเวลาไม่ครบ ---------- */
 .issues-card { border: 1.5px solid #F5C451; background: #FFFBEB; }
 .issue-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 0; border-top: 1px solid #F3E3B5; }

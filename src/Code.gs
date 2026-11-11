@@ -27,7 +27,7 @@ var APP = {
   SCHOOL_FULL: 'โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่',
   NAME_EN: 'Wat Sao Hin School Attendance System',
   SLOGAN: 'ระบบลงเวลาอัจฉริยะ สะดวก โปร่งใส ตรวจสอบได้',
-  VERSION: '1.7.0',
+  VERSION: '1.8.0',
   TZ: 'Asia/Bangkok'
 };
 
@@ -204,8 +204,10 @@ function getRoutes_() {
     'leave.adminList': { fn: adminListLeaves_, roles: AE },
     'leave.adminCreate': { fn: adminRecordLeave_, roles: AE },
     'leave.review': { fn: reviewLeave_, roles: AE },
+    'leave.approveMany': { fn: approveManyLeaves_, roles: AE },
     'corr.adminList': { fn: adminListCorrections_, roles: AE },
     'corr.review': { fn: reviewCorrection_, roles: AE },
+    'corr.approveMany': { fn: approveManyCorrections_, roles: AE },
     'corr.adminCreate': { fn: adminRecordCorrection_, roles: AE },
     'report.daily': { fn: reportDaily_, roles: AE },
     'report.monthly': { fn: reportMonthly_, roles: AE },

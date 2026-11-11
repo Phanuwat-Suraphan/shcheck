@@ -500,6 +500,13 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
       await page.click('#toAdminBtn');
       await page.waitForSelector('#view-admin:not([hidden]) #ovStats .stat-card');
       assert.strictEqual(await page.locator('#ovWarnings .alert').count(), 0);
+      // รายการตั้งค่าเริ่มต้น: พิกัดและเวลาทำงานทำในหน้าติดตั้งแล้ว (2/6)
+      const setupTxt = await page.textContent('#setupCard');
+      assert.ok(/ตั้งค่าเริ่มต้นให้ครบ \(2\/6\)/.test(setupTxt) && /เพิ่มวันปิดภาคเรียน/.test(setupTxt) && /เพิ่มครูและบุคลากร/.test(setupTxt), setupTxt);
+      await page.locator('#setupCard').scrollIntoViewIfNeeded();
+      await shot(page, '24-setup-checklist-mobile.png');
+      await page.locator('#setupCard .setup-item', { hasText: 'เพิ่มวันปิดภาคเรียน' }).locator('[data-go-sec]').click();
+      await page.waitForSelector('[data-panel-sec="calendar"]:not([hidden])');
     } finally { fresh.server.close(); }
   });
 
@@ -514,7 +521,7 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
     assert.ok(/ส่งคำขอแล้ว/.test(await p.textContent('#fpDoneText')));
     await modalAction(p, 'เสร็จสิ้น');
     await admin.click('#adminNav [data-sec="overview"]');
-    await admin.locator('#ovWarnings', { hasText: 'คำขอรีเซ็ตรหัสผ่าน 1 รายการ' }).waitFor();
+    await admin.locator('#ovTasks .task-chip', { hasText: 'ขอรีเซ็ตรหัสผ่าน' }).waitFor();
     await admin.click('#adminNav [data-sec="members"]');
     await admin.locator('#memResetRequests', { hasText: 'อยู่ห้องพักครู ป.4' }).waitFor();
     await admin.click('#memResetRequests [data-reset-req]');
@@ -807,6 +814,39 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
     await d.locator('#crList .req-card', { hasText: 'นางสาวมาลี ศรีสุข' }).filter({ hasText: '20 พฤศจิกายน 2569' }).locator('[data-cr="APPROVE"]').click();
     await modalAction(d, 'อนุมัติ');
     await toast(d, /อนุมัติคำร้อง/);
+  });
+
+  await step('E34', 'ผู้บริหารเปิดแอป: หน้าแรกแจ้ง "งานรออนุมัติ" → แตะ "ไปอนุมัติ" เข้าหน้าใบลาทันที → "อนุมัติทั้งหมด" ในครั้งเดียว', async () => {
+    await setClock('2026-11-23 07:20:00');
+    const tp = await newPage();
+    await login(tp, 'somsri.j', 'SomsriNew2026');
+    await tp.waitForSelector('#view-app:not([hidden])');
+    for (const d of ['2026-11-25', '2026-11-26']) {
+      await tp.click('#userTabs [data-tab="leave"]');
+      await tp.click('#lvQuickDay [data-val="custom"]');
+      await tp.fill('#leaveStart', d); await tp.dispatchEvent('#leaveStart', 'change');
+      await tp.click('#leaveTypeGrid [data-type="PERSONAL"]');
+      await modalAction(tp, 'ยืนยันการลา');
+      await toast(tp, /ส่งใบลา/);
+      await tp.evaluate(() => document.querySelectorAll('.toast').forEach(t => t.remove()));
+    }
+    const boss = await newPage();
+    await login(boss, DEFAULTS.adminUser, ADMIN_NEW_PW);
+    await boss.waitForSelector('#approvalsCard:not([hidden])');
+    assert.ok(/ใบลา \d+/.test(await boss.textContent('#apDetail')), await boss.textContent('#apDetail'));
+    await shot(boss, '25-approvals-home-mobile.png');
+    await boss.click('#apGoBtn');
+    await boss.waitForSelector('[data-panel-sec="leaves"]:not([hidden]) #lvList .req-card');
+    await boss.waitForSelector('#lvApproveAllBtn:not([hidden])');
+    const n = +(/\((\d+)\)/.exec(await boss.textContent('#lvApproveAllBtn'))[1]);
+    assert.ok(n >= 2, 'อนุมัติทั้งหมด ' + n);
+    await boss.click('#lvApproveAllBtn');
+    await modalAction(boss, 'อนุมัติ ' + n + ' รายการ');
+    await toast(boss, new RegExp('อนุมัติแล้ว ' + n + ' รายการ'));
+    await boss.waitForFunction(() => !document.querySelector('#lvList [data-lv="APPROVE"]'));
+    await boss.click('#admBackBtn');
+    // ใบลาหายจากแถบ (อาจยังมีงานประเภทอื่น เช่น คำร้องแก้ไขเวลา)
+    await boss.waitForFunction(() => document.querySelector('#approvalsCard').hidden || !/ใบลา/.test(document.querySelector('#apDetail').textContent));
   });
 
   await step('E20', 'ไม่มี JavaScript error ในทุกหน้าที่ทดสอบ', async () => {

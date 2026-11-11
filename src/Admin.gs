@@ -29,6 +29,30 @@ function getAdminView_(ctx) {
 /*  Overview                                                                  */
 /* ========================================================================== */
 
+/**
+ * รายการตั้งค่าเริ่มต้นที่ควรทำให้ครบ (แสดงบนหน้าภาพรวมของผู้ดูแลระบบจนกว่าจะครบ)
+ * ตรวจจากข้อมูลจริงทั้งหมด ไม่ต้องติ๊กเอง
+ */
+function setupChecklist_(s, allEmps, today) {
+  var active = allEmps.filter(function (e) { return e.Status === EMP_STATUS.ACTIVE; });
+  var activeIds = {};
+  active.forEach(function (e) { if (e.Role !== ROLES.ADMIN) activeIds[e.EmployeeID] = true; });
+  var y = +today.substr(0, 4);
+  var schoolBreak = readAll_('WorkCalendar').some(function (c) {
+    return c.Type === 'SPECIAL_HOLIDAY' && (+String(c.Date).substr(0, 4) === y || +String(c.Date).substr(0, 4) === y + 1);
+  });
+  var items = [
+    { key: 'geo', done: s.geofenceConfigured, sec: 'settings', title: 'ตั้งพิกัดโรงเรียน', hint: 'ไปที่โรงเรียนแล้วกด “ใช้ตำแหน่งปัจจุบันของฉัน” ในหน้าตั้งค่า' },
+    { key: 'confirm', done: s.settingsConfirmed, sec: 'settings', title: 'ตรวจเวลาทำงานแล้วกดยืนยัน', hint: 'เวลาเริ่มงาน / ถือว่าสาย / เลิกงาน ให้ตรงกับคำสั่งของโรงเรียน' },
+    { key: 'director', done: !!s.directorName, sec: 'settings', title: 'ใส่ชื่อผู้อำนวยการ', hint: 'ใช้ในช่องลงนามของใบลาและรายงาน' },
+    { key: 'break', done: schoolBreak, sec: 'calendar', title: 'เพิ่มวันปิดภาคเรียน/วันหยุดของโรงเรียน', hint: 'ถ้าไม่เพิ่ม ช่วงปิดภาคเรียนครูทุกคนจะถูกนับว่าขาดงาน' },
+    { key: 'staff', done: Object.keys(activeIds).length > 0, sec: 'share', title: 'เพิ่มครูและบุคลากร', hint: 'วางรายชื่อจาก Excel แล้วพิมพ์บัตรเข้าใช้งาน หรือส่งลิงก์ให้สมัครเอง' },
+    { key: 'firstUse', done: readAll_('AttendanceLogs').some(function (g) { return activeIds[g.EmployeeID]; }), sec: 'share', title: 'ครูเริ่มลงเวลา', hint: 'ติดประกาศ QR Code ที่ห้องพักครู หรือส่งข้อความในกลุ่ม LINE' }
+  ];
+  var done = items.filter(function (i) { return i.done; }).length;
+  return { items: items, done: done, total: items.length, complete: done === items.length };
+}
+
 function getAdminOverview_(ctx) {
   var s = ctx.settings;
   var today = todayStr_();
@@ -82,7 +106,8 @@ function getAdminOverview_(ctx) {
   var allEmps = getEmployees_();
   var warnings = [];
   if (!s.geofenceConfigured) warnings.push('ยังไม่ได้ตั้งค่าพิกัดโรงเรียน บุคลากรจะยังไม่สามารถลงเวลาได้');
-  if (!s.settingsConfirmed) warnings.push('การตั้งค่าเวลาทำงาน/รัศมี GPS ยังเป็นค่าตัวอย่าง กรุณาตรวจสอบให้ตรงกับระเบียบของโรงเรียนแล้วกดยืนยันในหน้าตั้งค่า');
+  // ผู้ดูแลระบบเห็นรายการนี้ในการ์ด "ตั้งค่าเริ่มต้นให้ครบ" แล้ว
+  if (!s.settingsConfirmed && ctx.user.Role !== ROLES.ADMIN) warnings.push('การตั้งค่าเวลาทำงาน/รัศมี GPS ยังเป็นค่าตัวอย่าง กรุณาตรวจสอบให้ตรงกับระเบียบของโรงเรียนแล้วกดยืนยันในหน้าตั้งค่า');
   var storage = driveStorageInfo_();
   if (storage && storage.percent >= 85) {
     warnings.push('พื้นที่ Google Drive ของบัญชีระบบใช้ไปแล้ว ' + storage.percent + '% (' + storage.usedLabel + ' จาก ' + storage.limitLabel +
@@ -90,6 +115,8 @@ function getAdminOverview_(ctx) {
   }
   var info = getDayInfo_(today, s);
   return {
+    setup: ctx.user.Role === ROLES.ADMIN ? setupChecklist_(s, allEmps, today) : null,
+    approvals: approvalCounts_(ctx.user),
     date: today,
     dateLabel: thaiDate_(today, 'long'),
     isWorkday: info.isWorkday,

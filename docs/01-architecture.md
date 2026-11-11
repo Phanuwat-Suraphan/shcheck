@@ -276,3 +276,7 @@ flowchart LR
 | มือถือ: ลงเวลาเข้าหลังเวลาสาย (ลืมกด?) | ผู้บริหาร: บันทึกเวลาแทน |
 |---|---|
 | ![](screenshots/22-forgot-checkin-mobile.png) | ![](screenshots/23-record-time-desktop.png) |
+
+| แอดมิน: ตั้งค่าเริ่มต้นให้ครบ | ผู้อำนวยการ: งานรออนุมัติบนหน้าแรก |
+|---|---|
+| ![](screenshots/24-setup-checklist-mobile.png) | ![](screenshots/25-approvals-home-mobile.png) |

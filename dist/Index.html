@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.7.0
+<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.8.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Index.html
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่ -->
 <html lang="th">
@@ -484,6 +484,13 @@ table.table { width: 100%; border-collapse: collapse; font-size: .9rem; }
 .stats-table td:first-child { font-weight: 600; white-space: nowrap; }
 .stats-table td.muted { color: var(--muted); }
 
+/* ---------- งานรออนุมัติ (ผู้บริหาร) ---------- */
+.approvals-card { display: flex; align-items: center; gap: 12px; padding: 12px 12px 12px 16px; border-radius: 18px; color: #fff;
+  background: linear-gradient(135deg, #B45309, #D97706); box-shadow: var(--shadow-sm); }
+.approvals-card > .ms { font-size: 30px; }
+.approvals-card .ap-text { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.35; }
+.approvals-card .ap-text .small { opacity: .95; }
+
 /* ---------- วันที่ลงเวลาไม่ครบ ---------- */
 .issues-card { border: 1.5px solid #F5C451; background: #FFFBEB; }
 .issue-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 0; border-top: 1px solid #F3E3B5; }
@@ -903,6 +910,12 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
                   </div>
                 </div>
               </div>
+            </div>
+
+            <div class="approvals-card o-hello" id="approvalsCard" hidden>
+              <span class="ms">pending_actions</span>
+              <div class="ap-text"><b>งานรออนุมัติ <span id="apTotal"></span></b><span class="small" id="apDetail"></span></div>
+              <button type="button" class="btn sm white" id="apGoBtn">ไปอนุมัติ</button>
             </div>
 
             <div class="card clock-card o-clock" aria-live="off">
@@ -1765,7 +1778,8 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
     $('#accHomeIconBtn').addEventListener('click', openHomeIconGuide);
     $('#homeTipBtn').addEventListener('click', openHomeIconGuide);
     $('#homeTipClose').addEventListener('click', function () { local.set('wsh_tip_home', '1'); renderHomeTip(); });
-    $('#toAdminBtn').addEventListener('click', openAdmin);
+    $('#toAdminBtn').addEventListener('click', function () { openAdmin(); });
+    $('#apGoBtn').addEventListener('click', function () { openAdmin($('#apGoBtn').getAttribute('data-sec')); });
     $$('#userTabs [data-tab]').forEach(function (b) { b.addEventListener('click', function () { switchTab(b.getAttribute('data-tab')); }); });
     $('#checkInBtn').addEventListener('click', function () { doAttendance('IN'); });
     $('#checkOutBtn').addEventListener('click', function () { doAttendance('OUT'); });
@@ -2134,6 +2148,21 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
     if (tab === 'correction') { initCorrectionForm(); loadMyCorrections(); }
   }
 
+  /* ---------- ผู้บริหาร/ผู้ดูแล: งานรออนุมัติบนหน้าแรก ---------- */
+  function renderApprovals(a) {
+    var show = !!(a && a.total);
+    $('#approvalsCard').hidden = !show;
+    if (!show) return;
+    var parts = [];
+    if (a.leaves) parts.push('ใบลา ' + a.leaves);
+    if (a.corrections) parts.push('คำร้องแก้ไขเวลา ' + a.corrections);
+    if (a.registrations) parts.push('สมาชิกใหม่ ' + a.registrations);
+    if (a.passwordResets) parts.push('ขอรีเซ็ตรหัสผ่าน ' + a.passwordResets);
+    $('#apTotal').textContent = a.total + ' รายการ';
+    $('#apDetail').textContent = parts.join(' · ');
+    $('#apGoBtn').setAttribute('data-sec', a.leaves ? 'leaves' : (a.corrections ? 'corrections' : (a.registrations ? 'registrations' : 'members')));
+  }
+
   /* ---------- วันที่ลงเวลาไม่ครบ: แก้ไขได้ในแตะเดียว ---------- */
   var ISSUE_LABEL = { MISSING_OUT: 'ไม่ได้ลงเวลาออก', MISSING_IN: 'ไม่ได้ลงเวลาเข้า', ABSENT: 'ไม่มีการลงเวลา' };
   function renderIssues(list) {
@@ -2181,6 +2210,7 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
   function renderDashboard() {
     var d = S.dash, s = d.settings, row = d.today.row;
     renderIssues(d.issues);
+    renderApprovals(d.approvals);
     var hh = bkkParts(serverNow()).hh;
     $('#greeting').textContent = hh < 12 ? 'สวัสดีตอนเช้า' : (hh < 17 ? 'สวัสดีตอนบ่าย' : 'สวัสดีตอนเย็น');
     $('#workHours').textContent = 'เวลาทำงาน ' + s.workStart + '–' + s.workEnd + ' น. · ถือว่าสายเมื่อลงเวลาหลัง ' + s.lateAfter + ' น.';
@@ -2868,8 +2898,10 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
   }
 
   /* ------------------------------------------------------------------ admin (lazy load) */
-  function openAdmin() {
-    if (S.adminLoaded && window.Admin) { showView('admin'); window.Admin.show(); return; }
+  /** เปิดหน้าผู้บริหาร/ผู้ดูแล (sec = ส่วนที่ต้องการเปิดทันที เช่น 'leaves') */
+  function openAdmin(sec) {
+    sec = typeof sec === 'string' ? sec : null;
+    if (S.adminLoaded && window.Admin) { showView('admin'); if (sec) window.Admin.go(sec); else window.Admin.show(); return; }
     api('admin.view', {}, { loadingText: 'กำลังโหลดหน้าผู้ดูแลระบบ...' }).then(function (v) {
       $('#adminRoot').innerHTML = v.html;
       // สคริปต์ของหน้า Admin: แยกไฟล์ (v.script) หรือฝังใน HTML (ชุดติดตั้งแบบง่าย)
@@ -2883,7 +2915,7 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
       });
       S.adminLoaded = true;
       showView('admin');
-      window.Admin.init({ role: v.role, roleLabel: v.roleLabel, user: S.user });
+      window.Admin.init({ role: v.role, roleLabel: v.roleLabel, user: S.user, sec: sec });
     }).catch(function (e) { if (e.code !== 'AUTH') toast(e.message, 'error'); });
   }
   function backToUser() { showView('app'); switchTab('home'); }

@@ -507,7 +507,8 @@
     $('#accHomeIconBtn').addEventListener('click', openHomeIconGuide);
     $('#homeTipBtn').addEventListener('click', openHomeIconGuide);
     $('#homeTipClose').addEventListener('click', function () { local.set('wsh_tip_home', '1'); renderHomeTip(); });
-    $('#toAdminBtn').addEventListener('click', openAdmin);
+    $('#toAdminBtn').addEventListener('click', function () { openAdmin(); });
+    $('#apGoBtn').addEventListener('click', function () { openAdmin($('#apGoBtn').getAttribute('data-sec')); });
     $$('#userTabs [data-tab]').forEach(function (b) { b.addEventListener('click', function () { switchTab(b.getAttribute('data-tab')); }); });
     $('#checkInBtn').addEventListener('click', function () { doAttendance('IN'); });
     $('#checkOutBtn').addEventListener('click', function () { doAttendance('OUT'); });
@@ -876,6 +877,21 @@
     if (tab === 'correction') { initCorrectionForm(); loadMyCorrections(); }
   }
 
+  /* ---------- ผู้บริหาร/ผู้ดูแล: งานรออนุมัติบนหน้าแรก ---------- */
+  function renderApprovals(a) {
+    var show = !!(a && a.total);
+    $('#approvalsCard').hidden = !show;
+    if (!show) return;
+    var parts = [];
+    if (a.leaves) parts.push('ใบลา ' + a.leaves);
+    if (a.corrections) parts.push('คำร้องแก้ไขเวลา ' + a.corrections);
+    if (a.registrations) parts.push('สมาชิกใหม่ ' + a.registrations);
+    if (a.passwordResets) parts.push('ขอรีเซ็ตรหัสผ่าน ' + a.passwordResets);
+    $('#apTotal').textContent = a.total + ' รายการ';
+    $('#apDetail').textContent = parts.join(' · ');
+    $('#apGoBtn').setAttribute('data-sec', a.leaves ? 'leaves' : (a.corrections ? 'corrections' : (a.registrations ? 'registrations' : 'members')));
+  }
+
   /* ---------- วันที่ลงเวลาไม่ครบ: แก้ไขได้ในแตะเดียว ---------- */
   var ISSUE_LABEL = { MISSING_OUT: 'ไม่ได้ลงเวลาออก', MISSING_IN: 'ไม่ได้ลงเวลาเข้า', ABSENT: 'ไม่มีการลงเวลา' };
   function renderIssues(list) {
@@ -923,6 +939,7 @@
   function renderDashboard() {
     var d = S.dash, s = d.settings, row = d.today.row;
     renderIssues(d.issues);
+    renderApprovals(d.approvals);
     var hh = bkkParts(serverNow()).hh;
     $('#greeting').textContent = hh < 12 ? 'สวัสดีตอนเช้า' : (hh < 17 ? 'สวัสดีตอนบ่าย' : 'สวัสดีตอนเย็น');
     $('#workHours').textContent = 'เวลาทำงาน ' + s.workStart + '–' + s.workEnd + ' น. · ถือว่าสายเมื่อลงเวลาหลัง ' + s.lateAfter + ' น.';
@@ -1610,8 +1627,10 @@
   }
 
   /* ------------------------------------------------------------------ admin (lazy load) */
-  function openAdmin() {
-    if (S.adminLoaded && window.Admin) { showView('admin'); window.Admin.show(); return; }
+  /** เปิดหน้าผู้บริหาร/ผู้ดูแล (sec = ส่วนที่ต้องการเปิดทันที เช่น 'leaves') */
+  function openAdmin(sec) {
+    sec = typeof sec === 'string' ? sec : null;
+    if (S.adminLoaded && window.Admin) { showView('admin'); if (sec) window.Admin.go(sec); else window.Admin.show(); return; }
     api('admin.view', {}, { loadingText: 'กำลังโหลดหน้าผู้ดูแลระบบ...' }).then(function (v) {
       $('#adminRoot').innerHTML = v.html;
       // สคริปต์ของหน้า Admin: แยกไฟล์ (v.script) หรือฝังใน HTML (ชุดติดตั้งแบบง่าย)
@@ -1625,7 +1644,7 @@
       });
       S.adminLoaded = true;
       showView('admin');
-      window.Admin.init({ role: v.role, roleLabel: v.roleLabel, user: S.user });
+      window.Admin.init({ role: v.role, roleLabel: v.roleLabel, user: S.user, sec: sec });
     }).catch(function (e) { if (e.code !== 'AUTH') toast(e.message, 'error'); });
   }
   function backToUser() { showView('app'); switchTab('home'); }

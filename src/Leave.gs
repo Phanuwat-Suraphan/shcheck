@@ -267,6 +267,28 @@ function reviewLeave_(ctx, p) {
   return { leave: leaveView_(out.after), message: decision === 'APPROVE' ? 'อนุมัติใบลาแล้ว' : (decision === 'REJECT' ? 'ไม่อนุมัติใบลาแล้ว' : 'ยกเลิกการอนุมัติแล้ว') };
 }
 
+/**
+ * อนุมัติหลายรายการในครั้งเดียว (ใช้ฟังก์ชันพิจารณาทีละรายการเดิม จึงตรวจสิทธิ์/บันทึก Audit ครบทุกรายการ)
+ * รายการที่อนุมัติไม่ได้ (เช่น ของตนเอง หรือเวลาไม่สมเหตุสมผล) จะข้ามและแจ้งเหตุผล
+ */
+function approveMany_(ctx, ids, reviewFn, idKey) {
+  ids = Array.isArray(ids) ? ids.map(String).filter(function (x, i, a) { return x && a.indexOf(x) === i; }) : [];
+  if (!ids.length) throw appError_('ไม่มีรายการที่ต้องอนุมัติ', 'VALIDATION');
+  if (ids.length > 50) throw appError_('อนุมัติได้ครั้งละไม่เกิน 50 รายการ', 'VALIDATION');
+  var approved = 0, skipped = [];
+  ids.forEach(function (id) {
+    var p = { decision: 'APPROVE', note: '' };
+    p[idKey] = id;
+    try { reviewFn(ctx, p); approved++; } catch (e) { skipped.push({ id: id, reason: e.message || String(e) }); }
+  });
+  return {
+    approved: approved, skipped: skipped,
+    message: 'อนุมัติแล้ว ' + approved + ' รายการ' + (skipped.length ? ' · ข้าม ' + skipped.length + ' รายการ (' + skipped[0].reason + ')' : '')
+  };
+}
+function approveManyLeaves_(ctx, p) { return approveMany_(ctx, p.ids, reviewLeave_, 'leaveId'); }
+function approveManyCorrections_(ctx, p) { return approveMany_(ctx, p.ids, reviewCorrection_, 'requestId'); }
+
 /* ========================================================================== */
 /*  Leave statistics (ปีงบประมาณ / รอบการประเมิน) และแบบใบลาของทางราชการ        */
 /* ========================================================================== */

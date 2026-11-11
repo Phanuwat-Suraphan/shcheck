@@ -1,5 +1,5 @@
 /*
- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.7.0
+ * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.8.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Code.gs (โค้ดฝั่ง Server ทั้งหมด)
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่
  */
@@ -35,7 +35,7 @@ var APP = {
   SCHOOL_FULL: 'โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่',
   NAME_EN: 'Wat Sao Hin School Attendance System',
   SLOGAN: 'ระบบลงเวลาอัจฉริยะ สะดวก โปร่งใส ตรวจสอบได้',
-  VERSION: '1.7.0',
+  VERSION: '1.8.0',
   TZ: 'Asia/Bangkok'
 };
 
@@ -212,8 +212,10 @@ function getRoutes_() {
     'leave.adminList': { fn: adminListLeaves_, roles: AE },
     'leave.adminCreate': { fn: adminRecordLeave_, roles: AE },
     'leave.review': { fn: reviewLeave_, roles: AE },
+    'leave.approveMany': { fn: approveManyLeaves_, roles: AE },
     'corr.adminList': { fn: adminListCorrections_, roles: AE },
     'corr.review': { fn: reviewCorrection_, roles: AE },
+    'corr.approveMany': { fn: approveManyCorrections_, roles: AE },
     'corr.adminCreate': { fn: adminRecordCorrection_, roles: AE },
     'report.daily': { fn: reportDaily_, roles: AE },
     'report.monthly': { fn: reportMonthly_, roles: AE },
@@ -2785,8 +2787,30 @@ function getMyDashboard_(ctx) {
     month: { year: y, month: m, label: thaiMonthYear_(y, m), totals: me.totals },
     recent: recent,
     pending: { leaves: myLeaves, corrections: myCorr, todayIn: hasPendingInCorrection_(emp.EmployeeID, today) },
+    approvals: approvalCounts_(emp),
     issues: myAttendanceIssues_(emp, s, today)
   };
+}
+
+/**
+ * งานที่ผู้บริหาร/ผู้ดูแลต้องพิจารณา (ไม่นับคำขอของตนเองซึ่งพิจารณาเองไม่ได้) — บุคลากรทั่วไปได้ null
+ */
+function approvalCounts_(emp) {
+  if (emp.Role !== ROLES.ADMIN && emp.Role !== ROLES.EXECUTIVE) return null;
+  var notMine = function (r) { return r.Status === REQUEST_STATUS.PENDING && r.EmployeeID !== emp.EmployeeID; };
+  var out = {
+    leaves: readAll_('LeaveRequests').filter(notMine).length,
+    corrections: readAll_('CorrectionRequests').filter(notMine).length,
+    registrations: 0, passwordResets: 0
+  };
+  if (emp.Role === ROLES.ADMIN) {
+    getEmployees_().forEach(function (e) {
+      if (e.Status === EMP_STATUS.PENDING) out.registrations++;
+      if (e.Status === EMP_STATUS.ACTIVE && e.ResetRequestedAt) out.passwordResets++;
+    });
+  }
+  out.total = out.leaves + out.corrections + out.registrations + out.passwordResets;
+  return out;
 }
 
 /** มีคำร้องแก้ไข "เวลาเข้า" ของวันที่ระบุรอพิจารณาอยู่หรือไม่ */
@@ -3136,6 +3160,28 @@ function reviewLeave_(ctx, p) {
   });
   return { leave: leaveView_(out.after), message: decision === 'APPROVE' ? 'อนุมัติใบลาแล้ว' : (decision === 'REJECT' ? 'ไม่อนุมัติใบลาแล้ว' : 'ยกเลิกการอนุมัติแล้ว') };
 }
+
+/**
+ * อนุมัติหลายรายการในครั้งเดียว (ใช้ฟังก์ชันพิจารณาทีละรายการเดิม จึงตรวจสิทธิ์/บันทึก Audit ครบทุกรายการ)
+ * รายการที่อนุมัติไม่ได้ (เช่น ของตนเอง หรือเวลาไม่สมเหตุสมผล) จะข้ามและแจ้งเหตุผล
+ */
+function approveMany_(ctx, ids, reviewFn, idKey) {
+  ids = Array.isArray(ids) ? ids.map(String).filter(function (x, i, a) { return x && a.indexOf(x) === i; }) : [];
+  if (!ids.length) throw appError_('ไม่มีรายการที่ต้องอนุมัติ', 'VALIDATION');
+  if (ids.length > 50) throw appError_('อนุมัติได้ครั้งละไม่เกิน 50 รายการ', 'VALIDATION');
+  var approved = 0, skipped = [];
+  ids.forEach(function (id) {
+    var p = { decision: 'APPROVE', note: '' };
+    p[idKey] = id;
+    try { reviewFn(ctx, p); approved++; } catch (e) { skipped.push({ id: id, reason: e.message || String(e) }); }
+  });
+  return {
+    approved: approved, skipped: skipped,
+    message: 'อนุมัติแล้ว ' + approved + ' รายการ' + (skipped.length ? ' · ข้าม ' + skipped.length + ' รายการ (' + skipped[0].reason + ')' : '')
+  };
+}
+function approveManyLeaves_(ctx, p) { return approveMany_(ctx, p.ids, reviewLeave_, 'leaveId'); }
+function approveManyCorrections_(ctx, p) { return approveMany_(ctx, p.ids, reviewCorrection_, 'requestId'); }
 
 /* ========================================================================== */
 /*  Leave statistics (ปีงบประมาณ / รอบการประเมิน) และแบบใบลาของทางราชการ        */
@@ -3553,6 +3599,30 @@ function getAdminView_(ctx) {
 /*  Overview                                                                  */
 /* ========================================================================== */
 
+/**
+ * รายการตั้งค่าเริ่มต้นที่ควรทำให้ครบ (แสดงบนหน้าภาพรวมของผู้ดูแลระบบจนกว่าจะครบ)
+ * ตรวจจากข้อมูลจริงทั้งหมด ไม่ต้องติ๊กเอง
+ */
+function setupChecklist_(s, allEmps, today) {
+  var active = allEmps.filter(function (e) { return e.Status === EMP_STATUS.ACTIVE; });
+  var activeIds = {};
+  active.forEach(function (e) { if (e.Role !== ROLES.ADMIN) activeIds[e.EmployeeID] = true; });
+  var y = +today.substr(0, 4);
+  var schoolBreak = readAll_('WorkCalendar').some(function (c) {
+    return c.Type === 'SPECIAL_HOLIDAY' && (+String(c.Date).substr(0, 4) === y || +String(c.Date).substr(0, 4) === y + 1);
+  });
+  var items = [
+    { key: 'geo', done: s.geofenceConfigured, sec: 'settings', title: 'ตั้งพิกัดโรงเรียน', hint: 'ไปที่โรงเรียนแล้วกด “ใช้ตำแหน่งปัจจุบันของฉัน” ในหน้าตั้งค่า' },
+    { key: 'confirm', done: s.settingsConfirmed, sec: 'settings', title: 'ตรวจเวลาทำงานแล้วกดยืนยัน', hint: 'เวลาเริ่มงาน / ถือว่าสาย / เลิกงาน ให้ตรงกับคำสั่งของโรงเรียน' },
+    { key: 'director', done: !!s.directorName, sec: 'settings', title: 'ใส่ชื่อผู้อำนวยการ', hint: 'ใช้ในช่องลงนามของใบลาและรายงาน' },
+    { key: 'break', done: schoolBreak, sec: 'calendar', title: 'เพิ่มวันปิดภาคเรียน/วันหยุดของโรงเรียน', hint: 'ถ้าไม่เพิ่ม ช่วงปิดภาคเรียนครูทุกคนจะถูกนับว่าขาดงาน' },
+    { key: 'staff', done: Object.keys(activeIds).length > 0, sec: 'share', title: 'เพิ่มครูและบุคลากร', hint: 'วางรายชื่อจาก Excel แล้วพิมพ์บัตรเข้าใช้งาน หรือส่งลิงก์ให้สมัครเอง' },
+    { key: 'firstUse', done: readAll_('AttendanceLogs').some(function (g) { return activeIds[g.EmployeeID]; }), sec: 'share', title: 'ครูเริ่มลงเวลา', hint: 'ติดประกาศ QR Code ที่ห้องพักครู หรือส่งข้อความในกลุ่ม LINE' }
+  ];
+  var done = items.filter(function (i) { return i.done; }).length;
+  return { items: items, done: done, total: items.length, complete: done === items.length };
+}
+
 function getAdminOverview_(ctx) {
   var s = ctx.settings;
   var today = todayStr_();
@@ -3606,7 +3676,8 @@ function getAdminOverview_(ctx) {
   var allEmps = getEmployees_();
   var warnings = [];
   if (!s.geofenceConfigured) warnings.push('ยังไม่ได้ตั้งค่าพิกัดโรงเรียน บุคลากรจะยังไม่สามารถลงเวลาได้');
-  if (!s.settingsConfirmed) warnings.push('การตั้งค่าเวลาทำงาน/รัศมี GPS ยังเป็นค่าตัวอย่าง กรุณาตรวจสอบให้ตรงกับระเบียบของโรงเรียนแล้วกดยืนยันในหน้าตั้งค่า');
+  // ผู้ดูแลระบบเห็นรายการนี้ในการ์ด "ตั้งค่าเริ่มต้นให้ครบ" แล้ว
+  if (!s.settingsConfirmed && ctx.user.Role !== ROLES.ADMIN) warnings.push('การตั้งค่าเวลาทำงาน/รัศมี GPS ยังเป็นค่าตัวอย่าง กรุณาตรวจสอบให้ตรงกับระเบียบของโรงเรียนแล้วกดยืนยันในหน้าตั้งค่า');
   var storage = driveStorageInfo_();
   if (storage && storage.percent >= 85) {
     warnings.push('พื้นที่ Google Drive ของบัญชีระบบใช้ไปแล้ว ' + storage.percent + '% (' + storage.usedLabel + ' จาก ' + storage.limitLabel +
@@ -3614,6 +3685,8 @@ function getAdminOverview_(ctx) {
   }
   var info = getDayInfo_(today, s);
   return {
+    setup: ctx.user.Role === ROLES.ADMIN ? setupChecklist_(s, allEmps, today) : null,
+    approvals: approvalCounts_(ctx.user),
     date: today,
     dateLabel: thaiDate_(today, 'long'),
     isWorkday: info.isWorkday,

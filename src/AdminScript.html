@@ -254,6 +254,7 @@ window.Admin = (function () {
 
   /* ------------------------------------------------------------------ init / nav */
   function init(o) {
+    st.firstSec = o.sec || null;
     st.role = o.role; st.user = o.user;
     $('#admRoleText').textContent = o.roleLabel + ' · ' + o.user.fullName;
     if (!isAdmin()) $$('[data-admin-only]').forEach(function (b) { b.remove(); });
@@ -265,7 +266,7 @@ window.Admin = (function () {
       var r = e.target.closest('[data-reload]'); if (r) go(r.getAttribute('data-reload'));
     });
     bindOverview(); bindMembers(); bindRequests(); bindReports(); bindCalendar(); bindSettings(); bindAudit(); bindShare();
-    go('overview');
+    go(st.firstSec || 'overview');
   }
   function show() { go(st.sec); }
   function destroy() { Object.keys(st.charts).forEach(destroyChart); }
@@ -295,9 +296,8 @@ window.Admin = (function () {
       st.overview = o;
       var c = o.counts;
       $('#ovDate').textContent = A.thDate(o.date, 'long') + (o.isWorkday ? '' : ' · ' + o.holidayName);
-      $('#ovWarnings').innerHTML = (o.pending.passwordResets ? '<div class="alert info">' + icon('lock_reset') + '<div>มีคำขอรีเซ็ตรหัสผ่าน ' + o.pending.passwordResets +
-        ' รายการ <button type="button" class="link-btn" data-go-sec="members">ไปจัดการ</button></div></div>' : '') +
-        o.warnings.map(function (w) {
+      renderTasks(o);
+      $('#ovWarnings').innerHTML = o.warnings.map(function (w) {
           return '<div class="alert warning">' + icon('warning') + '<div>' + esc(w) + (isAdmin() ? ' <button type="button" class="link-btn" data-go-sec="settings">ไปหน้าตั้งค่า</button>' : '') + '</div></div>';
         }).join('');
       $('#ovStats').innerHTML = [
@@ -315,6 +315,31 @@ window.Admin = (function () {
       renderTrend(o.trend);
       renderOverviewTable();
     }).catch(err);
+  }
+  /** การ์ด "สิ่งที่ต้องทำ": งานรออนุมัติ + รายการตั้งค่าเริ่มต้น (ผู้ดูแลระบบ) */
+  function renderTasks(o) {
+    var a = o.approvals || {}, html = '';
+    var chips = [['leaves', 'event_busy', 'ใบลารออนุมัติ', a.leaves], ['corrections', 'edit_calendar', 'คำร้องแก้ไขเวลา', a.corrections],
+      ['registrations', 'person_add', 'สมาชิกใหม่รออนุมัติ', a.registrations], ['members', 'lock_reset', 'ขอรีเซ็ตรหัสผ่าน', a.passwordResets]].filter(function (c) { return c[3] > 0; });
+    if (chips.length) {
+      html += '<div class="card tasks-card"><div class="card-title">' + icon('pending_actions') + 'งานรอดำเนินการ</div><div class="task-chips">' +
+        chips.map(function (c) { return '<button type="button" class="task-chip" data-go-sec="' + c[0] + '">' + icon(c[1]) + esc(c[2]) + '<b>' + c[3] + '</b></button>'; }).join('') + '</div></div>';
+    }
+    var setup = o.setup, hidden = false;
+    try { hidden = localStorage.getItem('wsh_setup_hide') === '1'; } catch (e) { hidden = false; }
+    if (setup && !setup.complete && !hidden) {
+      html += '<div class="card tasks-card" id="setupCard"><div class="row-between"><div class="card-title mb-0">' + icon('checklist') + 'ตั้งค่าเริ่มต้นให้ครบ (' + setup.done + '/' + setup.total + ')</div>' +
+        '<button type="button" class="btn ghost sm" id="setupHideBtn">ซ่อน</button></div>' +
+        '<div class="setup-progress"><div style="width:' + Math.round(setup.done / setup.total * 100) + '%"></div></div>' +
+        setup.items.map(function (i) {
+          return '<div class="setup-item' + (i.done ? ' done' : '') + '"><span class="st-icon">' + icon(i.done ? 'check' : 'radio_button_unchecked') + '</span>' +
+            '<div class="st-text"><b>' + esc(i.title) + '</b><span class="small muted">' + esc(i.hint) + '</span></div>' +
+            (i.done ? '' : '<button type="button" class="btn outline sm" data-go-sec="' + esc(i.sec) + '">ไปทำ</button>') + '</div>';
+        }).join('') + '</div>';
+    }
+    $('#ovTasks').innerHTML = html;
+    var hb = $('#setupHideBtn');
+    if (hb) hb.addEventListener('click', function () { try { localStorage.setItem('wsh_setup_hide', '1'); } catch (e) { /* ignore */ } renderTasks(o); });
   }
   /** สัดส่วนสถานะวันนี้: แถบแบ่งส่วน (อ่านง่ายกว่ากราฟวงกลม) + ป้ายกำกับพร้อมจำนวน */
   function renderSegbar() {
@@ -639,12 +664,17 @@ window.Admin = (function () {
     bindSeg('crStatusSeg', function (v) { st.crStatus = v; loadCorrections(); });
     $('#lvSearch').addEventListener('input', debounce(loadLeaves, 400));
     $('#lvRecordBtn').addEventListener('click', function () { recordLeaveDialog(null); });
+    $('#lvApproveAllBtn').addEventListener('click', function () { approveAll('leave', st.lvApprovable || []); });
+    $('#crApproveAllBtn').addEventListener('click', function () { approveAll('corr', st.crApprovable || []); });
     $('#crRecordBtn').addEventListener('click', function () { recordTimeDialog(null); });
     $('#crSearch').addEventListener('input', debounce(loadCorrections, 400));
   }
   function loadLeaves() {
     A.api('leave.adminList', { status: st.lvStatus, q: $('#lvSearch').value.trim() }, { loadingText: 'กำลังโหลดใบลา...' }).then(function (list) {
       if (st.lvStatus === 'PENDING') setCounts({ leaves: list.length });
+      st.lvApprovable = list.filter(function (l) { return l.status === 'PENDING' && l.employeeId !== st.user.employeeId; }).map(function (l) { return l.leaveId; });
+      $('#lvApproveAllBtn').hidden = st.lvApprovable.length < 2;
+      $('#lvApproveAllBtn span:last-child').textContent = 'อนุมัติทั้งหมด (' + st.lvApprovable.length + ')';
       var host = $('#lvList');
       host.innerHTML = list.length ? list.map(function (l) {
         var mine = l.employeeId === st.user.employeeId;
@@ -657,6 +687,20 @@ window.Admin = (function () {
       A.bindPrintLeave(host);
       $$('[data-lv]', host).forEach(function (b) { b.addEventListener('click', function () { reviewLeave(b.getAttribute('data-id'), b.getAttribute('data-lv')); }); });
     }).catch(err);
+  }
+  /** อนุมัติทุกรายการที่รออยู่ (ยกเว้นของตนเอง) — kind: 'leave' | 'corr' */
+  function approveAll(kind, ids) {
+    if (!ids.length) return;
+    var what = kind === 'leave' ? 'ใบลา' : 'คำร้องแก้ไขเวลา';
+    A.confirmDialog({ title: 'อนุมัติทั้งหมด', icon: 'done_all', confirmText: 'อนุมัติ ' + ids.length + ' รายการ',
+      html: 'อนุมัติ' + what + 'ที่รออนุมัติทั้งหมด <b>' + ids.length + ' รายการ</b> ใช่หรือไม่' +
+        (kind === 'corr' ? '<br><span class="small muted">ระบบจะปรับเวลาตามคำร้อง โดยเก็บรายการเดิมไว้เป็นประวัติ · รายการที่เวลาไม่สมเหตุสมผลจะถูกข้าม</span>' : '') }).then(function (y) {
+      if (!y) return;
+      A.api(kind === 'leave' ? 'leave.approveMany' : 'corr.approveMany', { ids: ids }, { loadingText: 'กำลังอนุมัติ ' + ids.length + ' รายการ...' }).then(function (r) {
+        A.toast(r.message, r.skipped.length ? 'warning' : 'success', 6000);
+        if (kind === 'leave') loadLeaves(); else loadCorrections();
+      }).catch(err);
+    });
   }
   /** บันทึกการลาให้บุคลากร: เลือกคน + วันที่ → แตะประเภทการลา → ยืนยัน (อนุมัติทันที) */
   function recordLeaveDialog(presetId) {
@@ -742,6 +786,9 @@ window.Admin = (function () {
   function loadCorrections() {
     A.api('corr.adminList', { status: st.crStatus, q: $('#crSearch').value.trim() }, { loadingText: 'กำลังโหลดคำร้อง...' }).then(function (list) {
       if (st.crStatus === 'PENDING') setCounts({ corrections: list.length });
+      st.crApprovable = list.filter(function (c) { return c.status === 'PENDING' && c.employeeId !== st.user.employeeId; }).map(function (c) { return c.requestId; });
+      $('#crApproveAllBtn').hidden = st.crApprovable.length < 2;
+      $('#crApproveAllBtn span:last-child').textContent = 'อนุมัติทั้งหมด (' + st.crApprovable.length + ')';
       var host = $('#crList');
       host.innerHTML = list.length ? list.map(function (c) {
         var mine = c.employeeId === st.user.employeeId;
@@ -1233,6 +1280,6 @@ window.Admin = (function () {
     try { var o = JSON.parse(d); return JSON.stringify(o, null, 1).slice(0, 600); } catch (e) { return String(d).slice(0, 600); }
   }
 
-  return { init: init, show: show, destroy: destroy };
+  return { init: init, show: show, destroy: destroy, go: go };
 })();
 </script>
