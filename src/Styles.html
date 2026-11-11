@@ -468,6 +468,14 @@ table.table { width: 100%; border-collapse: collapse; font-size: .9rem; }
 .stats-table td:first-child { font-weight: 600; white-space: nowrap; }
 .stats-table td.muted { color: var(--muted); }
 
+/* ---------- ประกาศถึงบุคลากร ---------- */
+.announce-card { display: flex; align-items: flex-start; gap: 12px; padding: 12px 8px 12px 16px; border-radius: 18px; background: #EEF6FF; border: 1.5px solid var(--sky-200); color: var(--navy-900); }
+.announce-card > .ms { font-size: 28px; color: var(--sky-500); margin-top: 2px; }
+.announce-card .an-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.announce-card .an-text { white-space: pre-wrap; word-break: break-word; font-size: 1.02rem; line-height: 1.5; }
+.announce-card .tiny { color: var(--muted); }
+.announce-card .icon-btn { color: var(--muted); width: 36px; height: 36px; }
+
 /* ---------- งานรออนุมัติ (ผู้บริหาร) ---------- */
 .approvals-card { display: flex; align-items: center; gap: 12px; padding: 12px 12px 12px 16px; border-radius: 18px; color: #fff;
   background: linear-gradient(135deg, #B45309, #D97706); box-shadow: var(--shadow-sm); }

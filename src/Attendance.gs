@@ -249,6 +249,7 @@ function getMyDashboard_(ctx) {
     recent: recent,
     pending: { leaves: myLeaves, corrections: myCorr, todayIn: hasPendingInCorrection_(emp.EmployeeID, today) },
     approvals: approvalCounts_(emp),
+    announcement: getAnnouncement_(),
     issues: myAttendanceIssues_(emp, s, today)
   };
 }

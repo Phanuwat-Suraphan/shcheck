@@ -229,7 +229,7 @@ window.Admin = (function () {
     CORRECTION_SUBMIT: 'ยื่นคำร้องแก้ไขเวลา', CORRECTION_CANCEL: 'ยกเลิกคำร้อง', CORRECTION_APPROVE: 'อนุมัติคำร้องแก้ไขเวลา', CORRECTION_REJECT: 'ไม่อนุมัติคำร้อง',
     SETTINGS_UPDATE: 'แก้ไขการตั้งค่า', CALENDAR_ADD: 'เพิ่มวันในปฏิทิน', CALENDAR_REMOVE: 'ลบวันในปฏิทิน', CALENDAR_ADD_FIXED: 'เพิ่มวันหยุดราชการคงที่',
     REPORT_EXPORT: 'ส่งออกรายงาน', SUMMARY_REBUILD: 'คำนวณสรุปรายวันใหม่', MAINTENANCE: 'งานบำรุงรักษาข้อมูล',
-    LOGIN_REMEMBERED: 'เข้าสู่ระบบอัตโนมัติ (เครื่องที่จำไว้)', CORRECTION_RECORD_BY_ADMIN: 'บันทึกเวลาแทนบุคลากร', EMPLOYEE_BULK_CREATE: 'เพิ่มบุคลากรหลายคน', LOGOUT_ALL: 'ออกจากระบบทุกเครื่อง',
+    LOGIN_REMEMBERED: 'เข้าสู่ระบบอัตโนมัติ (เครื่องที่จำไว้)', ANNOUNCEMENT_SAVE: 'ประกาศถึงบุคลากร', ANNOUNCEMENT_CLEAR: 'ลบประกาศ', BACKUP: 'สำรองฐานข้อมูล', CORRECTION_RECORD_BY_ADMIN: 'บันทึกเวลาแทนบุคลากร', EMPLOYEE_BULK_CREATE: 'เพิ่มบุคลากรหลายคน', LOGOUT_ALL: 'ออกจากระบบทุกเครื่อง',
     BOOTSTRAP_ADMIN_CREATED: 'สร้างผู้ดูแลระบบคนแรก', FIRST_RUN_SETUP: 'ติดตั้งครั้งแรกผ่านหน้าเว็บ', EMERGENCY_ADMIN_RESET: 'กู้คืนสิทธิ์ผู้ดูแลระบบ'
   };
 
@@ -265,7 +265,7 @@ window.Admin = (function () {
       var g = e.target.closest('[data-go-sec]'); if (g) go(g.getAttribute('data-go-sec'));
       var r = e.target.closest('[data-reload]'); if (r) go(r.getAttribute('data-reload'));
     });
-    bindOverview(); bindMembers(); bindRequests(); bindReports(); bindCalendar(); bindSettings(); bindAudit(); bindShare();
+    bindOverview(); bindMembers(); bindRequests(); bindReports(); bindCalendar(); bindSettings(); bindAudit(); bindShare(); bindAnnounce();
     go(st.firstSec || 'overview');
   }
   function show() { go(st.sec); }
@@ -297,6 +297,7 @@ window.Admin = (function () {
       var c = o.counts;
       $('#ovDate').textContent = A.thDate(o.date, 'long') + (o.isWorkday ? '' : ' · ' + o.holidayName);
       renderTasks(o);
+      renderAnnounceAdmin(o.announcement);
       $('#ovWarnings').innerHTML = o.warnings.map(function (w) {
           return '<div class="alert warning">' + icon('warning') + '<div>' + esc(w) + (isAdmin() ? ' <button type="button" class="link-btn" data-go-sec="settings">ไปหน้าตั้งค่า</button>' : '') + '</div></div>';
         }).join('');
@@ -315,6 +316,50 @@ window.Admin = (function () {
       renderTrend(o.trend);
       renderOverviewTable();
     }).catch(err);
+  }
+  /* ---------- ประกาศถึงบุคลากร ---------- */
+  function renderAnnounceAdmin(a) {
+    st.announcement = a || null;
+    $('#anCurrent').innerHTML = a ? '<div class="announce-preview">' + esc(a.text) + '</div><div class="tiny muted">โดย ' + esc(a.by) + ' · ' + esc(a.atLabel) + ' · แสดงถึง ' + esc(a.untilLabel) + '</div>'
+      : '<span class="muted">ยังไม่มีประกาศ — ใช้แจ้งข่าวถึงครูทุกคน เช่น วันหยุดพิเศษ การประชุม (แสดงบนหน้าแรกของทุกคน)</span>';
+    $('#anClearBtn').hidden = !a;
+    $('#anWriteBtn').innerHTML = icon('edit') + (a ? 'แก้ไขประกาศ' : 'เขียนประกาศ');
+  }
+  function bindAnnounce() {
+    $('#anWriteBtn').addEventListener('click', function () {
+      var a = st.announcement, today = A.bkkToday();
+      A.modal({
+        title: 'ประกาศถึงบุคลากร', icon: 'campaign',
+        body: '<div class="field" data-field="text"><label for="anInput">ข้อความ (ไม่เกิน 300 ตัวอักษร)</label><textarea id="anInput" maxlength="300" style="min-height:110px" placeholder="เช่น วันศุกร์ที่ 27 หยุดกีฬาสี · ประชุมครูวันพุธ 15.30 น. ที่ห้องประชุม"></textarea><span class="err"></span></div>' +
+          '<div class="field" data-field="until"><label for="anUntilIn">แสดงถึงวันที่</label><input type="date" id="anUntilIn"><span class="hint" data-thai-for="anUntilIn"></span><span class="err"></span></div>' +
+          '<p class="small muted mb-0">ครูทุกคนจะเห็นประกาศนี้บนหน้าแรก (แทนประกาศเดิม)</p>',
+        onOpen: function (root) {
+          $('#anInput', root).value = a ? a.text : '';
+          var u = $('#anUntilIn', root);
+          u.min = today; u.max = A.addDaysYmd(today, 90);
+          u.value = a ? a.until : A.addDaysYmd(today, 7);
+          A.setThaiHint(u);
+          u.addEventListener('change', function () { A.setThaiHint(u); });
+        },
+        actions: [{ label: 'ยกเลิก', cls: 'outline' }, { label: 'ประกาศ', icon: 'campaign', onClick: function (close, btn, root) {
+          A.clearFieldErrors(root);
+          A.setBtnLoading(btn, true);
+          A.api('announce.save', { text: $('#anInput', root).value, until: $('#anUntilIn', root).value }, { silent: true }).then(function (r) {
+            A.setBtnLoading(btn, false); close(); A.toast(r.message, 'success', 5000); renderAnnounceAdmin(r.announcement);
+          }).catch(function (x) {
+            A.setBtnLoading(btn, false);
+            if (x.code === 'AUTH') return;
+            if (!(x.data && x.data.field && A.showFieldError(root, x.data.field, x.message))) A.toast(x.message, 'error');
+          });
+          return false;
+        } }]
+      });
+    });
+    $('#anClearBtn').addEventListener('click', function () {
+      A.confirmDialog({ title: 'ลบประกาศ', message: 'ต้องการลบประกาศนี้ใช่หรือไม่ (ครูจะไม่เห็นบนหน้าแรกอีก)', confirmText: 'ลบประกาศ', danger: true }).then(function (y) {
+        if (y) A.api('announce.clear', {}).then(function (r) { A.toast(r.message, 'success'); renderAnnounceAdmin(null); }).catch(err);
+      });
+    });
   }
   /** การ์ด "สิ่งที่ต้องทำ": งานรออนุมัติ + รายการตั้งค่าเริ่มต้น (ผู้ดูแลระบบ) */
   function renderTasks(o) {
@@ -1076,6 +1121,13 @@ window.Admin = (function () {
     if (!isAdmin()) return;
     A.fillMonthYear($('#mtMonth'), $('#mtYear'), 3);
     $('#setForm').addEventListener('submit', saveSettings);
+    $('#mtBackupBtn').addEventListener('click', function () {
+      var b = $('#mtBackupBtn');
+      A.setBtnLoading(b, true);
+      A.api('sys.backup', {}, { loadingText: 'กำลังสำรองฐานข้อมูล...' }).then(function (r) {
+        A.setBtnLoading(b, false); A.toast(r.message, 'success', 6000); renderBackupInfo(r.backup);
+      }).catch(function (x) { A.setBtnLoading(b, false); err(x); });
+    });
     ['#sLat', '#sLng'].forEach(function (s) { $(s).addEventListener('input', updateMapLink); });
     $('#sUseMyLoc').addEventListener('click', function () {
       var b = $('#sUseMyLoc');
@@ -1110,6 +1162,7 @@ window.Admin = (function () {
       $('#setServerTime').textContent = 'เวลาเซิร์ฟเวอร์: ' + s.serverTime;
       TEXT_SETTINGS.forEach(function (k) { if (f[k]) f[k].value = v[k] || ''; });
       ['ALLOW_HOLIDAY_CHECKIN', 'ALLOW_REGISTRATION', 'SETTINGS_CONFIRMED', 'LEAVE_REQUIRES_APPROVAL', 'CHECKOUT_REQUIRES_GPS'].forEach(function (k) { f[k].checked = String(v[k]).toUpperCase() === 'TRUE'; });
+      renderBackupInfo(s.backup);
       if (s.storage) {
         $('#mtStorage').hidden = false;
         $('#mtStorage').className = 'alert ' + (s.storage.percent >= 85 ? 'warning' : 'info');
@@ -1119,6 +1172,10 @@ window.Admin = (function () {
       $$('#sWorkDays input').forEach(function (c) { c.checked = days.indexOf(c.value) >= 0; });
       updateMapLink();
     }).catch(err);
+  }
+  function renderBackupInfo(b) {
+    if (!b) return;
+    $('#mtBackupText').innerHTML = b.last ? 'สำรองล่าสุด: <b>' + esc(b.lastLabel) + '</b>' : '<b>ยังไม่เคยสำรอง</b> — ระบบจะสำรองอัตโนมัติคืนนี้ หรือกดสำรองตอนนี้';
   }
   function saveSettings(e) {
     e.preventDefault();

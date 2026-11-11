@@ -47,7 +47,7 @@ function setupChecklist_(s, allEmps, today) {
     { key: 'director', done: !!s.directorName, sec: 'settings', title: 'ใส่ชื่อผู้อำนวยการ', hint: 'ใช้ในช่องลงนามของใบลาและรายงาน' },
     { key: 'break', done: schoolBreak, sec: 'calendar', title: 'เพิ่มวันปิดภาคเรียน/วันหยุดของโรงเรียน', hint: 'ถ้าไม่เพิ่ม ช่วงปิดภาคเรียนครูทุกคนจะถูกนับว่าขาดงาน' },
     { key: 'staff', done: Object.keys(activeIds).length > 0, sec: 'share', title: 'เพิ่มครูและบุคลากร', hint: 'วางรายชื่อจาก Excel แล้วพิมพ์บัตรเข้าใช้งาน หรือส่งลิงก์ให้สมัครเอง' },
-    { key: 'firstUse', done: readAll_('AttendanceLogs').some(function (g) { return activeIds[g.EmployeeID]; }), sec: 'share', title: 'ครูเริ่มลงเวลา', hint: 'ติดประกาศ QR Code ที่ห้องพักครู หรือส่งข้อความในกลุ่ม LINE' }
+    { key: 'firstUse', done: readAll_('DailySummary').some(function (g) { return activeIds[g.EmployeeID]; }), sec: 'share', title: 'ครูเริ่มลงเวลา', hint: 'ติดประกาศ QR Code ที่ห้องพักครู หรือส่งข้อความในกลุ่ม LINE' }
   ];
   var done = items.filter(function (i) { return i.done; }).length;
   return { items: items, done: done, total: items.length, complete: done === items.length };
@@ -116,6 +116,7 @@ function getAdminOverview_(ctx) {
   var info = getDayInfo_(today, s);
   return {
     setup: ctx.user.Role === ROLES.ADMIN ? setupChecklist_(s, allEmps, today) : null,
+    announcement: getAnnouncement_(),
     approvals: approvalCounts_(ctx.user),
     date: today,
     dateLabel: thaiDate_(today, 'long'),
@@ -347,6 +348,50 @@ function bulkCreateEmployees_(ctx, p) {
   };
 }
 
+/* ---------- ประกาศถึงบุคลากร (แสดงบนหน้าแรกของทุกคน) ---------- */
+
+/** ประกาศที่ยังไม่หมดอายุ หรือ null (เก็บใน Script Properties — ไม่ต้องอ่านชีตเพิ่ม) */
+function getAnnouncement_() {
+  var raw = scriptProps_().ANNOUNCEMENT;
+  if (!raw) return null;
+  var a;
+  try { a = JSON.parse(raw); } catch (e) { return null; }
+  if (!a || !a.text || (a.until && a.until < todayStr_())) return null;
+  return { id: a.id, text: a.text, until: a.until, untilLabel: thaiDate_(a.until), by: a.by, atLabel: thaiStamp_(a.at) };
+}
+
+/** ผู้บริหาร/ผู้ดูแลระบบประกาศข้อความถึงบุคลากรทุกคน (แทนประกาศเดิม) */
+function saveAnnouncement_(ctx, p) {
+  var text = cleanText_(p.text, 1000);
+  if (text.length < 2) throw appError_('กรุณาพิมพ์ข้อความประกาศ', 'VALIDATION', { field: 'text' });
+  if (text.length > 300) throw appError_('ข้อความประกาศต้องไม่เกิน 300 ตัวอักษร', 'VALIDATION', { field: 'text' });
+  var until = String(p.until || ''), today = todayStr_();
+  if (!isValidYmd_(until)) throw appError_('กรุณาเลือกวันสุดท้ายที่แสดงประกาศ', 'VALIDATION', { field: 'until' });
+  if (until < today) throw appError_('วันสุดท้ายที่แสดงต้องไม่ก่อนวันนี้', 'VALIDATION', { field: 'until' });
+  if (until > addDays_(today, 90)) throw appError_('แสดงประกาศได้นานไม่เกิน 90 วัน', 'VALIDATION', { field: 'until' });
+  var a = { id: newId_('AN'), text: text, until: until, by: ctx.user.FullName, at: nowStamp_() };
+  PropertiesService.getScriptProperties().setProperty('ANNOUNCEMENT', JSON.stringify(a));
+  MEMO_.props = null;
+  writeAudit_(ctx, 'ANNOUNCEMENT_SAVE', 'Announcement', a.id, { text: text, until: until });
+  return { announcement: getAnnouncement_(), message: 'ประกาศแล้ว — บุคลากรจะเห็นบนหน้าแรกถึงวันที่ ' + thaiDate_(until) };
+}
+
+function clearAnnouncement_(ctx) {
+  var cur = getAnnouncement_();
+  PropertiesService.getScriptProperties().deleteProperty('ANNOUNCEMENT');
+  MEMO_.props = null;
+  writeAudit_(ctx, 'ANNOUNCEMENT_CLEAR', 'Announcement', cur ? cur.id : '', cur ? { text: cur.text } : null);
+  return { announcement: null, message: 'ลบประกาศแล้ว' };
+}
+
+/* ---------- สำรองฐานข้อมูล ---------- */
+
+function backupNow_(ctx) {
+  var r = backupDatabase_();
+  writeAudit_(ctx, 'BACKUP', 'SYSTEM', '', r);
+  return { backup: backupInfo_(), message: 'สำรองข้อมูลแล้ว (' + r.name + ') — เก็บไว้ ' + r.kept + ' ชุดล่าสุด' };
+}
+
 /** ลิงก์เว็บแอปสำหรับแชร์/ทำ QR Code (ใช้ /exec เสมอ) */
 function getAppLink_(ctx) {
   var url = '';
@@ -539,6 +584,7 @@ function getSettingsForAdmin_(ctx) {
     descriptions: desc,
     schoolMaps: s.geofenceConfigured ? mapLinks_(s.schoolLat, s.schoolLng) : null,
     storage: driveStorageInfo_(),
+    backup: backupInfo_(),
     serverTime: thaiDate_(todayStr_(), 'long') + ' ' + nowTimeStr_() + ' น.',
     timezone: APP.TZ
   };

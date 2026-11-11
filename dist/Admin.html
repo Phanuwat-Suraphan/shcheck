@@ -1,4 +1,4 @@
-<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.9.0
+<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.10.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Admin.html (หน้าผู้บริหาร/ผู้ดูแลระบบ)
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่ -->
 <!-- =====================================================================
@@ -46,6 +46,7 @@
   tr.row-error td { background: var(--danger-bg) !important; }
   .mono { font-family: 'Courier New', monospace; font-weight: 700; letter-spacing: .5px; }
   .tasks-card { border: 1.5px solid var(--sky-200); margin-bottom: 14px; }
+  .announce-preview { white-space: pre-wrap; word-break: break-word; background: #EEF6FF; border-radius: 12px; padding: 10px 12px; margin-bottom: 4px; }
   .task-chips { display: flex; flex-wrap: wrap; gap: 8px; }
   .task-chip { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--border-strong); background: #fff; border-radius: 12px; padding: 8px 12px; font-weight: 600; cursor: pointer; min-height: 44px; color: var(--navy-800); }
   .task-chip b { background: var(--danger-500); color: #fff; border-radius: 10px; padding: 0 8px; font-size: .82rem; }
@@ -106,6 +107,12 @@
         <div class="row"><span class="badge navy" id="ovDate">-</span><button type="button" class="btn outline sm" id="ovRefresh"><span class="ms">refresh</span>รีเฟรช</button></div>
       </div>
       <div id="ovTasks"></div>
+      <div class="card" id="ovAnnounce" style="margin-bottom:14px">
+        <div class="row-between"><div class="card-title mb-0"><span class="ms">campaign</span>ประกาศถึงบุคลากร</div>
+          <div class="row" style="gap:6px"><button type="button" class="btn ghost sm" id="anClearBtn" hidden><span class="ms">delete</span>ลบประกาศ</button>
+          <button type="button" class="btn sm" id="anWriteBtn"><span class="ms">edit</span>เขียนประกาศ</button></div></div>
+        <div class="small" id="anCurrent" style="margin-top:8px"></div>
+      </div>
       <div id="ovWarnings" class="stack" style="margin-bottom:14px"></div>
       <div class="grid grid-stats" id="ovStats"></div>
       <div class="admin-grid-2">
@@ -359,6 +366,12 @@
         <p class="small muted">ใช้เมื่อมีการแก้ไขข้อมูลในชีตโดยตรง หรือเปลี่ยนเวลาทำงาน/ปฏิทินย้อนหลัง (ไม่แก้ไขรายการลงเวลาต้นฉบับ)</p>
         <button type="button" class="btn ghost" id="mtRunBtn"><span class="ms">cleaning_services</span>ลบพิกัด GPS ที่เกินระยะเวลาเก็บรักษาทันที</button>
         <div class="alert info" id="mtStorage" style="margin-top:12px" hidden><span class="ms">cloud</span><div id="mtStorageText"></div></div>
+        <div class="set-group">
+          <h3><span class="ms">backup</span>สำรองฐานข้อมูล</h3>
+          <p class="small mb-0" id="mtBackupText">-</p>
+          <p class="tiny muted">ระบบคัดลอกฐานข้อมูลทั้งไฟล์ไว้ในโฟลเดอร์ “Backups” ของ Google Drive บัญชีระบบ อัตโนมัติทุกสัปดาห์ และเก็บไว้ 8 ชุดล่าสุด</p>
+          <button type="button" class="btn outline" id="mtBackupBtn"><span class="ms">backup</span>สำรองข้อมูลตอนนี้</button>
+        </div>
       </div>
     </section>
 
@@ -607,7 +620,7 @@ window.Admin = (function () {
     CORRECTION_SUBMIT: 'ยื่นคำร้องแก้ไขเวลา', CORRECTION_CANCEL: 'ยกเลิกคำร้อง', CORRECTION_APPROVE: 'อนุมัติคำร้องแก้ไขเวลา', CORRECTION_REJECT: 'ไม่อนุมัติคำร้อง',
     SETTINGS_UPDATE: 'แก้ไขการตั้งค่า', CALENDAR_ADD: 'เพิ่มวันในปฏิทิน', CALENDAR_REMOVE: 'ลบวันในปฏิทิน', CALENDAR_ADD_FIXED: 'เพิ่มวันหยุดราชการคงที่',
     REPORT_EXPORT: 'ส่งออกรายงาน', SUMMARY_REBUILD: 'คำนวณสรุปรายวันใหม่', MAINTENANCE: 'งานบำรุงรักษาข้อมูล',
-    LOGIN_REMEMBERED: 'เข้าสู่ระบบอัตโนมัติ (เครื่องที่จำไว้)', CORRECTION_RECORD_BY_ADMIN: 'บันทึกเวลาแทนบุคลากร', EMPLOYEE_BULK_CREATE: 'เพิ่มบุคลากรหลายคน', LOGOUT_ALL: 'ออกจากระบบทุกเครื่อง',
+    LOGIN_REMEMBERED: 'เข้าสู่ระบบอัตโนมัติ (เครื่องที่จำไว้)', ANNOUNCEMENT_SAVE: 'ประกาศถึงบุคลากร', ANNOUNCEMENT_CLEAR: 'ลบประกาศ', BACKUP: 'สำรองฐานข้อมูล', CORRECTION_RECORD_BY_ADMIN: 'บันทึกเวลาแทนบุคลากร', EMPLOYEE_BULK_CREATE: 'เพิ่มบุคลากรหลายคน', LOGOUT_ALL: 'ออกจากระบบทุกเครื่อง',
     BOOTSTRAP_ADMIN_CREATED: 'สร้างผู้ดูแลระบบคนแรก', FIRST_RUN_SETUP: 'ติดตั้งครั้งแรกผ่านหน้าเว็บ', EMERGENCY_ADMIN_RESET: 'กู้คืนสิทธิ์ผู้ดูแลระบบ'
   };
 
@@ -643,7 +656,7 @@ window.Admin = (function () {
       var g = e.target.closest('[data-go-sec]'); if (g) go(g.getAttribute('data-go-sec'));
       var r = e.target.closest('[data-reload]'); if (r) go(r.getAttribute('data-reload'));
     });
-    bindOverview(); bindMembers(); bindRequests(); bindReports(); bindCalendar(); bindSettings(); bindAudit(); bindShare();
+    bindOverview(); bindMembers(); bindRequests(); bindReports(); bindCalendar(); bindSettings(); bindAudit(); bindShare(); bindAnnounce();
     go(st.firstSec || 'overview');
   }
   function show() { go(st.sec); }
@@ -675,6 +688,7 @@ window.Admin = (function () {
       var c = o.counts;
       $('#ovDate').textContent = A.thDate(o.date, 'long') + (o.isWorkday ? '' : ' · ' + o.holidayName);
       renderTasks(o);
+      renderAnnounceAdmin(o.announcement);
       $('#ovWarnings').innerHTML = o.warnings.map(function (w) {
           return '<div class="alert warning">' + icon('warning') + '<div>' + esc(w) + (isAdmin() ? ' <button type="button" class="link-btn" data-go-sec="settings">ไปหน้าตั้งค่า</button>' : '') + '</div></div>';
         }).join('');
@@ -693,6 +707,50 @@ window.Admin = (function () {
       renderTrend(o.trend);
       renderOverviewTable();
     }).catch(err);
+  }
+  /* ---------- ประกาศถึงบุคลากร ---------- */
+  function renderAnnounceAdmin(a) {
+    st.announcement = a || null;
+    $('#anCurrent').innerHTML = a ? '<div class="announce-preview">' + esc(a.text) + '</div><div class="tiny muted">โดย ' + esc(a.by) + ' · ' + esc(a.atLabel) + ' · แสดงถึง ' + esc(a.untilLabel) + '</div>'
+      : '<span class="muted">ยังไม่มีประกาศ — ใช้แจ้งข่าวถึงครูทุกคน เช่น วันหยุดพิเศษ การประชุม (แสดงบนหน้าแรกของทุกคน)</span>';
+    $('#anClearBtn').hidden = !a;
+    $('#anWriteBtn').innerHTML = icon('edit') + (a ? 'แก้ไขประกาศ' : 'เขียนประกาศ');
+  }
+  function bindAnnounce() {
+    $('#anWriteBtn').addEventListener('click', function () {
+      var a = st.announcement, today = A.bkkToday();
+      A.modal({
+        title: 'ประกาศถึงบุคลากร', icon: 'campaign',
+        body: '<div class="field" data-field="text"><label for="anInput">ข้อความ (ไม่เกิน 300 ตัวอักษร)</label><textarea id="anInput" maxlength="300" style="min-height:110px" placeholder="เช่น วันศุกร์ที่ 27 หยุดกีฬาสี · ประชุมครูวันพุธ 15.30 น. ที่ห้องประชุม"></textarea><span class="err"></span></div>' +
+          '<div class="field" data-field="until"><label for="anUntilIn">แสดงถึงวันที่</label><input type="date" id="anUntilIn"><span class="hint" data-thai-for="anUntilIn"></span><span class="err"></span></div>' +
+          '<p class="small muted mb-0">ครูทุกคนจะเห็นประกาศนี้บนหน้าแรก (แทนประกาศเดิม)</p>',
+        onOpen: function (root) {
+          $('#anInput', root).value = a ? a.text : '';
+          var u = $('#anUntilIn', root);
+          u.min = today; u.max = A.addDaysYmd(today, 90);
+          u.value = a ? a.until : A.addDaysYmd(today, 7);
+          A.setThaiHint(u);
+          u.addEventListener('change', function () { A.setThaiHint(u); });
+        },
+        actions: [{ label: 'ยกเลิก', cls: 'outline' }, { label: 'ประกาศ', icon: 'campaign', onClick: function (close, btn, root) {
+          A.clearFieldErrors(root);
+          A.setBtnLoading(btn, true);
+          A.api('announce.save', { text: $('#anInput', root).value, until: $('#anUntilIn', root).value }, { silent: true }).then(function (r) {
+            A.setBtnLoading(btn, false); close(); A.toast(r.message, 'success', 5000); renderAnnounceAdmin(r.announcement);
+          }).catch(function (x) {
+            A.setBtnLoading(btn, false);
+            if (x.code === 'AUTH') return;
+            if (!(x.data && x.data.field && A.showFieldError(root, x.data.field, x.message))) A.toast(x.message, 'error');
+          });
+          return false;
+        } }]
+      });
+    });
+    $('#anClearBtn').addEventListener('click', function () {
+      A.confirmDialog({ title: 'ลบประกาศ', message: 'ต้องการลบประกาศนี้ใช่หรือไม่ (ครูจะไม่เห็นบนหน้าแรกอีก)', confirmText: 'ลบประกาศ', danger: true }).then(function (y) {
+        if (y) A.api('announce.clear', {}).then(function (r) { A.toast(r.message, 'success'); renderAnnounceAdmin(null); }).catch(err);
+      });
+    });
   }
   /** การ์ด "สิ่งที่ต้องทำ": งานรออนุมัติ + รายการตั้งค่าเริ่มต้น (ผู้ดูแลระบบ) */
   function renderTasks(o) {
@@ -1454,6 +1512,13 @@ window.Admin = (function () {
     if (!isAdmin()) return;
     A.fillMonthYear($('#mtMonth'), $('#mtYear'), 3);
     $('#setForm').addEventListener('submit', saveSettings);
+    $('#mtBackupBtn').addEventListener('click', function () {
+      var b = $('#mtBackupBtn');
+      A.setBtnLoading(b, true);
+      A.api('sys.backup', {}, { loadingText: 'กำลังสำรองฐานข้อมูล...' }).then(function (r) {
+        A.setBtnLoading(b, false); A.toast(r.message, 'success', 6000); renderBackupInfo(r.backup);
+      }).catch(function (x) { A.setBtnLoading(b, false); err(x); });
+    });
     ['#sLat', '#sLng'].forEach(function (s) { $(s).addEventListener('input', updateMapLink); });
     $('#sUseMyLoc').addEventListener('click', function () {
       var b = $('#sUseMyLoc');
@@ -1488,6 +1553,7 @@ window.Admin = (function () {
       $('#setServerTime').textContent = 'เวลาเซิร์ฟเวอร์: ' + s.serverTime;
       TEXT_SETTINGS.forEach(function (k) { if (f[k]) f[k].value = v[k] || ''; });
       ['ALLOW_HOLIDAY_CHECKIN', 'ALLOW_REGISTRATION', 'SETTINGS_CONFIRMED', 'LEAVE_REQUIRES_APPROVAL', 'CHECKOUT_REQUIRES_GPS'].forEach(function (k) { f[k].checked = String(v[k]).toUpperCase() === 'TRUE'; });
+      renderBackupInfo(s.backup);
       if (s.storage) {
         $('#mtStorage').hidden = false;
         $('#mtStorage').className = 'alert ' + (s.storage.percent >= 85 ? 'warning' : 'info');
@@ -1497,6 +1563,10 @@ window.Admin = (function () {
       $$('#sWorkDays input').forEach(function (c) { c.checked = days.indexOf(c.value) >= 0; });
       updateMapLink();
     }).catch(err);
+  }
+  function renderBackupInfo(b) {
+    if (!b) return;
+    $('#mtBackupText').innerHTML = b.last ? 'สำรองล่าสุด: <b>' + esc(b.lastLabel) + '</b>' : '<b>ยังไม่เคยสำรอง</b> — ระบบจะสำรองอัตโนมัติคืนนี้ หรือกดสำรองตอนนี้';
   }
   function saveSettings(e) {
     e.preventDefault();

@@ -281,6 +281,6 @@ flowchart LR
 |---|---|
 | ![](screenshots/24-setup-checklist-mobile.png) | ![](screenshots/25-approvals-home-mobile.png) |
 
-| บัญชีลงเวลาปฏิบัติราชการ (แบบสมุดลงเวลา) |
-|---|
-| ![](screenshots/26-signbook-print.png) |
+| บัญชีลงเวลาปฏิบัติราชการ (แบบสมุดลงเวลา) | มือถือ: ประกาศถึงบุคลากร |
+|---|---|
+| ![](screenshots/26-signbook-print.png) | ![](screenshots/27-announcement-mobile.png) |

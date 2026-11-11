@@ -43,6 +43,7 @@
   tr.row-error td { background: var(--danger-bg) !important; }
   .mono { font-family: 'Courier New', monospace; font-weight: 700; letter-spacing: .5px; }
   .tasks-card { border: 1.5px solid var(--sky-200); margin-bottom: 14px; }
+  .announce-preview { white-space: pre-wrap; word-break: break-word; background: #EEF6FF; border-radius: 12px; padding: 10px 12px; margin-bottom: 4px; }
   .task-chips { display: flex; flex-wrap: wrap; gap: 8px; }
   .task-chip { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--border-strong); background: #fff; border-radius: 12px; padding: 8px 12px; font-weight: 600; cursor: pointer; min-height: 44px; color: var(--navy-800); }
   .task-chip b { background: var(--danger-500); color: #fff; border-radius: 10px; padding: 0 8px; font-size: .82rem; }
@@ -103,6 +104,12 @@
         <div class="row"><span class="badge navy" id="ovDate">-</span><button type="button" class="btn outline sm" id="ovRefresh"><span class="ms">refresh</span>รีเฟรช</button></div>
       </div>
       <div id="ovTasks"></div>
+      <div class="card" id="ovAnnounce" style="margin-bottom:14px">
+        <div class="row-between"><div class="card-title mb-0"><span class="ms">campaign</span>ประกาศถึงบุคลากร</div>
+          <div class="row" style="gap:6px"><button type="button" class="btn ghost sm" id="anClearBtn" hidden><span class="ms">delete</span>ลบประกาศ</button>
+          <button type="button" class="btn sm" id="anWriteBtn"><span class="ms">edit</span>เขียนประกาศ</button></div></div>
+        <div class="small" id="anCurrent" style="margin-top:8px"></div>
+      </div>
       <div id="ovWarnings" class="stack" style="margin-bottom:14px"></div>
       <div class="grid grid-stats" id="ovStats"></div>
       <div class="admin-grid-2">
@@ -356,6 +363,12 @@
         <p class="small muted">ใช้เมื่อมีการแก้ไขข้อมูลในชีตโดยตรง หรือเปลี่ยนเวลาทำงาน/ปฏิทินย้อนหลัง (ไม่แก้ไขรายการลงเวลาต้นฉบับ)</p>
         <button type="button" class="btn ghost" id="mtRunBtn"><span class="ms">cleaning_services</span>ลบพิกัด GPS ที่เกินระยะเวลาเก็บรักษาทันที</button>
         <div class="alert info" id="mtStorage" style="margin-top:12px" hidden><span class="ms">cloud</span><div id="mtStorageText"></div></div>
+        <div class="set-group">
+          <h3><span class="ms">backup</span>สำรองฐานข้อมูล</h3>
+          <p class="small mb-0" id="mtBackupText">-</p>
+          <p class="tiny muted">ระบบคัดลอกฐานข้อมูลทั้งไฟล์ไว้ในโฟลเดอร์ “Backups” ของ Google Drive บัญชีระบบ อัตโนมัติทุกสัปดาห์ และเก็บไว้ 8 ชุดล่าสุด</p>
+          <button type="button" class="btn outline" id="mtBackupBtn"><span class="ms">backup</span>สำรองข้อมูลตอนนี้</button>
+        </div>
       </div>
     </section>
 

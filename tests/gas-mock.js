@@ -257,6 +257,10 @@ function createGasEnv(opts = {}) {
     isTrashed() { return this.trashed; }
     moveTo(folder) { this.parent = folder.getId(); return this; }
     getDateCreated() { return new Date(this.created.getTime()); }
+    makeCopy(name, folder) {
+      const f = new MockFile('FILE_' + crypto.randomBytes(8).toString('hex'), name, this.mime, this.bytes);
+      f.parent = folder ? folder.getId() : this.parent; f.copyOf = this.id; state.driveFiles.set(f.id, f); return f;
+    }
   }
   class MockFolder {
     constructor(name) { this.id = 'FOLDER_' + crypto.randomBytes(6).toString('hex'); this.name = name; this.trashed = false; state.driveFolders.set(this.id, this); }

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.9.0
+<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.10.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Index.html
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่ -->
 <html lang="th">
@@ -484,6 +484,14 @@ table.table { width: 100%; border-collapse: collapse; font-size: .9rem; }
 .stats-table td:first-child { font-weight: 600; white-space: nowrap; }
 .stats-table td.muted { color: var(--muted); }
 
+/* ---------- ประกาศถึงบุคลากร ---------- */
+.announce-card { display: flex; align-items: flex-start; gap: 12px; padding: 12px 8px 12px 16px; border-radius: 18px; background: #EEF6FF; border: 1.5px solid var(--sky-200); color: var(--navy-900); }
+.announce-card > .ms { font-size: 28px; color: var(--sky-500); margin-top: 2px; }
+.announce-card .an-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.announce-card .an-text { white-space: pre-wrap; word-break: break-word; font-size: 1.02rem; line-height: 1.5; }
+.announce-card .tiny { color: var(--muted); }
+.announce-card .icon-btn { color: var(--muted); width: 36px; height: 36px; }
+
 /* ---------- งานรออนุมัติ (ผู้บริหาร) ---------- */
 .approvals-card { display: flex; align-items: center; gap: 12px; padding: 12px 12px 12px 16px; border-radius: 18px; color: #fff;
   background: linear-gradient(135deg, #B45309, #D97706); box-shadow: var(--shadow-sm); }
@@ -932,6 +940,12 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
               <span class="ms">pending_actions</span>
               <div class="ap-text"><b>งานรออนุมัติ <span id="apTotal"></span></b><span class="small" id="apDetail"></span></div>
               <button type="button" class="btn sm white" id="apGoBtn">ไปอนุมัติ</button>
+            </div>
+
+            <div class="announce-card o-hello" id="announceCard" hidden role="note">
+              <span class="ms">campaign</span>
+              <div class="an-body"><b>ประกาศ</b><div class="an-text" id="anText"></div><span class="tiny" id="anMeta"></span></div>
+              <button type="button" class="icon-btn" id="anClose" aria-label="ซ่อนประกาศนี้"><span class="ms">close</span></button>
             </div>
 
             <div class="card clock-card o-clock" aria-live="off">
@@ -1796,6 +1810,7 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
     $('#homeTipClose').addEventListener('click', function () { local.set('wsh_tip_home', '1'); renderHomeTip(); });
     $('#toAdminBtn').addEventListener('click', function () { openAdmin(); });
     $('#apGoBtn').addEventListener('click', function () { openAdmin($('#apGoBtn').getAttribute('data-sec')); });
+    $('#anClose').addEventListener('click', function () { local.set('wsh_an_hide', $('#anClose').getAttribute('data-id') || ''); $('#announceCard').hidden = true; });
     $$('#userTabs [data-tab]').forEach(function (b) { b.addEventListener('click', function () { switchTab(b.getAttribute('data-tab')); }); });
     $('#checkInBtn').addEventListener('click', function () { doAttendance('IN'); });
     $('#checkOutBtn').addEventListener('click', function () { doAttendance('OUT'); });
@@ -2164,6 +2179,16 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
     if (tab === 'correction') { initCorrectionForm(); loadMyCorrections(); }
   }
 
+  /* ---------- ประกาศถึงบุคลากร (ซ่อนได้เฉพาะประกาศนั้นบนเครื่องนี้) ---------- */
+  function renderAnnouncement(a) {
+    var show = !!(a && a.text) && local.get('wsh_an_hide') !== a.id;
+    $('#announceCard').hidden = !show;
+    if (!show) return;
+    $('#anText').textContent = a.text;
+    $('#anMeta').textContent = 'โดย ' + (a.by || '-') + ' · ' + a.atLabel + ' · แสดงถึง ' + a.untilLabel;
+    $('#anClose').setAttribute('data-id', a.id);
+  }
+
   /* ---------- ผู้บริหาร/ผู้ดูแล: งานรออนุมัติบนหน้าแรก ---------- */
   function renderApprovals(a) {
     var show = !!(a && a.total);
@@ -2227,6 +2252,7 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
     var d = S.dash, s = d.settings, row = d.today.row;
     renderIssues(d.issues);
     renderApprovals(d.approvals);
+    renderAnnouncement(d.announcement);
     var hh = bkkParts(serverNow()).hh;
     $('#greeting').textContent = hh < 12 ? 'สวัสดีตอนเช้า' : (hh < 17 ? 'สวัสดีตอนบ่าย' : 'สวัสดีตอนเย็น');
     $('#workHours').textContent = 'เวลาทำงาน ' + s.workStart + '–' + s.workEnd + ' น. · ถือว่าสายเมื่อลงเวลาหลัง ' + s.lateAfter + ' น.';

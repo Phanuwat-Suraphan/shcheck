@@ -888,6 +888,48 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
     assert.strictEqual(await p.textContent('#homeName'), 'นางสาวสมศรี ใจดี');
   });
 
+  await step('E36', 'ประกาศถึงบุคลากร: ผอ. เขียนประกาศจากหน้าภาพรวม → ครูเห็นบนหน้าแรก (ข้อความอันตรายแสดงเป็นตัวอักษร) → ซ่อนได้; สำรองข้อมูลจากหน้าตั้งค่า', async () => {
+    await setClock('2026-11-24 07:10:00');
+    const d = await newPage({ desktop: true });
+    await login(d, DEFAULTS.adminUser, ADMIN_NEW_PW);
+    await d.waitForSelector('#view-app:not([hidden])');
+    await d.click('#toAdminBtn');
+    await d.waitForSelector('#ovAnnounce');
+    await d.click('#anWriteBtn');
+    await d.waitForSelector('#anInput');
+    await d.fill('#anInput', 'วันศุกร์ที่ 27 หยุดกีฬาสี\nประชุมครูวันพุธ 15.30 น. <img src=x onerror="window.__xss=1">');
+    await modalAction(d, 'ประกาศ');
+    await toast(d, /ประกาศแล้ว/);
+    await d.waitForSelector('#anClearBtn:not([hidden])');
+    assert.ok(/หยุดกีฬาสี/.test(await d.textContent('#anCurrent')));
+    await d.click('#adminNav [data-sec="settings"]');
+    await d.waitForFunction(() => /ยังไม่เคยสำรอง|สำรองล่าสุด/.test(document.querySelector('#mtBackupText').textContent));
+    await d.click('#mtBackupBtn');
+    await toast(d, /สำรองข้อมูลแล้ว/);
+    await d.waitForFunction(() => /สำรองล่าสุด/.test(document.querySelector('#mtBackupText').textContent));
+    const tp = await newPage();
+    await login(tp, 'somsri.j', 'SomsriNew2026');
+    await tp.waitForSelector('#announceCard:not([hidden])');
+    assert.strictEqual(await tp.textContent('#anText'), 'วันศุกร์ที่ 27 หยุดกีฬาสี\nประชุมครูวันพุธ 15.30 น. <img src=x onerror="window.__xss=1">');
+    assert.strictEqual(await tp.evaluate(() => window.__xss), undefined);
+    // ภาพประกอบเอกสาร: ประกาศปกติ
+    await d.click('#adminNav [data-sec="overview"]');
+    await d.click('#anWriteBtn');
+    await d.fill('#anInput', 'วันศุกร์ที่ 27 พ.ย. หยุดกีฬาสีของโรงเรียน\nประชุมครูวันพุธ 15.30 น. ที่ห้องประชุม');
+    await modalAction(d, 'ประกาศ');
+    await toast(d, /ประกาศแล้ว/);
+    await tp.reload();
+    await tp.waitForSelector('#announceCard:not([hidden])');
+    await tp.waitForFunction(() => /ห้องประชุม$/.test(document.querySelector('#anText').textContent));
+    await shot(tp, '27-announcement-mobile.png');
+    await tp.click('#anClose');
+    await tp.waitForSelector('#announceCard', { state: 'hidden' });
+    await tp.reload();
+    await tp.waitForSelector('#view-app:not([hidden])');
+    await tp.waitForFunction(() => document.querySelector('#homeName').textContent.length > 1);
+    assert.ok(await tp.isHidden('#announceCard'), 'ซ่อนแล้วไม่แสดงซ้ำบนเครื่องนี้');
+  });
+
   await step('E20', 'ไม่มี JavaScript error ในทุกหน้าที่ทดสอบ', async () => {
     assert.deepStrictEqual(pageErrors, []);
   });

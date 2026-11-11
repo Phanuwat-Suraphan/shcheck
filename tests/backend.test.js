@@ -1505,6 +1505,63 @@ test('P08', 'รายงานรายวันมีข้อมูลสำ�
   assert.strictEqual(rows.find(r => r.employeeId === t.id).statusCode, 'LATE');
 });
 
+test('N01', 'ประกาศถึงบุคลากร: ผู้บริหาร/ผู้ดูแลประกาศได้ (แทนประกาศเดิม) ทุกคนเห็นบนหน้าแรกจนถึงวันที่กำหนด; ตรวจข้อมูล; บุคลากรทั่วไปประกาศไม่ได้', () => {
+  const sys = newSystem({ now: '2026-11-09 07:00:00' });
+  const t = addTeacher(sys, 1), ex = addTeacher(sys, 2, 'EXECUTIVE');
+  assert.strictEqual(ok(sys.api(t.token, 'me.dashboard', {})).announcement, null);
+  expectErr(sys.api(t.token, 'announce.save', { text: 'ทดสอบ', until: '2026-11-10' }), 'FORBIDDEN');
+  expectErr(sys.api(ex.token, 'announce.save', { text: '', until: '2026-11-10' }), 'VALIDATION');
+  expectErr(sys.api(ex.token, 'announce.save', { text: 'ก'.repeat(301), until: '2026-11-10' }), 'VALIDATION');
+  expectErr(sys.api(ex.token, 'announce.save', { text: 'ทดสอบ', until: '2026-11-08' }), 'VALIDATION');
+  expectErr(sys.api(ex.token, 'announce.save', { text: 'ทดสอบ', until: '2027-03-01' }), 'VALIDATION');
+  const r = ok(sys.api(ex.token, 'announce.save', { text: 'วันศุกร์หยุดกีฬาสี\nประชุมครูวันพุธ 15.30 น. <b>ห้องประชุม</b>', until: '2026-11-13' }));
+  assert.ok(/13 พฤศจิกายน 2569/.test(r.message));
+  const a = ok(sys.api(t.token, 'me.dashboard', {})).announcement;
+  assert.strictEqual(a.text, 'วันศุกร์หยุดกีฬาสี\nประชุมครูวันพุธ 15.30 น. <b>ห้องประชุม</b>'); // เก็บตามจริง หน้าเว็บแสดงเป็นข้อความ
+  assert.strictEqual(a.by, 'นางสาวครู ทดสอบที่สอง'); assert.strictEqual(a.until, '2026-11-13');
+  assert.strictEqual(ok(sys.api(sys.admin, 'admin.overview', {})).announcement.id, a.id);
+  const b = ok(sys.api(sys.admin, 'announce.save', { text: 'ประกาศใหม่แทนของเดิม', until: '2026-11-20' })).announcement;
+  assert.notStrictEqual(b.id, a.id);
+  assert.strictEqual(ok(sys.api(t.token, 'me.dashboard', {})).announcement.text, 'ประกาศใหม่แทนของเดิม');
+  sys.at('2026-11-21 07:00:00');
+  assert.strictEqual(ok(sys.api(t.token, 'me.dashboard', {})).announcement, null, 'หมดอายุแล้วไม่แสดง');
+  sys.at('2026-11-21 07:05:00');
+  ok(sys.api(ex.token, 'announce.save', { text: 'ประกาศที่จะลบ', until: '2026-11-22' }));
+  ok(sys.api(ex.token, 'announce.clear', {}));
+  assert.strictEqual(ok(sys.api(t.token, 'me.dashboard', {})).announcement, null);
+  const acts = records(sys, 'AuditLogs').map(x => x.Action);
+  assert.strictEqual(acts.filter(x => x === 'ANNOUNCEMENT_SAVE').length, 3); assert.ok(acts.includes('ANNOUNCEMENT_CLEAR'));
+});
+
+test('B02', 'สำรองฐานข้อมูล: กดสำรองทันทีได้ (ผู้ดูแลระบบ), เก็บ 8 ชุดล่าสุด, สำรองอัตโนมัติทุก 7 วันในงานบำรุงรักษา, ไม่สำรองเมื่อ Drive ใกล้เต็ม', () => {
+  const sys = newSystem({ now: '2026-11-09 07:00:00' });
+  const ex = addTeacher(sys, 1, 'EXECUTIVE');
+  const backups = () => [...sys.env.state.driveFiles.values()].filter(f => f.copyOf === sys.env.state.props.SPREADSHEET_ID);
+  assert.strictEqual(ok(sys.api(sys.admin, 'settings.get', {})).backup.last, '');
+  const r = ok(sys.api(sys.admin, 'sys.backup', {}));
+  assert.ok(/สำรองข้อมูลแล้ว/.test(r.message)); assert.ok(r.backup.lastLabel);
+  assert.strictEqual(backups().length, 1);
+  const folder = sys.env.state.props.BACKUP_FOLDER_ID;
+  assert.ok(folder && backups()[0].parent === folder);
+  assert.ok(/^สำรอง ฐานข้อมูลระบบลงเวลา โรงเรียนวัดเสาหิน 2026-11-09 0700$/.test(backups()[0].name), backups()[0].name);
+  for (let i = 0; i < 9; i++) { sys.env.clock.advanceMinutes(1); ok(sys.api(sys.admin, 'sys.backup', {})); }
+  const live = backups().filter(f => !f.trashed);
+  assert.strictEqual(live.length, 8); assert.strictEqual(backups().filter(f => f.trashed).length, 2);
+  assert.ok(!live.some(f => /0700$|0701$/.test(f.name)), 'ชุดเก่าสุดถูกย้ายไปถังขยะ');
+  expectErr(sys.api(ex.token, 'sys.backup', {}), 'FORBIDDEN');
+  // งานบำรุงรักษา: ยังไม่ครบ 7 วัน → ไม่สำรอง, ครบแล้ว → สำรองอัตโนมัติ
+  const n0 = backups().length;
+  ok(sys.api(sys.admin, 'sys.runMaintenance', {}));
+  assert.strictEqual(backups().length, n0);
+  sys.at('2026-11-16 02:00:00');
+  const m = ok(sys.api(sys.admin, 'sys.runMaintenance', {}));
+  assert.ok(/สำรองข้อมูลอัตโนมัติแล้ว/.test(m.message || JSON.stringify(m)), JSON.stringify(m));
+  assert.strictEqual(backups().length, n0 + 1);
+  sys.env.state.storageUsed = 14.5 * 1024 ** 3;
+  expectErr(sys.api(sys.admin, 'sys.backup', {}), 'STORAGE_FULL');
+  assert.ok(records(sys, 'AuditLogs').some(x => x.Action === 'BACKUP'));
+});
+
 test('D01', 'ลบพิกัด GPS อัตโนมัติเมื่อเกินระยะเวลาเก็บรักษา (คงระยะทาง/เวลาไว้)', () => {
   const sys = newSystem();
   const t = addTeacher(sys, 1);

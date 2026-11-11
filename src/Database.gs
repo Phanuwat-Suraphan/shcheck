@@ -953,6 +953,59 @@ function runMaintenanceNow_(ctx) {
   return { message: runMaintenance_(ctx) };
 }
 
+/* ========================================================================== */
+/*  สำรองฐานข้อมูล (คัดลอก Google Sheet ไว้ในโฟลเดอร์ Backups ของ Drive บัญชีระบบ)  */
+/* ========================================================================== */
+
+var BACKUP_KEEP_ = 8;          // เก็บสำเนาล่าสุดกี่ชุด
+var BACKUP_EVERY_DAYS_ = 7;    // สำรองอัตโนมัติทุกกี่วัน (ทำในงานบำรุงรักษาตอนกลางคืน)
+
+function backupFolder_() {
+  var props = PropertiesService.getScriptProperties();
+  var id = props.getProperty('BACKUP_FOLDER_ID');
+  if (id) {
+    try { var f = DriveApp.getFolderById(id); if (!f.isTrashed()) return f; } catch (e) { /* สร้างใหม่ */ }
+  }
+  var root = null, rootId = props.getProperty('DRIVE_ROOT_FOLDER_ID');
+  if (rootId) { try { root = DriveApp.getFolderById(rootId); } catch (e2) { root = null; } }
+  var folder = (root || DriveApp).createFolder('Backups (สำรองฐานข้อมูลอัตโนมัติ)');
+  props.setProperty('BACKUP_FOLDER_ID', folder.getId());
+  MEMO_.props = null;
+  return folder;
+}
+
+/** คัดลอกฐานข้อมูลทั้งไฟล์ แล้วเก็บไว้เฉพาะ BACKUP_KEEP_ ชุดล่าสุด (ชุดเก่าย้ายไปถังขยะ) */
+function backupDatabase_() {
+  var ssId = scriptProps_().SPREADSHEET_ID;
+  if (!ssId) throw appError_('ระบบยังไม่ได้ติดตั้งฐานข้อมูล', 'NOT_SETUP');
+  var storage = driveStorageInfo_();
+  if (storage && storage.percent >= 95) {
+    throw appError_('พื้นที่ Google Drive ใช้ไปแล้ว ' + storage.percent + '% จึงยังไม่สำรองข้อมูล กรุณาเพิ่มพื้นที่ก่อน', 'STORAGE_FULL');
+  }
+  var folder = backupFolder_();
+  var name = 'สำรอง ' + DB_FILE_NAME_ + ' ' + fmt_(now_(), 'yyyy-MM-dd HHmm');
+  DriveApp.getFileById(ssId).makeCopy(name, folder);
+  var files = [], it = folder.getFiles();
+  while (it.hasNext()) files.push(it.next());
+  files.sort(function (a, b) { return a.getName() < b.getName() ? 1 : -1; }); // ชื่อมีวันเวลา → ใหม่สุดก่อน
+  var removed = 0;
+  files.slice(BACKUP_KEEP_).forEach(function (f) { try { f.setTrashed(true); removed++; } catch (e) { /* ignore */ } });
+  PropertiesService.getScriptProperties().setProperty('BACKUP_LAST', nowStamp_());
+  MEMO_.props = null;
+  return { name: name, kept: Math.min(files.length, BACKUP_KEEP_), removed: removed };
+}
+
+function backupInfo_() {
+  var last = scriptProps_().BACKUP_LAST || '';
+  return { last: last, lastLabel: last ? thaiStamp_(last) : '', keep: BACKUP_KEEP_, everyDays: BACKUP_EVERY_DAYS_ };
+}
+
+/** ถึงรอบสำรองอัตโนมัติหรือยัง */
+function backupDue_() {
+  var last = scriptProps_().BACKUP_LAST;
+  return !last || nowMs_() - stampToMs_(last) >= (BACKUP_EVERY_DAYS_ - 0.5) * 86400000;
+}
+
 function runMaintenance_(ctx) {
   var s = getSettings_();
   var cutoff = addDays_(todayStr_(), -s.gpsRetentionDays);
@@ -979,9 +1032,14 @@ function runMaintenance_(ctx) {
     return count;
   });
   var cleaned = cleanupTempExports_();
+  var backup = null;
+  if (backupDue_()) {
+    try { backup = backupDatabase_(); } catch (eb) { console.error('backup: ' + eb); backup = { error: eb.message || String(eb) }; }
+  }
   var msg = 'ลบพิกัด GPS ที่เก่ากว่า ' + thaiDate_(cutoff) + ' จำนวน ' + purged + ' รายการ, ลบไฟล์รายงานชั่วคราว ' + cleaned + ' ไฟล์' +
-    (holidaysAdded ? ', เพิ่มวันหยุดราชการไทย ' + holidaysAdded + ' วัน' : '');
-  if (purged || holidaysAdded || ctx) writeAudit_(ctx, 'MAINTENANCE', 'SYSTEM', '', { gpsPurged: purged, cutoff: cutoff, tempFilesRemoved: cleaned, holidaysAdded: holidaysAdded });
+    (holidaysAdded ? ', เพิ่มวันหยุดราชการไทย ' + holidaysAdded + ' วัน' : '') +
+    (backup ? (backup.error ? ', สำรองข้อมูลไม่สำเร็จ: ' + backup.error : ', สำรองข้อมูลอัตโนมัติแล้ว') : '');
+  if (purged || holidaysAdded || backup || ctx) writeAudit_(ctx, 'MAINTENANCE', 'SYSTEM', '', { gpsPurged: purged, cutoff: cutoff, tempFilesRemoved: cleaned, holidaysAdded: holidaysAdded, backup: backup });
   return msg;
 }
 

@@ -509,6 +509,7 @@
     $('#homeTipClose').addEventListener('click', function () { local.set('wsh_tip_home', '1'); renderHomeTip(); });
     $('#toAdminBtn').addEventListener('click', function () { openAdmin(); });
     $('#apGoBtn').addEventListener('click', function () { openAdmin($('#apGoBtn').getAttribute('data-sec')); });
+    $('#anClose').addEventListener('click', function () { local.set('wsh_an_hide', $('#anClose').getAttribute('data-id') || ''); $('#announceCard').hidden = true; });
     $$('#userTabs [data-tab]').forEach(function (b) { b.addEventListener('click', function () { switchTab(b.getAttribute('data-tab')); }); });
     $('#checkInBtn').addEventListener('click', function () { doAttendance('IN'); });
     $('#checkOutBtn').addEventListener('click', function () { doAttendance('OUT'); });
@@ -877,6 +878,16 @@
     if (tab === 'correction') { initCorrectionForm(); loadMyCorrections(); }
   }
 
+  /* ---------- ประกาศถึงบุคลากร (ซ่อนได้เฉพาะประกาศนั้นบนเครื่องนี้) ---------- */
+  function renderAnnouncement(a) {
+    var show = !!(a && a.text) && local.get('wsh_an_hide') !== a.id;
+    $('#announceCard').hidden = !show;
+    if (!show) return;
+    $('#anText').textContent = a.text;
+    $('#anMeta').textContent = 'โดย ' + (a.by || '-') + ' · ' + a.atLabel + ' · แสดงถึง ' + a.untilLabel;
+    $('#anClose').setAttribute('data-id', a.id);
+  }
+
   /* ---------- ผู้บริหาร/ผู้ดูแล: งานรออนุมัติบนหน้าแรก ---------- */
   function renderApprovals(a) {
     var show = !!(a && a.total);
@@ -940,6 +951,7 @@
     var d = S.dash, s = d.settings, row = d.today.row;
     renderIssues(d.issues);
     renderApprovals(d.approvals);
+    renderAnnouncement(d.announcement);
     var hh = bkkParts(serverNow()).hh;
     $('#greeting').textContent = hh < 12 ? 'สวัสดีตอนเช้า' : (hh < 17 ? 'สวัสดีตอนบ่าย' : 'สวัสดีตอนเย็น');
     $('#workHours').textContent = 'เวลาทำงาน ' + s.workStart + '–' + s.workEnd + ' น. · ถือว่าสายเมื่อลงเวลาหลัง ' + s.lateAfter + ' น.';

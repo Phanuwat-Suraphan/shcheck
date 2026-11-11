@@ -1,5 +1,5 @@
 /*
- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.9.0
+ * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.10.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Code.gs (โค้ดฝั่ง Server ทั้งหมด)
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่
  */
@@ -35,7 +35,7 @@ var APP = {
   SCHOOL_FULL: 'โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่',
   NAME_EN: 'Wat Sao Hin School Attendance System',
   SLOGAN: 'ระบบลงเวลาอัจฉริยะ สะดวก โปร่งใส ตรวจสอบได้',
-  VERSION: '1.9.0',
+  VERSION: '1.10.0',
   TZ: 'Asia/Bangkok'
 };
 
@@ -209,6 +209,8 @@ function getRoutes_() {
     'admin.overview': { fn: getAdminOverview_, roles: AE },
     'emp.basicList': { fn: listEmployeesBasic_, roles: AE },
     'admin.appLink': { fn: getAppLink_, roles: AE },
+    'announce.save': { fn: saveAnnouncement_, roles: AE },
+    'announce.clear': { fn: clearAnnouncement_, roles: AE },
     'leave.adminList': { fn: adminListLeaves_, roles: AE },
     'leave.adminCreate': { fn: adminRecordLeave_, roles: AE },
     'leave.review': { fn: reviewLeave_, roles: AE },
@@ -244,7 +246,8 @@ function getRoutes_() {
     'cal.addFixed': { fn: addFixedHolidays_, roles: A },
     'audit.list': { fn: listAuditLogs_, roles: A },
     'sys.rebuildSummary': { fn: rebuildDailySummary_, roles: A },
-    'sys.runMaintenance': { fn: runMaintenanceNow_, roles: A }
+    'sys.runMaintenance': { fn: runMaintenanceNow_, roles: A },
+    'sys.backup': { fn: backupNow_, roles: A }
   };
 }
 
@@ -1453,6 +1456,59 @@ function runMaintenanceNow_(ctx) {
   return { message: runMaintenance_(ctx) };
 }
 
+/* ========================================================================== */
+/*  สำรองฐานข้อมูล (คัดลอก Google Sheet ไว้ในโฟลเดอร์ Backups ของ Drive บัญชีระบบ)  */
+/* ========================================================================== */
+
+var BACKUP_KEEP_ = 8;          // เก็บสำเนาล่าสุดกี่ชุด
+var BACKUP_EVERY_DAYS_ = 7;    // สำรองอัตโนมัติทุกกี่วัน (ทำในงานบำรุงรักษาตอนกลางคืน)
+
+function backupFolder_() {
+  var props = PropertiesService.getScriptProperties();
+  var id = props.getProperty('BACKUP_FOLDER_ID');
+  if (id) {
+    try { var f = DriveApp.getFolderById(id); if (!f.isTrashed()) return f; } catch (e) { /* สร้างใหม่ */ }
+  }
+  var root = null, rootId = props.getProperty('DRIVE_ROOT_FOLDER_ID');
+  if (rootId) { try { root = DriveApp.getFolderById(rootId); } catch (e2) { root = null; } }
+  var folder = (root || DriveApp).createFolder('Backups (สำรองฐานข้อมูลอัตโนมัติ)');
+  props.setProperty('BACKUP_FOLDER_ID', folder.getId());
+  MEMO_.props = null;
+  return folder;
+}
+
+/** คัดลอกฐานข้อมูลทั้งไฟล์ แล้วเก็บไว้เฉพาะ BACKUP_KEEP_ ชุดล่าสุด (ชุดเก่าย้ายไปถังขยะ) */
+function backupDatabase_() {
+  var ssId = scriptProps_().SPREADSHEET_ID;
+  if (!ssId) throw appError_('ระบบยังไม่ได้ติดตั้งฐานข้อมูล', 'NOT_SETUP');
+  var storage = driveStorageInfo_();
+  if (storage && storage.percent >= 95) {
+    throw appError_('พื้นที่ Google Drive ใช้ไปแล้ว ' + storage.percent + '% จึงยังไม่สำรองข้อมูล กรุณาเพิ่มพื้นที่ก่อน', 'STORAGE_FULL');
+  }
+  var folder = backupFolder_();
+  var name = 'สำรอง ' + DB_FILE_NAME_ + ' ' + fmt_(now_(), 'yyyy-MM-dd HHmm');
+  DriveApp.getFileById(ssId).makeCopy(name, folder);
+  var files = [], it = folder.getFiles();
+  while (it.hasNext()) files.push(it.next());
+  files.sort(function (a, b) { return a.getName() < b.getName() ? 1 : -1; }); // ชื่อมีวันเวลา → ใหม่สุดก่อน
+  var removed = 0;
+  files.slice(BACKUP_KEEP_).forEach(function (f) { try { f.setTrashed(true); removed++; } catch (e) { /* ignore */ } });
+  PropertiesService.getScriptProperties().setProperty('BACKUP_LAST', nowStamp_());
+  MEMO_.props = null;
+  return { name: name, kept: Math.min(files.length, BACKUP_KEEP_), removed: removed };
+}
+
+function backupInfo_() {
+  var last = scriptProps_().BACKUP_LAST || '';
+  return { last: last, lastLabel: last ? thaiStamp_(last) : '', keep: BACKUP_KEEP_, everyDays: BACKUP_EVERY_DAYS_ };
+}
+
+/** ถึงรอบสำรองอัตโนมัติหรือยัง */
+function backupDue_() {
+  var last = scriptProps_().BACKUP_LAST;
+  return !last || nowMs_() - stampToMs_(last) >= (BACKUP_EVERY_DAYS_ - 0.5) * 86400000;
+}
+
 function runMaintenance_(ctx) {
   var s = getSettings_();
   var cutoff = addDays_(todayStr_(), -s.gpsRetentionDays);
@@ -1479,9 +1535,14 @@ function runMaintenance_(ctx) {
     return count;
   });
   var cleaned = cleanupTempExports_();
+  var backup = null;
+  if (backupDue_()) {
+    try { backup = backupDatabase_(); } catch (eb) { console.error('backup: ' + eb); backup = { error: eb.message || String(eb) }; }
+  }
   var msg = 'ลบพิกัด GPS ที่เก่ากว่า ' + thaiDate_(cutoff) + ' จำนวน ' + purged + ' รายการ, ลบไฟล์รายงานชั่วคราว ' + cleaned + ' ไฟล์' +
-    (holidaysAdded ? ', เพิ่มวันหยุดราชการไทย ' + holidaysAdded + ' วัน' : '');
-  if (purged || holidaysAdded || ctx) writeAudit_(ctx, 'MAINTENANCE', 'SYSTEM', '', { gpsPurged: purged, cutoff: cutoff, tempFilesRemoved: cleaned, holidaysAdded: holidaysAdded });
+    (holidaysAdded ? ', เพิ่มวันหยุดราชการไทย ' + holidaysAdded + ' วัน' : '') +
+    (backup ? (backup.error ? ', สำรองข้อมูลไม่สำเร็จ: ' + backup.error : ', สำรองข้อมูลอัตโนมัติแล้ว') : '');
+  if (purged || holidaysAdded || backup || ctx) writeAudit_(ctx, 'MAINTENANCE', 'SYSTEM', '', { gpsPurged: purged, cutoff: cutoff, tempFilesRemoved: cleaned, holidaysAdded: holidaysAdded, backup: backup });
   return msg;
 }
 
@@ -2794,6 +2855,7 @@ function getMyDashboard_(ctx) {
     recent: recent,
     pending: { leaves: myLeaves, corrections: myCorr, todayIn: hasPendingInCorrection_(emp.EmployeeID, today) },
     approvals: approvalCounts_(emp),
+    announcement: getAnnouncement_(),
     issues: myAttendanceIssues_(emp, s, today)
   };
 }
@@ -3623,7 +3685,7 @@ function setupChecklist_(s, allEmps, today) {
     { key: 'director', done: !!s.directorName, sec: 'settings', title: 'ใส่ชื่อผู้อำนวยการ', hint: 'ใช้ในช่องลงนามของใบลาและรายงาน' },
     { key: 'break', done: schoolBreak, sec: 'calendar', title: 'เพิ่มวันปิดภาคเรียน/วันหยุดของโรงเรียน', hint: 'ถ้าไม่เพิ่ม ช่วงปิดภาคเรียนครูทุกคนจะถูกนับว่าขาดงาน' },
     { key: 'staff', done: Object.keys(activeIds).length > 0, sec: 'share', title: 'เพิ่มครูและบุคลากร', hint: 'วางรายชื่อจาก Excel แล้วพิมพ์บัตรเข้าใช้งาน หรือส่งลิงก์ให้สมัครเอง' },
-    { key: 'firstUse', done: readAll_('AttendanceLogs').some(function (g) { return activeIds[g.EmployeeID]; }), sec: 'share', title: 'ครูเริ่มลงเวลา', hint: 'ติดประกาศ QR Code ที่ห้องพักครู หรือส่งข้อความในกลุ่ม LINE' }
+    { key: 'firstUse', done: readAll_('DailySummary').some(function (g) { return activeIds[g.EmployeeID]; }), sec: 'share', title: 'ครูเริ่มลงเวลา', hint: 'ติดประกาศ QR Code ที่ห้องพักครู หรือส่งข้อความในกลุ่ม LINE' }
   ];
   var done = items.filter(function (i) { return i.done; }).length;
   return { items: items, done: done, total: items.length, complete: done === items.length };
@@ -3692,6 +3754,7 @@ function getAdminOverview_(ctx) {
   var info = getDayInfo_(today, s);
   return {
     setup: ctx.user.Role === ROLES.ADMIN ? setupChecklist_(s, allEmps, today) : null,
+    announcement: getAnnouncement_(),
     approvals: approvalCounts_(ctx.user),
     date: today,
     dateLabel: thaiDate_(today, 'long'),
@@ -3923,6 +3986,50 @@ function bulkCreateEmployees_(ctx, p) {
   };
 }
 
+/* ---------- ประกาศถึงบุคลากร (แสดงบนหน้าแรกของทุกคน) ---------- */
+
+/** ประกาศที่ยังไม่หมดอายุ หรือ null (เก็บใน Script Properties — ไม่ต้องอ่านชีตเพิ่ม) */
+function getAnnouncement_() {
+  var raw = scriptProps_().ANNOUNCEMENT;
+  if (!raw) return null;
+  var a;
+  try { a = JSON.parse(raw); } catch (e) { return null; }
+  if (!a || !a.text || (a.until && a.until < todayStr_())) return null;
+  return { id: a.id, text: a.text, until: a.until, untilLabel: thaiDate_(a.until), by: a.by, atLabel: thaiStamp_(a.at) };
+}
+
+/** ผู้บริหาร/ผู้ดูแลระบบประกาศข้อความถึงบุคลากรทุกคน (แทนประกาศเดิม) */
+function saveAnnouncement_(ctx, p) {
+  var text = cleanText_(p.text, 1000);
+  if (text.length < 2) throw appError_('กรุณาพิมพ์ข้อความประกาศ', 'VALIDATION', { field: 'text' });
+  if (text.length > 300) throw appError_('ข้อความประกาศต้องไม่เกิน 300 ตัวอักษร', 'VALIDATION', { field: 'text' });
+  var until = String(p.until || ''), today = todayStr_();
+  if (!isValidYmd_(until)) throw appError_('กรุณาเลือกวันสุดท้ายที่แสดงประกาศ', 'VALIDATION', { field: 'until' });
+  if (until < today) throw appError_('วันสุดท้ายที่แสดงต้องไม่ก่อนวันนี้', 'VALIDATION', { field: 'until' });
+  if (until > addDays_(today, 90)) throw appError_('แสดงประกาศได้นานไม่เกิน 90 วัน', 'VALIDATION', { field: 'until' });
+  var a = { id: newId_('AN'), text: text, until: until, by: ctx.user.FullName, at: nowStamp_() };
+  PropertiesService.getScriptProperties().setProperty('ANNOUNCEMENT', JSON.stringify(a));
+  MEMO_.props = null;
+  writeAudit_(ctx, 'ANNOUNCEMENT_SAVE', 'Announcement', a.id, { text: text, until: until });
+  return { announcement: getAnnouncement_(), message: 'ประกาศแล้ว — บุคลากรจะเห็นบนหน้าแรกถึงวันที่ ' + thaiDate_(until) };
+}
+
+function clearAnnouncement_(ctx) {
+  var cur = getAnnouncement_();
+  PropertiesService.getScriptProperties().deleteProperty('ANNOUNCEMENT');
+  MEMO_.props = null;
+  writeAudit_(ctx, 'ANNOUNCEMENT_CLEAR', 'Announcement', cur ? cur.id : '', cur ? { text: cur.text } : null);
+  return { announcement: null, message: 'ลบประกาศแล้ว' };
+}
+
+/* ---------- สำรองฐานข้อมูล ---------- */
+
+function backupNow_(ctx) {
+  var r = backupDatabase_();
+  writeAudit_(ctx, 'BACKUP', 'SYSTEM', '', r);
+  return { backup: backupInfo_(), message: 'สำรองข้อมูลแล้ว (' + r.name + ') — เก็บไว้ ' + r.kept + ' ชุดล่าสุด' };
+}
+
 /** ลิงก์เว็บแอปสำหรับแชร์/ทำ QR Code (ใช้ /exec เสมอ) */
 function getAppLink_(ctx) {
   var url = '';
@@ -4115,6 +4222,7 @@ function getSettingsForAdmin_(ctx) {
     descriptions: desc,
     schoolMaps: s.geofenceConfigured ? mapLinks_(s.schoolLat, s.schoolLng) : null,
     storage: driveStorageInfo_(),
+    backup: backupInfo_(),
     serverTime: thaiDate_(todayStr_(), 'long') + ' ' + nowTimeStr_() + ' น.',
     timezone: APP.TZ
   };
