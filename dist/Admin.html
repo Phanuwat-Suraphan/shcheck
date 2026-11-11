@@ -1,4 +1,4 @@
-<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.10.0
+<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.11.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Admin.html (หน้าผู้บริหาร/ผู้ดูแลระบบ)
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่ -->
 <!-- =====================================================================
@@ -46,6 +46,12 @@
   tr.row-error td { background: var(--danger-bg) !important; }
   .mono { font-family: 'Courier New', monospace; font-weight: 700; letter-spacing: .5px; }
   .tasks-card { border: 1.5px solid var(--sky-200); margin-bottom: 14px; }
+  .pick-list { max-height: 260px; overflow-y: auto; border: 1px solid var(--border); border-radius: 12px; background: #fff; }
+  .pick-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .pick-item:last-child { border-bottom: 0; }
+  .pick-item input { width: 20px; height: 20px; accent-color: var(--navy-700); flex-shrink: 0; }
+  .pick-item span:nth-child(2) { flex: 1; min-width: 0; }
+  .pick-item:has(input:checked) { background: var(--sky-50); }
   .announce-preview { white-space: pre-wrap; word-break: break-word; background: #EEF6FF; border-radius: 12px; padding: 10px 12px; margin-bottom: 4px; }
   .task-chips { display: flex; flex-wrap: wrap; gap: 8px; }
   .task-chip { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--border-strong); background: #fff; border-radius: 12px; padding: 8px 12px; font-weight: 600; cursor: pointer; min-height: 44px; color: var(--navy-800); }
@@ -162,7 +168,8 @@
     <!-- ================= อนุมัติการลา ================= -->
     <section data-panel-sec="leaves" hidden>
       <div class="page-head"><h2><span class="ms">event_busy</span>การลาของบุคลากร</h2>
-        <button type="button" class="btn" id="lvRecordBtn"><span class="ms">add_circle</span>บันทึกการลาให้บุคลากร</button></div>
+        <div class="row" style="gap:8px"><button type="button" class="btn outline" id="lvGroupBtn"><span class="ms">groups</span>บันทึกให้หลายคน (ไปราชการ/อบรม)</button>
+        <button type="button" class="btn" id="lvRecordBtn"><span class="ms">add_circle</span>บันทึกการลาให้บุคลากร</button></div></div>
       <div class="toolbar">
         <div class="seg" id="lvStatusSeg"><button type="button" data-val="PENDING" class="active">รออนุมัติ</button><button type="button" data-val="APPROVED">อนุมัติแล้ว</button><button type="button" data-val="REJECTED">ไม่อนุมัติ</button><button type="button" data-val="ALL">ทั้งหมด</button></div>
         <div class="field grow"><input type="search" id="lvSearch" placeholder="ค้นหาชื่อ / รหัส" aria-label="ค้นหา"></div>
@@ -690,7 +697,8 @@ window.Admin = (function () {
       renderTasks(o);
       renderAnnounceAdmin(o.announcement);
       $('#ovWarnings').innerHTML = o.warnings.map(function (w) {
-          return '<div class="alert warning">' + icon('warning') + '<div>' + esc(w) + (isAdmin() ? ' <button type="button" class="link-btn" data-go-sec="settings">ไปหน้าตั้งค่า</button>' : '') + '</div></div>';
+          var cal = /ปฏิทิน/.test(w);
+          return '<div class="alert warning">' + icon('warning') + '<div>' + esc(w) + (isAdmin() ? ' <button type="button" class="link-btn" data-go-sec="' + (cal ? 'calendar' : 'settings') + '">' + (cal ? 'ไปปฏิทินวันหยุด' : 'ไปหน้าตั้งค่า') + '</button>' : '') + '</div></div>';
         }).join('');
       $('#ovStats').innerHTML = [
         statCard('navy', 'groups', o.totalStaff, 'คน', 'บุคลากรทั้งหมด', isAdmin() ? 'members' : null),
@@ -1100,6 +1108,7 @@ window.Admin = (function () {
     bindSeg('crStatusSeg', function (v) { st.crStatus = v; loadCorrections(); });
     $('#lvSearch').addEventListener('input', debounce(loadLeaves, 400));
     $('#lvRecordBtn').addEventListener('click', function () { recordLeaveDialog(null); });
+    $('#lvGroupBtn').addEventListener('click', groupLeaveDialog);
     $('#lvApproveAllBtn').addEventListener('click', function () { approveAll('leave', st.lvApprovable || []); });
     $('#crApproveAllBtn').addEventListener('click', function () { approveAll('corr', st.crApprovable || []); });
     $('#crRecordBtn').addEventListener('click', function () { recordTimeDialog(null); });
@@ -1122,6 +1131,84 @@ window.Admin = (function () {
       bindAttachmentButtons(host);
       A.bindPrintLeave(host);
       $$('[data-lv]', host).forEach(function (b) { b.addEventListener('click', function () { reviewLeave(b.getAttribute('data-id'), b.getAttribute('data-lv')); }); });
+    }).catch(err);
+  }
+  /** บันทึกการลา/ไปราชการให้หลายคนพร้อมกัน (เช่น อบรม ประชุม ทัศนศึกษา) */
+  function groupLeaveDialog() {
+    A.api('emp.basicList', {}, { loadingText: 'กำลังโหลดรายชื่อ...' }).then(function (list) {
+      var active = list.filter(function (e) { return e.status === 'ACTIVE'; });
+      var today = A.bkkToday();
+      A.modal({
+        title: 'บันทึกให้หลายคน (ไปราชการ / อบรม / ลา)', icon: 'groups', wide: true,
+        body: '<div class="form-grid two"><div class="field" data-field="type"><label for="glType">ประเภท</label><select id="glType">' +
+            A.LEAVE_TYPE_META.map(function (m) { return '<option value="' + m[0] + '"' + (m[0] === 'OFFICIAL' ? ' selected' : '') + '>' + esc(m[1].replace(' (พิมพ์เอง)', '')) + '</option>'; }).join('') + '</select><span class="err"></span></div>' +
+            '<div class="field" data-field="typeDetail" id="glDetailWrap" hidden><label for="glDetail">ประเภทการลา (พิมพ์เอง)</label><input id="glDetail" maxlength="60" placeholder="เช่น ลาไปศึกษา ฝึกอบรม ดูงาน"><span class="err"></span></div></div>' +
+          '<div class="form-grid two"><div class="field" data-field="startDate"><label for="glStart">ตั้งแต่วันที่</label><input type="date" id="glStart" value="' + today + '"><span class="hint" data-thai-for="glStart"></span><span class="err"></span></div>' +
+            '<div class="field" data-field="endDate"><label for="glEnd">ถึงวันที่</label><input type="date" id="glEnd" value="' + today + '"><span class="hint" data-thai-for="glEnd"></span><span class="err"></span></div></div>' +
+          '<div class="field" data-field="period"><span class="field-label">ช่วงเวลา</span><div class="seg" id="glPeriod"><button type="button" data-val="FULL" class="active">เต็มวัน</button><button type="button" data-val="MORNING">ครึ่งวันเช้า</button><button type="button" data-val="AFTERNOON">ครึ่งวันบ่าย</button></div></div>' +
+          '<div class="field" data-field="reason"><label for="glReason">รายละเอียด <span class="muted">(ไม่บังคับ)</span></label><input id="glReason" maxlength="200" placeholder="เช่น อบรมเชิงปฏิบัติการ ณ สพป.เชียงใหม่"><span class="err"></span></div>' +
+          '<div class="field" data-field="employeeIds"><div class="row-between"><span class="field-label">บุคลากร <span class="badge navy" id="glCount">0 คน</span></span>' +
+            '<div class="row" style="gap:6px"><button type="button" class="btn ghost sm" id="glAll">เลือกทั้งหมด</button><button type="button" class="btn ghost sm" id="glNone">ล้าง</button></div></div>' +
+            '<input type="search" id="glSearch" placeholder="ค้นหาชื่อ / รหัส" style="margin:6px 0" aria-label="ค้นหาบุคลากร">' +
+            '<div class="pick-list" id="glList">' + active.map(function (e) {
+              return '<label class="pick-item" data-q="' + esc((e.fullName + ' ' + e.staffCode).toLowerCase()) + '"><input type="checkbox" value="' + esc(e.employeeId) + '"><span>' + esc(e.fullName) + '</span><span class="tiny muted">' + esc(e.staffCode) + '</span></label>';
+            }).join('') + '</div><span class="err"></span></div>' +
+          '<p class="small muted mb-0">บันทึกแล้วมีผลทันที (ยกเว้นของท่านเองจะรอผู้อื่นอนุมัติ) · คนที่มีใบลาช่วงเดียวกันอยู่แล้วจะถูกข้าม</p>',
+        onOpen: function (root) {
+          var picked = function () { return $$('#glList input:checked', root).map(function (c) { return c.value; }); };
+          var sync = function () {
+            var n = picked().length;
+            $('#glCount', root).textContent = n + ' คน';
+            var go = $('.modal-actions .btn.success', root);
+            if (go) { go.disabled = !n; go.innerHTML = icon('save') + esc(n ? 'บันทึก ' + n + ' คน' : 'บันทึก'); }
+            var same = $('#glStart', root).value && $('#glStart', root).value === $('#glEnd', root).value;
+            $$('#glPeriod button', root).forEach(function (b) {
+              if (b.getAttribute('data-val') !== 'FULL') { b.disabled = !same; if (!same && b.classList.contains('active')) A.segSelect($('#glPeriod', root), $('#glPeriod [data-val=FULL]', root)); }
+            });
+            [$('#glStart', root), $('#glEnd', root)].forEach(function (i) { A.setThaiHint(i); });
+          };
+          root._picked = picked;
+          $('#glType', root).addEventListener('change', function () { $('#glDetailWrap', root).hidden = $('#glType', root).value !== 'OTHER'; });
+          $('#glStart', root).addEventListener('change', function () { if (!$('#glEnd', root).value || $('#glEnd', root).value < $('#glStart', root).value) $('#glEnd', root).value = $('#glStart', root).value; sync(); });
+          $('#glEnd', root).addEventListener('change', sync);
+          $$('#glPeriod button', root).forEach(function (b) { b.addEventListener('click', function () { if (!b.disabled) A.segSelect($('#glPeriod', root), b); }); });
+          $('#glList', root).addEventListener('change', sync);
+          $('#glSearch', root).addEventListener('input', function () {
+            var q = $('#glSearch', root).value.trim().toLowerCase();
+            $$('#glList .pick-item', root).forEach(function (l) { l.hidden = !!q && l.getAttribute('data-q').indexOf(q) < 0; });
+          });
+          $('#glAll', root).addEventListener('click', function () { $$('#glList .pick-item', root).forEach(function (l) { if (!l.hidden) $('input', l).checked = true; }); sync(); });
+          $('#glNone', root).addEventListener('click', function () { $$('#glList input', root).forEach(function (c) { c.checked = false; }); sync(); });
+          sync();
+        },
+        actions: [{ label: 'ยกเลิก', cls: 'outline' }, {
+          label: 'บันทึก', icon: 'save', cls: 'success', onClick: function (close, btn, root) {
+            A.clearFieldErrors(root);
+            var data = { employeeIds: root._picked(), type: $('#glType', root).value, startDate: $('#glStart', root).value, endDate: $('#glEnd', root).value,
+              period: $('#glPeriod .active', root).getAttribute('data-val'), reason: $('#glReason', root).value.trim() };
+            if (data.type === 'OTHER') {
+              data.typeDetail = $('#glDetail', root).value.trim();
+              if (data.typeDetail.length < 2) { A.showFieldError(root, 'typeDetail', 'กรุณาพิมพ์ประเภทการลา'); return false; }
+            }
+            if (!data.employeeIds.length) { A.showFieldError(root, 'employeeIds', 'กรุณาเลือกบุคลากร'); return false; }
+            A.setBtnLoading(btn, true);
+            A.api('leave.adminCreateMany', data, { loadingText: 'กำลังบันทึก ' + data.employeeIds.length + ' คน...' }).then(function (r) {
+              A.setBtnLoading(btn, false); close();
+              if (r.skipped.length) {
+                A.modal({ title: 'บันทึกแล้ว ' + r.created.length + ' คน · ข้าม ' + r.skipped.length + ' คน', icon: 'info',
+                  body: '<div class="list">' + r.skipped.map(function (x) { return '<div class="req-card"><b>' + esc(x.fullName) + '</b><div class="meta">' + esc(x.reason) + '</div></div>'; }).join('') + '</div>',
+                  actions: [{ label: 'ตกลง' }] });
+              } else A.toast(r.message, 'success', 5000);
+              if (st.sec === 'leaves') loadLeaves();
+            }).catch(function (x) {
+              A.setBtnLoading(btn, false);
+              if (x.code === 'AUTH') return;
+              if (!(x.data && x.data.field && A.showFieldError(root, x.data.field, x.message))) A.toast(x.message, 'error', 6000);
+            });
+            return false;
+          }
+        }]
+      });
     }).catch(err);
   }
   /** อนุมัติทุกรายการที่รออยู่ (ยกเว้นของตนเอง) — kind: 'leave' | 'corr' */

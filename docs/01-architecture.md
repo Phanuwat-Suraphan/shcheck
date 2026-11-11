@@ -284,3 +284,7 @@ flowchart LR
 | บัญชีลงเวลาปฏิบัติราชการ (แบบสมุดลงเวลา) | มือถือ: ประกาศถึงบุคลากร |
 |---|---|
 | ![](screenshots/26-signbook-print.png) | ![](screenshots/27-announcement-mobile.png) |
+
+| มือถือ: ต้อนรับครั้งแรก | มือถือ: วิธีใช้งาน | สรุปการลงเวลารายเดือน (พิมพ์) | บันทึกให้หลายคน |
+|---|---|---|---|
+| ![](screenshots/28-welcome-mobile.png) | ![](screenshots/29-help-mobile.png) | ![](screenshots/30-monthly-record-print.png) | ![](screenshots/31-group-leave-desktop.png) |

@@ -43,6 +43,12 @@
   tr.row-error td { background: var(--danger-bg) !important; }
   .mono { font-family: 'Courier New', monospace; font-weight: 700; letter-spacing: .5px; }
   .tasks-card { border: 1.5px solid var(--sky-200); margin-bottom: 14px; }
+  .pick-list { max-height: 260px; overflow-y: auto; border: 1px solid var(--border); border-radius: 12px; background: #fff; }
+  .pick-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .pick-item:last-child { border-bottom: 0; }
+  .pick-item input { width: 20px; height: 20px; accent-color: var(--navy-700); flex-shrink: 0; }
+  .pick-item span:nth-child(2) { flex: 1; min-width: 0; }
+  .pick-item:has(input:checked) { background: var(--sky-50); }
   .announce-preview { white-space: pre-wrap; word-break: break-word; background: #EEF6FF; border-radius: 12px; padding: 10px 12px; margin-bottom: 4px; }
   .task-chips { display: flex; flex-wrap: wrap; gap: 8px; }
   .task-chip { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--border-strong); background: #fff; border-radius: 12px; padding: 8px 12px; font-weight: 600; cursor: pointer; min-height: 44px; color: var(--navy-800); }
@@ -159,7 +165,8 @@
     <!-- ================= อนุมัติการลา ================= -->
     <section data-panel-sec="leaves" hidden>
       <div class="page-head"><h2><span class="ms">event_busy</span>การลาของบุคลากร</h2>
-        <button type="button" class="btn" id="lvRecordBtn"><span class="ms">add_circle</span>บันทึกการลาให้บุคลากร</button></div>
+        <div class="row" style="gap:8px"><button type="button" class="btn outline" id="lvGroupBtn"><span class="ms">groups</span>บันทึกให้หลายคน (ไปราชการ/อบรม)</button>
+        <button type="button" class="btn" id="lvRecordBtn"><span class="ms">add_circle</span>บันทึกการลาให้บุคลากร</button></div></div>
       <div class="toolbar">
         <div class="seg" id="lvStatusSeg"><button type="button" data-val="PENDING" class="active">รออนุมัติ</button><button type="button" data-val="APPROVED">อนุมัติแล้ว</button><button type="button" data-val="REJECTED">ไม่อนุมัติ</button><button type="button" data-val="ALL">ทั้งหมด</button></div>
         <div class="field grow"><input type="search" id="lvSearch" placeholder="ค้นหาชื่อ / รหัส" aria-label="ค้นหา"></div>

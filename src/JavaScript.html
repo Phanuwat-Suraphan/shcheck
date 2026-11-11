@@ -505,6 +505,9 @@
     $('#accRememberBtn').addEventListener('click', rememberThisDevice);
     $('#accLogoutAllBtn').addEventListener('click', logoutAllDevices);
     $('#accHomeIconBtn').addEventListener('click', openHomeIconGuide);
+    $('#accHelpBtn').addEventListener('click', function () { openHelp(); });
+    $('#loginHelpBtn').addEventListener('click', function () { openHelp(); });
+    $('#histPrintBtn').addEventListener('click', printMyMonth);
     $('#homeTipBtn').addEventListener('click', openHomeIconGuide);
     $('#homeTipClose').addEventListener('click', function () { local.set('wsh_tip_home', '1'); renderHomeTip(); });
     $('#toAdminBtn').addEventListener('click', function () { openAdmin(); });
@@ -888,6 +891,104 @@
     $('#anClose').setAttribute('data-id', a.id);
   }
 
+  /* ------------------------------------------------------------------ วิธีใช้งาน (คู่มือในแอป) */
+  var HELP_USER = [
+    ['login', 'เข้าสู่ระบบไม่ได้ / ลืมรหัสผ่าน', 'ช่องแรกใส่ <b>ชื่อผู้ใช้</b> หรือ <b>รหัสครู</b> (เช่น T005) ก็ได้ · ลืมรหัสผ่าน: กด <b>ลืมรหัสผ่าน?</b> ที่หน้าเข้าสู่ระบบ แล้วติดต่อผู้ดูแลระบบเพื่อรับรหัสผ่านชั่วคราว · ใส่รหัสผิดหลายครั้งบัญชีจะถูกล็อกชั่วคราว'],
+    ['how_to_reg', 'ยังไม่มีบัญชี', 'กด <b>สมัครสมาชิก</b> กรอกชื่อ-นามสกุล ตำแหน่ง ชื่อผู้ใช้ และรหัสผ่าน แล้วรอผู้ดูแลอนุมัติ (รหัสครูระบบกำหนดให้) · ถ้าได้รับ <b>บัตรเข้าใช้งาน</b> ให้เข้าสู่ระบบด้วยข้อมูลบนบัตรได้เลย'],
+    ['fingerprint', 'ลงเวลาเข้า/ออกงาน', 'ถึงโรงเรียนกด <b>ลงเวลาเข้างาน</b> · ก่อนกลับกด <b>ลงเวลาออกงาน</b> · ครั้งแรกให้กด <b>อนุญาต</b> ให้ใช้ตำแหน่ง · ระบบใช้เวลาของเซิร์ฟเวอร์และตรวจว่าอยู่ในพื้นที่โรงเรียน'],
+    ['location_off', 'ลงเวลาไม่สำเร็จ (นอกพื้นที่ / GPS ไม่แม่น)', 'เปิด GPS (ตำแหน่ง) ในโทรศัพท์ ออกไปที่โล่งแล้วรอ 10–20 วินาที กดใหม่ · ถ้าเปิดลิงก์จากแอป LINE ให้เปิดด้วย Chrome/Safari แทน · ดูวิธีเปิด GPS ได้ที่ปุ่ม <b>วิธีเปิด GPS</b> หน้าแรก · ถ้ายังไม่ได้ ใช้ <b>ลืมลงเวลา / ขอแก้ไขเวลา</b>'],
+    ['edit_calendar', 'ลืมลงเวลา', 'ลืมกดตอนเช้า: กดลงเวลาเข้า แล้วเลือก <b>ลืมกด — แจ้งเวลาที่มาถึงจริง</b> (ตอนเย็นยังลงเวลาออกได้) · ลืมวันก่อน ๆ: แตะ <b>ขอแก้ไขเวลา</b> ในกล่อง “ลงเวลาไม่ครบ” บนหน้าแรก · หรือแจ้งผู้บริหารให้บันทึกเวลาแทน'],
+    ['event_busy', 'แจ้งลา / พิมพ์ใบลา', 'เมนู <b>การลา</b> → เลือกวัน → แตะประเภทการลา → ยืนยัน · ใบลาป่วย/กิจ/คลอด/พักผ่อน กด <b>พิมพ์ใบลา</b> ได้ใบลาแบบราชการพร้อมสถิติการลา · ดูสถิติการลาของตัวเองแยกรอบการประเมินได้ในเมนูเดียวกัน'],
+    ['print', 'พิมพ์สรุปการลงเวลาของฉัน', 'เมนู <b>ประวัติ</b> → เลือกเดือน → <b>พิมพ์สรุปเดือนนี้</b> (ใช้เป็นหลักฐานประกอบ PA ได้)'],
+    ['bookmark_added', 'ไม่อยากใส่รหัสผ่านทุกวัน', 'ตอนเข้าสู่ระบบติ๊ก <b>จำการเข้าสู่ระบบบนเครื่องนี้</b> (เฉพาะโทรศัพท์ส่วนตัว) · เพิ่มไอคอนไว้บนหน้าจอ: เมนู <b>บัญชี → เพิ่มไอคอนบนหน้าจอ</b>'],
+    ['text_increase', 'ตัวหนังสือเล็กอ่านยาก', 'เมนู <b>บัญชี → ขนาดตัวอักษร</b> เลือก <b>ใหญ่</b> หรือ <b>ใหญ่มาก</b>'],
+    ['devices', 'โทรศัพท์หาย / เคยเข้าระบบเครื่องคนอื่น', 'เข้าสู่ระบบจากเครื่องอื่น → เมนู <b>บัญชี → ออกจากระบบทุกเครื่อง</b> แล้วเปลี่ยนรหัสผ่าน'],
+    ['shield_person', 'ใครเห็นตำแหน่งของฉัน', 'ระบบขอตำแหน่งเฉพาะตอนกดลงเวลาหรือกดตรวจตำแหน่งเท่านั้น ไม่ติดตามตลอดวัน · ผู้บริหารและผู้ดูแลระบบเห็นเฉพาะตำแหน่ง ณ เวลาที่ลงเวลา และพิกัดจะถูกลบอัตโนมัติเมื่อครบกำหนด']
+  ];
+  var HELP_ADMIN = [
+    ['task_alt', 'อนุมัติใบลา / คำร้อง', 'หน้าแรกมีแถบ <b>งานรออนุมัติ</b> แตะ <b>ไปอนุมัติ</b> · มีปุ่ม <b>อนุมัติทั้งหมด</b> เมื่อมีหลายรายการ'],
+    ['more_time', 'ครูลืมลงเวลาแล้วโทรมาแจ้ง', '<b>ผู้บริหาร/Admin → ภาพรวม</b> แถวของครูคนนั้น กด <b>บันทึกเวลาแทน</b> มีผลทันที (เก็บประวัติเดิมไว้)'],
+    ['groups', 'ครูไปอบรม / ไปราชการหลายคน', 'เมนู <b>อนุมัติการลา → บันทึกให้หลายคน</b> เลือกคน วันที่ และประเภท <b>ไปราชการ</b> ครั้งเดียว'],
+    ['menu_book', 'พิมพ์สมุดลงเวลาประจำวัน', 'เมนู <b>รายงาน → รายวัน → พิมพ์บัญชีลงเวลา (แบบสมุดลงเวลา)</b> มีเส้นแดงและช่องลงนาม ผอ.'],
+    ['qr_code_2', 'แจกระบบให้ครู', 'เมนู <b>แชร์ระบบ / QR Code</b>: พิมพ์ประกาศ QR, ข้อความกลุ่ม LINE, เพิ่มครูหลายคนแล้วพิมพ์บัตรเข้าใช้งาน'],
+    ['campaign', 'แจ้งข่าวถึงครูทุกคน', '<b>ภาพรวม → เขียนประกาศ</b> ครูจะเห็นบนหน้าแรก'],
+    ['calendar_month', 'วันหยุด / ปิดภาคเรียน', 'เมนู <b>ปฏิทินวันหยุด</b> มีวันหยุดราชการให้อัตโนมัติ เพิ่มวันปิดภาคเรียนด้วยปุ่มลัด · ถ้ามีคำเตือนว่าวันหยุดทางพุทธศาสนายังไม่ครบ ให้เพิ่มตามประกาศ']
+  ];
+  function helpItems(list) {
+    return list.map(function (h) {
+      return '<details class="help-item"><summary>' + icon(h[0]) + '<span>' + esc(h[1]) + '</span></summary><div class="help-body">' + h[2] + '</div></details>';
+    }).join('');
+  }
+  /** คู่มือในแอป: คำถามที่พบบ่อยแบบแตะเปิดทีละข้อ (ผู้บริหาร/ผู้ดูแลเห็นหัวข้อเพิ่ม) */
+  function openHelp() {
+    var boss = S.user && (S.user.role === 'ADMIN' || S.user.role === 'EXECUTIVE');
+    modal({
+      title: 'วิธีใช้งาน', icon: 'help', wide: true,
+      body: '<div class="help-group">สำหรับครูและบุคลากร</div>' + helpItems(HELP_USER) +
+        (boss ? '<div class="help-group">สำหรับผู้บริหาร / ผู้ดูแลระบบ</div>' + helpItems(HELP_ADMIN) : '') +
+        '<p class="small muted" style="margin:12px 0 0">พบปัญหาอื่น กรุณาติดต่อผู้ดูแลระบบของโรงเรียน · เวอร์ชัน ' + esc((S.cfg && S.cfg.version) || '') + '</p>',
+      actions: [{ label: 'ปิด' }]
+    });
+  }
+  /** แนะนำ 3 ขั้นตอนครั้งแรกบนโทรศัพท์ (แสดงครั้งเดียวต่อเครื่อง) */
+  function maybeShowWelcome() {
+    if (S.welcomeChecked || !S.user || S.tab !== 'home' || $('#view-app').hidden) return;
+    S.welcomeChecked = true;
+    if (local.get('wsh_welcome_v1') === '1') return;
+    var touch = false;
+    try { touch = window.matchMedia('(pointer: coarse)').matches; } catch (e) { touch = false; }
+    if (!touch || $('#modalHost').children.length) { if (!touch) local.set('wsh_welcome_v1', '1'); return; }
+    var done = function () { local.set('wsh_welcome_v1', '1'); };
+    var remembered = hasDevice();
+    var step = function (n, ic, title, sub, btn) {
+      return '<div class="wel-step"><span class="wel-num">' + n + '</span><div class="wel-text"><b>' + title + '</b><span class="small muted">' + sub + '</span></div>' + btn + '</div>';
+    };
+    var m = modal({
+      title: 'ยินดีต้อนรับ ' + S.user.fullName, icon: 'waving_hand',
+      body: '<p class="mb-0">ทำ 3 อย่างนี้ครั้งเดียว แล้วลงเวลาได้สะดวกทุกวัน</p>' +
+        step(1, 'my_location', 'ทดสอบตำแหน่ง GPS ที่โรงเรียน', 'กดแล้วอนุญาตให้ใช้ตำแหน่ง', '<button type="button" class="btn outline sm" data-wel="gps">' + icon('near_me') + 'ตรวจตำแหน่ง</button>') +
+        step(2, 'bookmark_added', 'จำการเข้าสู่ระบบบนเครื่องนี้', 'ครั้งหน้าไม่ต้องใส่รหัสผ่าน (โทรศัพท์ส่วนตัว)',
+          remembered ? '<span class="badge success">' + icon('check') + 'จำแล้ว</span>' : '<button type="button" class="btn outline sm" data-wel="remember">' + icon('bookmark_add') + 'จำเครื่องนี้</button>') +
+        step(3, 'add_to_home_screen', 'เพิ่มไอคอนบนหน้าจอ', 'เปิดลงเวลาได้ในแตะเดียว', '<button type="button" class="btn outline sm" data-wel="icon">' + icon('add_to_home_screen') + 'ดูวิธี</button>'),
+      onClose: done,
+      onOpen: function (root, close) {
+        $$('[data-wel]', root).forEach(function (b) {
+          b.addEventListener('click', function () {
+            var w = b.getAttribute('data-wel');
+            close();
+            if (w === 'gps') checkMyLocation();
+            else if (w === 'remember') rememberThisDevice();
+            else openHomeIconGuide();
+          });
+        });
+      },
+      actions: [{ label: 'ดูวิธีใช้งานทั้งหมด', cls: 'outline', icon: 'help', onClick: function () { setTimeout(openHelp, 0); } }, { label: 'เริ่มใช้งาน', icon: 'check' }]
+    });
+    return m;
+  }
+  /** พิมพ์สรุปการลงเวลารายเดือนของตนเอง (A4) */
+  function printMyMonth() {
+    var h = S.history, u = S.user;
+    if (!h || !u) return;
+    var days = h.days.slice().reverse(), t = h.totals || {};
+    var dots = '..............................................';
+    printHtml('<div class="sb-doc"><div class="sb-title">บันทึกการลงเวลาปฏิบัติงาน</div><div class="sb-sub">' + esc((S.cfg && S.cfg.school) || 'โรงเรียนวัดเสาหิน') + '</div>' +
+      '<div class="sb-sub">ประจำเดือน' + esc(h.label) + '</div>' +
+      '<div class="sb-meta">ชื่อ-สกุล <b>' + esc(u.fullName) + '</b> · ตำแหน่ง ' + esc(u.position || '-') + ' · รหัส ' + esc(u.staffCode || '-') + '</div>' +
+      '<table class="sb-table compact-rows"><thead><tr><th style="width:13%">วันที่</th><th style="width:12%">วัน</th><th style="width:11%">เวลามา</th><th style="width:11%">เวลากลับ</th><th style="width:16%">สถานะ</th><th>หมายเหตุ</th></tr></thead><tbody>' +
+      days.map(function (d) {
+        return '<tr' + (d.status === 'HOLIDAY' ? ' class="sb-holiday"' : '') + '><td class="c">' + esc(d.dateShort) + '</td><td class="c">' + esc(d.dayName) + '</td>' +
+          '<td class="c">' + (d.checkIn ? hm(d.checkIn) : '') + '</td><td class="c">' + (d.checkOut ? hm(d.checkOut) : '') + '</td>' +
+          '<td class="c">' + esc(d.statusLabel || '') + '</td><td>' + esc((d.lateMinutes ? 'สาย ' + d.lateMinutes + ' นาที' + (d.note ? ', ' : '') : '') + (d.note || '')) + '</td></tr>';
+      }).join('') + '</tbody></table>' +
+      '<div class="sb-sum">สรุป วันทำงาน <b>' + (t.workdays || 0) + '</b> วัน · มาปฏิบัติงาน <b>' + (t.present || 0) + '</b> วัน · มาสาย <b>' + (t.late || 0) + '</b> ครั้ง' +
+        (t.lateMinutes ? ' (' + t.lateMinutes + ' นาที)' : '') + ' · ลา <b>' + (t.leaveDays || 0) + '</b> วัน · ขาดงาน <b>' + (t.absent || 0) + '</b> วัน · ลงเวลาไม่ครบ <b>' + (t.incomplete || 0) + '</b> ครั้ง' +
+        (t.rate !== null && t.rate !== undefined ? ' · ร้อยละการมาปฏิบัติงาน <b>' + t.rate + '%</b>' : '') + '</div>' +
+      '<div class="sb-sign"><div>ลงชื่อ ' + dots + ' ผู้ปฏิบัติงาน<br>( ' + esc(u.fullName) + ' )<br>ตำแหน่ง ' + esc(u.position || '') + '</div>' +
+      '<div>ลงชื่อ ' + dots + ' ผู้รับรอง<br>( ' + esc((h.signer && h.signer.name) || dots) + ' )<br>' + esc((h.signer && h.signer.position) || 'ผู้อำนวยการโรงเรียน') + '</div></div>' +
+      '<div class="sb-foot">พิมพ์จากระบบลงเวลาปฏิบัติงานออนไลน์ (เวลาของเซิร์ฟเวอร์ Google และตรวจตำแหน่ง GPS) · พิมพ์เมื่อ ' + esc(h.printedAt || '') + '</div></div>', 'portrait');
+  }
+
   /* ---------- ผู้บริหาร/ผู้ดูแล: งานรออนุมัติบนหน้าแรก ---------- */
   function renderApprovals(a) {
     var show = !!(a && a.total);
@@ -952,6 +1053,7 @@
     renderIssues(d.issues);
     renderApprovals(d.approvals);
     renderAnnouncement(d.announcement);
+    setTimeout(maybeShowWelcome, 300);
     var hh = bkkParts(serverNow()).hh;
     $('#greeting').textContent = hh < 12 ? 'สวัสดีตอนเช้า' : (hh < 17 ? 'สวัสดีตอนบ่าย' : 'สวัสดีตอนเย็น');
     $('#workHours').textContent = 'เวลาทำงาน ' + s.workStart + '–' + s.workEnd + ' น. · ถือว่าสายเมื่อลงเวลาหลัง ' + s.lateAfter + ' น.';
@@ -1272,6 +1374,8 @@
   function initHistorySelectors() { fillMonthYear($('#histMonth'), $('#histYear'), 3); }
   function loadHistory() {
     api('me.history', { year: +$('#histYear').value, month: +$('#histMonth').value }, { loadingText: 'กำลังโหลดประวัติ...' }).then(function (h) {
+      S.history = h;
+      $('#histPrintBtn').hidden = !h.days.length;
       $('#histTitle').textContent = 'เดือน' + h.label;
       $('#histStats').innerHTML = statCards(h.totals);
       if (!h.days.length) { $('#histTable').innerHTML = emptyState('ไม่มีข้อมูลในเดือนนี้', 'event_note'); return; }
@@ -1670,7 +1774,7 @@
     leaveCard: leaveCard, corrCard: corrCard, bkkToday: bkkToday, bkkParts: bkkParts, serverNow: serverNow,
     fillMonthYear: fillMonthYear, TH_M: TH_M, TH_MS: TH_MS, backToUser: backToUser, doLogout: doLogout, showGeoHelp: showGeoHelp,
     parseYmd: parseYmd, LEAVE_TYPE_META: LEAVE_TYPE_META, leaveConfirmDialog: leaveConfirmDialog, addDaysYmd: addDaysYmd,
-    segSelect: segSelect, setThaiHint: setThaiHint, bindPrintLeave: bindPrintLeave, printHtml: printHtml, copyText: copyText
+    segSelect: segSelect, setThaiHint: setThaiHint, bindPrintLeave: bindPrintLeave, printHtml: printHtml, copyText: copyText, openHelp: openHelp
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();

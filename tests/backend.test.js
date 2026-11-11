@@ -349,6 +349,17 @@ test('R05', 'รหัสประจำตัวบุคลากรกำห�
   expectErr(sys2.api(sys2.admin, 'emp.update', { employeeId: one.employee.employeeId, fullName: 'นายเพิ่ม ทีละคน', staffCode: '', position: 'ครู', username: 'add.one' }), 'VALIDATION'); // แก้ไขต้องมีรหัส
 });
 
+test('H03', 'ประวัติรายเดือนของฉันมีข้อมูลสำหรับพิมพ์ (ผู้รับรอง = ผู้อำนวยการจากการตั้งค่า, เวลาที่พิมพ์)', () => {
+  const sys = newSystem({ now: '2026-11-09 07:00:00' });
+  const t = addTeacher(sys, 1);
+  ok(sys.api(sys.admin, 'settings.save', { values: { DIRECTOR_NAME: 'นายสมชาย ใจดี' } }));
+  sys.at('2026-11-09 07:50:00'); ok(sys.api(t.token, 'att.checkIn', INSIDE));
+  const h = ok(sys.api(t.token, 'me.history', { year: 2026, month: 11 }));
+  assert.deepStrictEqual(h.signer, { name: 'นายสมชาย ใจดี', position: 'ผู้อำนวยการโรงเรียนวัดเสาหิน' });
+  assert.ok(/9 พฤศจิกายน 2569 เวลา 07:50 น\./.test(h.printedAt), h.printedAt);
+  assert.strictEqual(h.days[0].checkIn.substr(0, 5), '07:50');
+});
+
 test('L01', 'รหัสผ่านผิด/ไม่มีผู้ใช้ ได้ข้อความเดียวกัน (ไม่เปิดเผยว่ามีบัญชีหรือไม่)', () => {
   const sys = newSystem();
   const a = expectErr(sys.login('admin.saohin', 'WrongPass123'), 'INVALID_LOGIN');
@@ -886,6 +897,27 @@ test('V10', 'พิมพ์ใบลา: ข้อมูลตามแบบ�
   ok(sys.api(t.token, 'leave.cancel', { leaveId: lv.leaveId }));
   expectErr(sys.api(t.token, 'leave.form', { leaveId: lv.leaveId }), 'VALIDATION');
   void half;
+});
+
+test('V12', 'บันทึกไปราชการ/อบรมให้หลายคนพร้อมกัน: บันทึกทีละคนตามขั้นตอนปกติ (Audit ครบ), ข้ามคนที่มีใบลาซ้อน/ปิดบัญชีพร้อมเหตุผล, ของตนเองรออนุมัติ, ข้อมูลผิดแจ้งทันที', () => {
+  const sys = newSystem({ now: '2026-11-09 07:00:00' });
+  const t1 = addTeacher(sys, 1), t2 = addTeacher(sys, 2), t3 = addTeacher(sys, 3), t4 = addTeacher(sys, 4), ex = addTeacher(sys, 5, 'EXECUTIVE');
+  ok(sys.api(t3.token, 'leave.submit', { type: 'SICK', startDate: '2026-11-12', endDate: '2026-11-12' }));   // ซ้อนช่วง
+  ok(sys.api(sys.admin, 'emp.setStatus', { employeeId: t4.id, status: 'INACTIVE' }));                        // ปิดบัญชี
+  const base = { type: 'OFFICIAL', startDate: '2026-11-12', endDate: '2026-11-13', reason: 'อบรมเชิงปฏิบัติการ ณ สพป.' };
+  const r = ok(sys.api(ex.token, 'leave.adminCreateMany', Object.assign({ employeeIds: [t1.id, t2.id, t3.id, t4.id, ex.id, t1.id] }, base)));
+  assert.deepStrictEqual(r.created.map(c => [c.employeeId, c.status, c.days]), [[t1.id, 'APPROVED', 2], [t2.id, 'APPROVED', 2], [ex.id, 'PENDING', 2]]);
+  assert.deepStrictEqual(r.skipped.map(x => x.employeeId), [t3.id, t4.id]);
+  assert.ok(/ใบลาในช่วงวันที่นี้อยู่แล้ว/.test(r.skipped[0].reason) && /ไม่ได้อยู่ในสถานะใช้งาน/.test(r.skipped[1].reason), JSON.stringify(r.skipped));
+  assert.ok(/บันทึกแล้ว 3 คน/.test(r.message) && /รออนุมัติ 1 คน/.test(r.message) && /ข้าม 2 คน/.test(r.message), r.message);
+  assert.strictEqual(records(sys, 'AuditLogs').filter(a => a.Action === 'LEAVE_RECORD_BY_ADMIN').length, 3);
+  assert.strictEqual(records(sys, 'LeaveRequests').filter(l => l.LeaveType === 'OFFICIAL' && l.Reason === base.reason).length, 3);
+  // ข้อมูลที่ผิดเหมือนกันทุกคน → แจ้งทันที ไม่ข้ามทีละคน
+  const bad = expectErr(sys.api(ex.token, 'leave.adminCreateMany', { employeeIds: [t2.id], type: 'OFFICIAL', startDate: '2026-11-14', endDate: '2026-11-15' }), 'VALIDATION');
+  assert.ok(/วันหยุดทั้งหมด/.test(bad.error), bad.error);
+  expectErr(sys.api(ex.token, 'leave.adminCreateMany', Object.assign({ employeeIds: [] }, base)), 'VALIDATION');
+  expectErr(sys.api(ex.token, 'leave.adminCreateMany', Object.assign({ employeeIds: Array.from({ length: 61 }, (_, i) => 'EMP-' + i) }, base)), 'VALIDATION');
+  expectErr(sys.api(t1.token, 'leave.adminCreateMany', Object.assign({ employeeIds: [t2.id] }, base)), 'FORBIDDEN');
 });
 
 test('V01', 'ยื่นใบลา: ตรวจสอบข้อมูล (วันที่, ครึ่งวัน, เหตุผล, วันหยุดล้วน, ไฟล์ปลอม)', () => {
@@ -1479,6 +1511,21 @@ test('M13', 'ปฏิทิน: เพิ่มวันปิดภาคเ�
   const one = before[0].Date;
   ok(sys.api(sys.admin, 'cal.add', { startDate: one, endDate: one, type: 'SPECIAL_HOLIDAY', title: 'แก้ไขรายวัน' }));
   assert.strictEqual(records(sys, 'WorkCalendar').find(c => c.Date === one).Title, 'แก้ไขรายวัน');
+});
+
+test('M14', 'เตือนในหน้าภาพรวมเมื่อปฏิทินปีนี้/ปีหน้า (ตั้งแต่ ต.ค.) ยังไม่มีวันหยุดทางพุทธศาสนา และหายเมื่อผู้ดูแลเพิ่มแล้ว', () => {
+  const sys = newSystem({ now: '2026-11-09 07:00:00' });
+  const warn = () => ok(sys.api(sys.admin, 'admin.overview', {})).warnings.filter(w => /วันหยุดทางพุทธศาสนา/.test(w));
+  assert.deepStrictEqual(warn(), [], 'ปี 2569–2570 มีข้อมูลครบในระบบ');
+  sys.at('2027-09-30 07:00:00');
+  assert.deepStrictEqual(warn(), [], 'ยังไม่ถึงเดือนตุลาคม ไม่ต้องเตือนปีหน้า');
+  sys.at('2027-10-01 07:00:00');
+  const w = warn();
+  assert.strictEqual(w.length, 1); assert.ok(/พ\.ศ\. 2571/.test(w[0]) && /ขาดงาน/.test(w[0]), w[0]);
+  ok(sys.api(sys.admin, 'cal.add', { startDate: '2028-02-10', endDate: '2028-02-10', type: 'OFFICIAL_HOLIDAY', title: 'วันมาฆบูชา' }));
+  assert.deepStrictEqual(warn(), []);
+  sys.at('2029-01-05 07:00:00');
+  assert.ok(/พ\.ศ\. 2572/.test(warn()[0] || ''), 'ปีปัจจุบัน 2572 ยังไม่มีข้อมูล');
 });
 
 test('M09', 'ตั้งค่าชื่อผู้อำนวยการ/ตำแหน่ง/สังกัด: ตรวจความยาว, เก็บเป็นข้อความ (กันสูตร), แสดงในรายงานพิมพ์', () => {

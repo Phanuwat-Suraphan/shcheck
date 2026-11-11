@@ -40,6 +40,8 @@ async function newPage(o = {}) {
   await ctx.route(/cdnjs\.cloudflare\.com/, r => r.fulfill({ status: 200, contentType: 'application/javascript', body: CHART_STUB }));
   await ctx.route(/fonts\.googleapis\.com|fonts\.gstatic\.com/, r => r.fulfill({ status: 200, contentType: 'text/css', body: ICON_PLACEHOLDER_CSS }));
   await ctx.addInitScript(() => { window.print = () => { window.__printed = (window.__printed || 0) + 1; }; });
+  // หน้าต้อนรับครั้งแรกแสดงครั้งเดียวต่อเครื่อง — ปิดไว้ในการทดสอบอื่น (ทดสอบแยกด้วย o.welcome)
+  await ctx.addInitScript((skip) => { if (skip) { try { localStorage.setItem('wsh_welcome_v1', '1'); } catch (e) { /* ignore */ } } }, !o.welcome);
   const page = await ctx.newPage();
   page.setDefaultTimeout(+(process.env.PW_TIMEOUT || 10000));
   page.on('pageerror', e => pageErrors.push(e.message));
@@ -928,6 +930,64 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
     await tp.waitForSelector('#view-app:not([hidden])');
     await tp.waitForFunction(() => document.querySelector('#homeName').textContent.length > 1);
     assert.ok(await tp.isHidden('#announceCard'), 'ซ่อนแล้วไม่แสดงซ้ำบนเครื่องนี้');
+  });
+
+  await step('E37', 'ครูเข้าใช้งานครั้งแรก: หน้าต้อนรับ 3 ขั้นตอน → วิธีใช้งานในแอป (แตะเปิดทีละข้อ); พิมพ์สรุปการลงเวลารายเดือนของตนเอง', async () => {
+    await setClock('2026-11-24 16:45:00');
+    const lp = await newPage({ welcome: true });
+    await lp.click('#loginHelpBtn');                        // ก่อนเข้าสู่ระบบก็เปิดวิธีใช้งานได้
+    await lp.locator('.modal', { hasText: 'วิธีใช้งาน' }).waitFor();
+    assert.ok(!/สำหรับผู้บริหาร/.test(await lp.textContent('.modal')));
+    await modalAction(lp, 'ปิด');
+    await login(lp, 'somsri.j', 'SomsriNew2026');
+    await lp.locator('.modal', { hasText: 'ยินดีต้อนรับ' }).waitFor({ timeout: 10000 });
+    assert.strictEqual(await lp.locator('.modal .wel-step').count(), 3);
+    await shot(lp, '28-welcome-mobile.png');
+    await modalAction(lp, 'ดูวิธีใช้งานทั้งหมด');
+    await lp.locator('.modal', { hasText: 'สำหรับครูและบุคลากร' }).waitFor();
+    await lp.locator('.help-item summary', { hasText: 'ลืมลงเวลา' }).click();
+    assert.ok(/แจ้งเวลาที่มาถึงจริง/.test(await lp.locator('.help-item[open] .help-body').first().textContent()));
+    await shot(lp, '29-help-mobile.png');
+    await modalAction(lp, 'ปิด');
+    assert.strictEqual(await lp.evaluate(() => localStorage.getItem('wsh_welcome_v1')), '1', 'แสดงครั้งเดียว');
+    // พิมพ์สรุปรายเดือน
+    await lp.click('#userTabs [data-tab="history"]');
+    await lp.waitForSelector('#histPrintBtn:not([hidden])');
+    await capturePrint(lp);
+    await lp.click('#histPrintBtn');
+    await lp.waitForFunction(() => !!window.__printHtml);
+    const html = await lp.evaluate(() => window.__printHtml);
+    ['บันทึกการลงเวลาปฏิบัติงาน', 'ประจำเดือนพฤศจิกายน 2569', 'นางสาวสมศรี ใจดี', 'ผู้ปฏิบัติงาน', 'ผู้รับรอง', 'นายสมชาย ใจดี'].forEach(x => assert.ok(html.includes(x), x));
+    const pages = await printPreview(lp, html, 'portrait', '30-monthly-record-print.png');
+    assert.ok(pages >= 1 && pages <= 2, 'สรุปรายเดือนพิมพ์ได้ไม่เกิน 2 หน้า (' + pages + ')');
+  });
+
+  await step('E38', 'ผู้บริหาร: บันทึกไปราชการ/อบรมให้หลายคนในครั้งเดียว (ค้นหา + ติ๊กเลือก)', async () => {
+    await setClock('2026-11-24 16:50:00');
+    const d = await newPage({ desktop: true });
+    await login(d, DEFAULTS.adminUser, ADMIN_NEW_PW);
+    await d.waitForSelector('#view-app:not([hidden])');
+    await d.click('#toAdminBtn');
+    await d.waitForSelector('#view-admin:not([hidden])');
+    await d.click('#adminNav [data-sec="leaves"]');
+    await d.click('#lvGroupBtn');
+    await d.waitForSelector('#glList .pick-item');
+    assert.strictEqual(await d.inputValue('#glType'), 'OFFICIAL');
+    await d.fill('#glStart', '2026-12-01'); await d.dispatchEvent('#glStart', 'change');
+    await d.fill('#glReason', 'อบรมการใช้ระบบลงเวลา ณ สพป.');
+    await d.fill('#glSearch', 'สมปอง');
+    await d.locator('#glList .pick-item:not([hidden]) input').first().check();
+    await d.fill('#glSearch', 'มาลี');
+    await d.locator('#glList .pick-item:not([hidden]) input').first().check();
+    await d.fill('#glSearch', '');
+    assert.strictEqual(await d.textContent('#glCount'), '2 คน');
+    assert.ok(/บันทึก 2 คน/.test(await d.textContent('.modal-actions .btn.success')));
+    await shot(d, '31-group-leave-desktop.png');
+    await d.click('.modal-actions .btn.success');
+    await toast(d, /บันทึกแล้ว 2 คน/);
+    await d.click('#lvStatusSeg [data-val="APPROVED"]');
+    await d.locator('#lvList .req-card', { hasText: 'นายสมปอง รักดี' }).filter({ hasText: 'ไปราชการ' }).waitFor();
+    await d.locator('#lvList .req-card', { hasText: 'นางสาวมาลี ศรีสุข' }).filter({ hasText: 'ไปราชการ' }).waitFor();
   });
 
   await step('E20', 'ไม่มี JavaScript error ในทุกหน้าที่ทดสอบ', async () => {

@@ -209,6 +209,38 @@ function adminRecordLeave_(ctx, p) {
   };
 }
 
+/**
+ * บันทึกการลา/ไปราชการให้หลายคนพร้อมกัน (เช่น อบรม ประชุม ทัศนศึกษา) — ใช้ขั้นตอนเดียวกับบันทึกทีละคน
+ * (ตรวจข้อมูล/ลาซ้อน/Audit ครบทุกคน) คนที่บันทึกไม่ได้จะถูกข้ามพร้อมเหตุผล
+ */
+function adminRecordLeaveMany_(ctx, p) {
+  var ids = Array.isArray(p.employeeIds) ? p.employeeIds.map(String).filter(function (x, i, a) { return x && a.indexOf(x) === i; }) : [];
+  if (!ids.length) throw appError_('กรุณาเลือกบุคลากรอย่างน้อย 1 คน', 'VALIDATION', { field: 'employeeIds' });
+  if (ids.length > 60) throw appError_('บันทึกได้ครั้งละไม่เกิน 60 คน', 'VALIDATION', { field: 'employeeIds' });
+  var created = [], skipped = [];
+  ids.forEach(function (id) {
+    var q = {};
+    Object.keys(p).forEach(function (k) { if (k !== 'employeeIds' && k !== 'attachment') q[k] = p[k]; });
+    q.employeeId = id;
+    var emp = getEmployeeById_(id);
+    var name = emp ? emp.FullName : id;
+    try {
+      var r = adminRecordLeave_(ctx, q);
+      created.push({ employeeId: id, fullName: name, status: r.leave.status, days: r.leave.days });
+    } catch (e) {
+      // ข้อมูลที่ผิดเหมือนกันทุกคน (เช่น วันที่/ประเภท) → หยุดและแจ้งทันที
+      if (!created.length && !skipped.length && e.appCode === 'VALIDATION' && e.appData && e.appData.field && e.appData.field !== 'employeeId') throw e;
+      skipped.push({ employeeId: id, fullName: name, reason: e.message || String(e) });
+    }
+  });
+  var pending = created.filter(function (c) { return c.status === 'PENDING'; }).length;
+  return {
+    created: created, skipped: skipped,
+    message: 'บันทึกแล้ว ' + created.length + ' คน' + (pending ? ' (รออนุมัติ ' + pending + ' คน — ใบลาของท่านเอง)' : '') +
+      (skipped.length ? ' · ข้าม ' + skipped.length + ' คน' : '')
+  };
+}
+
 function listMyLeaves_(ctx) {
   return readAll_('LeaveRequests').filter(function (r) { return r.EmployeeID === ctx.user.EmployeeID; })
     .sort(function (a, b) { return a.RequestedAt < b.RequestedAt ? 1 : -1; })

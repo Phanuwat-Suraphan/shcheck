@@ -1,5 +1,5 @@
 /*
- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.10.0
+ * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.11.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Code.gs (โค้ดฝั่ง Server ทั้งหมด)
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่
  */
@@ -35,7 +35,7 @@ var APP = {
   SCHOOL_FULL: 'โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่',
   NAME_EN: 'Wat Sao Hin School Attendance System',
   SLOGAN: 'ระบบลงเวลาอัจฉริยะ สะดวก โปร่งใส ตรวจสอบได้',
-  VERSION: '1.10.0',
+  VERSION: '1.11.0',
   TZ: 'Asia/Bangkok'
 };
 
@@ -213,6 +213,7 @@ function getRoutes_() {
     'announce.clear': { fn: clearAnnouncement_, roles: AE },
     'leave.adminList': { fn: adminListLeaves_, roles: AE },
     'leave.adminCreate': { fn: adminRecordLeave_, roles: AE },
+    'leave.adminCreateMany': { fn: adminRecordLeaveMany_, roles: AE },
     'leave.review': { fn: reviewLeave_, roles: AE },
     'leave.approveMany': { fn: approveManyLeaves_, roles: AE },
     'corr.adminList': { fn: adminListCorrections_, roles: AE },
@@ -2944,6 +2945,8 @@ function getMyHistory_(ctx, p) {
   var today = todayStr_();
   return {
     year: ym.y, month: ym.m, label: thaiMonthYear_(ym.y, ym.m),
+    signer: { name: ctx.settings.directorName, position: ctx.settings.directorPosition },
+    printedAt: thaiDate_(today) + ' เวลา ' + nowTimeStr_().substr(0, 5) + ' น.',
     totals: me.totals,
     days: me.days.filter(function (d) { return d.date <= today; }).reverse()
   };
@@ -3168,6 +3171,38 @@ function adminRecordLeave_(ctx, p) {
     leave: leaveView_(rec),
     message: self ? 'บันทึกใบลาของท่านแล้ว — ต้องให้ผู้บริหาร/ผู้ดูแลท่านอื่นอนุมัติ'
       : 'บันทึกการลาให้ ' + emp.FullName + ' เรียบร้อย (' + leaveTypeLabel_(rec) + ' ' + rec.Days + ' วัน · อนุมัติแล้ว)'
+  };
+}
+
+/**
+ * บันทึกการลา/ไปราชการให้หลายคนพร้อมกัน (เช่น อบรม ประชุม ทัศนศึกษา) — ใช้ขั้นตอนเดียวกับบันทึกทีละคน
+ * (ตรวจข้อมูล/ลาซ้อน/Audit ครบทุกคน) คนที่บันทึกไม่ได้จะถูกข้ามพร้อมเหตุผล
+ */
+function adminRecordLeaveMany_(ctx, p) {
+  var ids = Array.isArray(p.employeeIds) ? p.employeeIds.map(String).filter(function (x, i, a) { return x && a.indexOf(x) === i; }) : [];
+  if (!ids.length) throw appError_('กรุณาเลือกบุคลากรอย่างน้อย 1 คน', 'VALIDATION', { field: 'employeeIds' });
+  if (ids.length > 60) throw appError_('บันทึกได้ครั้งละไม่เกิน 60 คน', 'VALIDATION', { field: 'employeeIds' });
+  var created = [], skipped = [];
+  ids.forEach(function (id) {
+    var q = {};
+    Object.keys(p).forEach(function (k) { if (k !== 'employeeIds' && k !== 'attachment') q[k] = p[k]; });
+    q.employeeId = id;
+    var emp = getEmployeeById_(id);
+    var name = emp ? emp.FullName : id;
+    try {
+      var r = adminRecordLeave_(ctx, q);
+      created.push({ employeeId: id, fullName: name, status: r.leave.status, days: r.leave.days });
+    } catch (e) {
+      // ข้อมูลที่ผิดเหมือนกันทุกคน (เช่น วันที่/ประเภท) → หยุดและแจ้งทันที
+      if (!created.length && !skipped.length && e.appCode === 'VALIDATION' && e.appData && e.appData.field && e.appData.field !== 'employeeId') throw e;
+      skipped.push({ employeeId: id, fullName: name, reason: e.message || String(e) });
+    }
+  });
+  var pending = created.filter(function (c) { return c.status === 'PENDING'; }).length;
+  return {
+    created: created, skipped: skipped,
+    message: 'บันทึกแล้ว ' + created.length + ' คน' + (pending ? ' (รออนุมัติ ' + pending + ' คน — ใบลาของท่านเอง)' : '') +
+      (skipped.length ? ' · ข้าม ' + skipped.length + ' คน' : '')
   };
 }
 
@@ -3746,6 +3781,7 @@ function getAdminOverview_(ctx) {
   if (!s.geofenceConfigured) warnings.push('ยังไม่ได้ตั้งค่าพิกัดโรงเรียน บุคลากรจะยังไม่สามารถลงเวลาได้');
   // ผู้ดูแลระบบเห็นรายการนี้ในการ์ด "ตั้งค่าเริ่มต้นให้ครบ" แล้ว
   if (!s.settingsConfirmed && ctx.user.Role !== ROLES.ADMIN) warnings.push('การตั้งค่าเวลาทำงาน/รัศมี GPS ยังเป็นค่าตัวอย่าง กรุณาตรวจสอบให้ตรงกับระเบียบของโรงเรียนแล้วกดยืนยันในหน้าตั้งค่า');
+  holidayDataWarnings_(today).forEach(function (w) { warnings.push(w); });
   var storage = driveStorageInfo_();
   if (storage && storage.percent >= 85) {
     warnings.push('พื้นที่ Google Drive ของบัญชีระบบใช้ไปแล้ว ' + storage.percent + '% (' + storage.usedLabel + ' จาก ' + storage.limitLabel +
@@ -4369,6 +4405,26 @@ var THAI_HOLIDAY_DATA_ = {
     ]
   }
 };
+
+/**
+ * เตือนเมื่อปีปัจจุบัน (หรือปีหน้า ตั้งแต่เดือนตุลาคม) ไม่มีข้อมูลวันหยุดทางพุทธศาสนาในตัวระบบ
+ * และผู้ดูแลยังไม่ได้เพิ่มเองในปฏิทิน — ถ้าไม่เพิ่ม วันดังกล่าวจะถูกนับเป็นวันทำงาน (ครูถูกนับว่าขาดงาน)
+ */
+function holidayDataWarnings_(today) {
+  var y = +today.substr(0, 4), m = +today.substr(5, 2);
+  var years = m >= 10 ? [y, y + 1] : [y];
+  var cal = null, out = [];
+  years.forEach(function (yy) {
+    if (THAI_HOLIDAY_DATA_[yy]) return;
+    cal = cal || readAll_('WorkCalendar');
+    var has = cal.some(function (c) { return +String(c.Date).substr(0, 4) === yy && /มาฆบูชา|วิสาขบูชา|อาสาฬหบูชา|เข้าพรรษา/.test(String(c.Title)); });
+    if (!has) {
+      out.push('ปฏิทินวันหยุดปี พ.ศ. ' + (yy + 543) + ' ยังไม่มีวันหยุดทางพุทธศาสนา (มาฆบูชา วิสาขบูชา อาสาฬหบูชา เข้าพรรษา) ซึ่งเปลี่ยนวันทุกปี — ' +
+        'กรุณาเพิ่มในเมนูปฏิทินวันหยุดตามประกาศวันหยุดราชการ มิฉะนั้นวันดังกล่าวครูจะถูกนับว่าขาดงาน');
+    }
+  });
+  return out;
+}
 
 /** รายการวันหยุดราชการไทยของปี y → {complete, note, days: [{date, title}]} */
 function thaiHolidaysForYear_(y) {

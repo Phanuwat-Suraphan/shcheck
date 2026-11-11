@@ -338,6 +338,8 @@ function getMyHistory_(ctx, p) {
   var today = todayStr_();
   return {
     year: ym.y, month: ym.m, label: thaiMonthYear_(ym.y, ym.m),
+    signer: { name: ctx.settings.directorName, position: ctx.settings.directorPosition },
+    printedAt: thaiDate_(today) + ' เวลา ' + nowTimeStr_().substr(0, 5) + ' น.',
     totals: me.totals,
     days: me.days.filter(function (d) { return d.date <= today; }).reverse()
   };
