@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.8.0
+<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.9.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Index.html
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่ -->
 <html lang="th">
@@ -571,6 +571,22 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
   .print-doc tr { page-break-inside: avoid; }
   .print-doc .c { text-align: center; }
   .print-doc .p-summary { margin-top: 10px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px 18px; font-size: 11.5pt; }
+  /* บัญชีลงเวลาปฏิบัติราชการ (แบบสมุดลงเวลา) */
+  .sb-doc { font-family: 'Sarabun', 'TH Sarabun New', Tahoma, sans-serif; color: #000; font-size: 11.5pt; }
+  .sb-doc .sb-title { text-align: center; font-size: 16pt; font-weight: 700; }
+  .sb-doc .sb-sub { text-align: center; font-size: 13pt; font-weight: 600; }
+  .sb-doc .sb-meta { text-align: center; font-size: 10.5pt; margin: 2px 0 8px; }
+  .sb-table { width: 100%; border-collapse: collapse; }
+  .sb-table th, .sb-table td { border: 1px solid #333; padding: 3px 5px; font-size: 10.5pt; line-height: 1.3; }
+  .sb-table th { background: #EEF2F7 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .sb-table thead { display: table-header-group; }
+  .sb-table tr { page-break-inside: avoid; }
+  .sb-table .c { text-align: center; }
+  .sb-table tr.sb-red td { border-top: 2.5px solid #D00 !important; border-bottom: 2.5px solid #D00 !important; color: #D00; text-align: center; font-weight: 700; font-size: 9.5pt; padding: 1px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .sb-table tr.sb-gap td { background: #F5F5F5 !important; font-weight: 700; font-size: 9.5pt; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .sb-doc .sb-sum { margin-top: 8px; font-size: 11pt; }
+  .sb-doc .sb-sign { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 22px; text-align: center; font-size: 11pt; line-height: 1.7; page-break-inside: avoid; }
+  .sb-doc .sb-foot { margin-top: 12px; font-size: 8.5pt; color: #444; border-top: 1px solid #999; padding-top: 3px; }
   /* ประกาศ QR Code (A4 แนวตั้ง) */
   .qr-poster { font-family: 'Sarabun', 'TH Sarabun New', Tahoma, sans-serif; color: #000; text-align: center; padding-top: 6mm; }
   .qr-poster .pp-school { font-size: 20pt; font-weight: 700; }
@@ -653,10 +669,10 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
 
       <form id="loginForm" novalidate autocomplete="on">
         <div class="field">
-          <label for="loginUsername">ชื่อผู้ใช้ (Username)</label>
+          <label for="loginUsername">ชื่อผู้ใช้ หรือรหัสครู</label>
           <div class="input-icon">
             <span class="ms">person</span>
-            <input id="loginUsername" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required maxlength="60" placeholder="เช่น somchai.j">
+            <input id="loginUsername" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required maxlength="60" placeholder="เช่น somchai.j หรือ T005">
           </div>
         </div>
         <div class="field">

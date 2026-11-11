@@ -227,13 +227,19 @@ function login(username, password, clientInfo) {
     if (!uname || typeof password !== 'string' || !password) throw appError_('กรุณากรอกชื่อผู้ใช้และรหัสผ่าน', 'VALIDATION');
     if (uname.length > 60 || password.length > 128) throw appError_('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง', 'INVALID_LOGIN');
     var s = getSettings_();
+    // เข้าสู่ระบบด้วย "ชื่อผู้ใช้" หรือ "รหัสประจำตัวบุคลากร" (เช่น T005) ก็ได้ — นับครั้งที่ผิดตามบัญชีเดียวกัน
+    var emp = findOne_('Employees', 'Username', uname);
+    if (!emp) {
+      var code = normalizeStaffCode_(username);
+      if (code) emp = readAll_('Employees').filter(function (e) { return normalizeStaffCode_(e.StaffCode) === code; })[0] || null;
+      if (emp) uname = normalizeUsername_(emp.Username);
+    }
     var st = getLoginState_(uname);
     if (st.lockedUntil && st.lockedUntil > nowMs_()) {
       var mins = Math.ceil((st.lockedUntil - nowMs_()) / 60000);
       throw appError_('บัญชีถูกล็อกชั่วคราวเนื่องจากใส่รหัสผ่านผิดเกินกำหนด กรุณาลองใหม่ในอีก ' + mins +
         ' นาที หรือติดต่อผู้ดูแลระบบ', 'LOCKED');
     }
-    var emp = findOne_('Employees', 'Username', uname);
     var verified = null;
     if (!emp) {
       dummyPasswordWork_(); // ใช้เวลาเท่ากัน ป้องกันการเดาชื่อผู้ใช้จากเวลาตอบสนอง

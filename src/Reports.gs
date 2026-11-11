@@ -237,10 +237,16 @@ function reportDaily_(ctx, p) {
       status: d.statusLabel, statusCode: d.status, lateMinutes: d.lateMinutes || '',
       inDistance: d.inDistanceM !== null && d.inDistanceM !== undefined ? d.inDistanceM : '',
       outDistance: d.outDistanceM !== null && d.outDistanceM !== undefined ? d.outDistanceM : '',
-      note: d.note, inMaps: d.inMaps || null, outMaps: d.outMaps || null, employeeId: pp.emp.employeeId
+      note: d.note, inMaps: d.inMaps || null, outMaps: d.outMaps || null, employeeId: pp.emp.employeeId,
+      leaveType: d.leave ? d.leave.type : '', leaveLabel: d.leave ? d.leave.typeLabel + (d.leave.period !== 'FULL' ? ' (' + d.leave.periodLabel + ')' : '') : ''
     });
   });
   rep.dayInfo = { isWorkday: info ? info.isWorkday : true, holidayName: info ? info.holidayName : '' };
+  var dp = parseYmd_(date), s = res.settings;
+  rep.signBook = {
+    dayName: THAI_DAYS[dayOfWeek_(date)], day: dp.d, month: THAI_MONTHS[dp.m - 1], year: dp.y + 543,
+    workStart: s.workStart, lateAfter: s.lateAfter, workEnd: s.workEnd
+  };
   rep.tables.push({
     key: 'main',
     title: info && !info.isWorkday ? 'หมายเหตุ: วันนี้เป็น' + info.holidayName : '',

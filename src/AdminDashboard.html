@@ -200,6 +200,7 @@
         <button type="button" class="btn success" data-export="xlsx"><span class="ms">table_view</span>Export Excel (.xlsx)</button>
         <button type="button" class="btn danger" data-export="pdf"><span class="ms">picture_as_pdf</span>Export PDF</button>
         <button type="button" class="btn outline" id="repPrintBtn"><span class="ms">print</span>พิมพ์รายงาน</button>
+        <button type="button" class="btn outline" id="repSignBookBtn" hidden><span class="ms">menu_book</span>พิมพ์บัญชีลงเวลา (แบบสมุดลงเวลา)</button>
       </div>
       <div id="repResult"></div>
     </section>
@@ -245,6 +246,11 @@
         <div class="card" id="calFormCard">
           <div class="card-title"><span class="ms">add_circle</span>เพิ่มวันหยุด / วันทำงานพิเศษ</div>
           <p class="small muted">ใช้เพิ่มวันหยุดของโรงเรียนเอง เช่น ปิดภาคเรียน กีฬาสี วันหยุดพิเศษตามประกาศ หรือวันทำงานชดเชย (เลือกช่วงหลายวันได้) · เลือกวันที่มีอยู่แล้วเพื่อแก้ไขชื่อ/ประเภท</p>
+          <div class="row" style="gap:6px;margin:4px 0 12px" id="calPresets">
+            <span class="small muted">ปุ่มลัด:</span>
+            <button type="button" class="btn outline sm" data-cal-preset="break2"><span class="ms">beach_access</span>ปิดภาคเรียนที่ 2 (เม.ย.–พ.ค.)</button>
+            <button type="button" class="btn outline sm" data-cal-preset="break1"><span class="ms">beach_access</span>ปิดภาคเรียนที่ 1 (ต.ค.)</button>
+          </div>
           <form id="calForm" novalidate>
             <div class="form-grid two">
               <div class="field"><label for="calStart">ตั้งแต่วันที่</label><input type="date" id="calStart" required></div>

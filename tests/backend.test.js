@@ -489,6 +489,23 @@ test('L10', 'การจำเครื่องสิ้นสุดเมื�
   expectErr(sys.api(adm, 'settings.save', { values: { REMEMBER_DEVICE_DAYS: '91' } }), 'VALIDATION');
 });
 
+test('L11', 'เข้าสู่ระบบด้วยรหัสครู (รหัสประจำตัวบุคลากร) แทนชื่อผู้ใช้ได้ ไม่สนตัวพิมพ์; ใส่ผิดนับรวมกับบัญชีเดียวกัน (ล็อกเหมือนเดิม)', () => {
+  const sys = newSystem({ realSessions: true });
+  const r = ok(sys.register(Object.assign(regForm(1), { staffCode: '' })));
+  ok(sys.api(sys.admin, 'emp.approve', { employeeId: r.reference, role: 'USER' }));
+  const code = r.staffCode;
+  const a = ok(sys.env.call('login', code, 'Teach3rPass1', {}));
+  assert.strictEqual(a.user.username, 'teacher1');
+  ok(sys.env.call('login', code.toLowerCase(), 'Teach3rPass1', {}));
+  // ผิดด้วยรหัสครู 2 ครั้ง + ชื่อผู้ใช้ 3 ครั้ง = 5 ครั้ง → ล็อก
+  for (let i = 0; i < 2; i++) expectErr(sys.env.call('login', code, 'wrong-pass-1', {}), 'INVALID_LOGIN');
+  for (let i = 0; i < 2; i++) expectErr(sys.env.call('login', 'teacher1', 'wrong-pass-1', {}), 'INVALID_LOGIN');
+  expectErr(sys.env.call('login', 'teacher1', 'wrong-pass-1', {}), 'LOCKED');
+  expectErr(sys.env.call('login', code, 'Teach3rPass1', {}), 'LOCKED');
+  const unknown = expectErr(sys.env.call('login', 'T999', 'Teach3rPass1', {}), 'INVALID_LOGIN');
+  assert.ok(/ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง/.test(unknown.error));
+});
+
 test('L03', 'Token ปลอม/ว่าง/รูปแบบผิด ถูกปฏิเสธ', () => {
   const sys = newSystem();
   for (const tk of ['', null, 'abc', 'a'.repeat(64), sys.admin.slice(0, 63) + 'x', { x: 1 }]) {
@@ -1446,6 +1463,24 @@ test('K07', 'อนุมัติคำร้องแก้ไขเวลา�
   assert.ok(row.CheckInTime.startsWith('07:45') && row.CheckOutTime.startsWith('16:35'));
 });
 
+test('M13', 'ปฏิทิน: เพิ่มวันปิดภาคเรียนเป็นช่วง ไม่ทับวันหยุดราชการเดิมในช่วงนั้น (สงกรานต์/จักรี ยังอยู่); แก้ไขรายวันยังทำได้', () => {
+  const sys = newSystem({ now: '2026-11-09 07:00:00' });
+  const before = records(sys, 'WorkCalendar').filter(c => c.Date >= '2027-04-01' && c.Date <= '2027-05-15' && c.Type === 'OFFICIAL_HOLIDAY');
+  assert.ok(before.length >= 4, 'มีวันหยุดราชการในช่วง เม.ย.–พ.ค. 2570');
+  const r = ok(sys.api(sys.admin, 'cal.add', { startDate: '2027-04-01', endDate: '2027-05-15', type: 'SPECIAL_HOLIDAY', title: 'ปิดภาคเรียนที่ 2 ปีการศึกษา 2569' }));
+  assert.strictEqual(r.kept, before.length); assert.ok(/คงวันหยุดราชการเดิม/.test(r.message));
+  const cal = records(sys, 'WorkCalendar');
+  before.forEach(b => {
+    const now = cal.find(c => c.Date === b.Date);
+    assert.strictEqual(now.Type, 'OFFICIAL_HOLIDAY'); assert.strictEqual(now.Title, b.Title);
+  });
+  assert.strictEqual(cal.filter(c => c.Date >= '2027-04-01' && c.Date <= '2027-05-15').length, 45);
+  assert.strictEqual(cal.find(c => c.Date === '2027-04-02').Type, 'SPECIAL_HOLIDAY');
+  const one = before[0].Date;
+  ok(sys.api(sys.admin, 'cal.add', { startDate: one, endDate: one, type: 'SPECIAL_HOLIDAY', title: 'แก้ไขรายวัน' }));
+  assert.strictEqual(records(sys, 'WorkCalendar').find(c => c.Date === one).Title, 'แก้ไขรายวัน');
+});
+
 test('M09', 'ตั้งค่าชื่อผู้อำนวยการ/ตำแหน่ง/สังกัด: ตรวจความยาว, เก็บเป็นข้อความ (กันสูตร), แสดงในรายงานพิมพ์', () => {
   const sys = newSystem();
   expectErr(sys.api(sys.admin, 'settings.save', { values: { DIRECTOR_NAME: 'ก'.repeat(81) } }), 'VALIDATION');
@@ -1454,6 +1489,20 @@ test('M09', 'ตั้งค่าชื่อผู้อำนวยการ/
   assert.strictEqual(v.DIRECTOR_NAME, '=HYPERLINK("x")'); assert.strictEqual(v.SCHOOL_AFFILIATION, 'สพป. เชียงใหม่');
   assert.strictEqual(v.DIRECTOR_POSITION, 'ผู้อำนวยการโรงเรียนวัดเสาหิน');
   assert.strictEqual(records(sys, 'Settings').find(r => r.Key === 'DIRECTOR_NAME').Value, '=HYPERLINK("x")'); // เก็บเป็นข้อความ ไม่ใช่สูตร
+});
+
+test('P08', 'รายงานรายวันมีข้อมูลสำหรับพิมพ์บัญชีลงเวลา (แบบสมุด): วัน/เดือน/ปี พ.ศ., เวลาเริ่ม/สาย/เลิกงาน, ประเภทการลา/ไปราชการ', () => {
+  const sys = newSystem({ now: '2026-11-09 07:00:00' });
+  const t = addTeacher(sys, 1), t2 = addTeacher(sys, 2);
+  ok(sys.api(sys.admin, 'leave.adminCreate', { employeeId: t2.id, type: 'OFFICIAL', startDate: '2026-11-09', endDate: '2026-11-09' }));
+  sys.at('2026-11-09 08:45:00'); ok(sys.api(t.token, 'att.checkIn', INSIDE));
+  sys.at('2026-11-09 17:00:00');
+  const rep = ok(sys.api(sys.admin, 'report.daily', { date: '2026-11-09' }));
+  assert.deepStrictEqual(rep.signBook, { dayName: 'จันทร์', day: 9, month: 'พฤศจิกายน', year: 2569, workStart: '08:00', lateAfter: '08:30', workEnd: '16:30' });
+  const rows = rep.tables[0].rows;
+  assert.strictEqual(rows.find(r => r.employeeId === t2.id).leaveType, 'OFFICIAL');
+  assert.strictEqual(rows.find(r => r.employeeId === t2.id).leaveLabel, 'ไปราชการ');
+  assert.strictEqual(rows.find(r => r.employeeId === t.id).statusCode, 'LATE');
 });
 
 test('D01', 'ลบพิกัด GPS อัตโนมัติเมื่อเกินระยะเวลาเก็บรักษา (คงระยะทาง/เวลาไว้)', () => {

@@ -1,4 +1,4 @@
-<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.8.0
+<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.9.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Admin.html (หน้าผู้บริหาร/ผู้ดูแลระบบ)
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่ -->
 <!-- =====================================================================
@@ -203,6 +203,7 @@
         <button type="button" class="btn success" data-export="xlsx"><span class="ms">table_view</span>Export Excel (.xlsx)</button>
         <button type="button" class="btn danger" data-export="pdf"><span class="ms">picture_as_pdf</span>Export PDF</button>
         <button type="button" class="btn outline" id="repPrintBtn"><span class="ms">print</span>พิมพ์รายงาน</button>
+        <button type="button" class="btn outline" id="repSignBookBtn" hidden><span class="ms">menu_book</span>พิมพ์บัญชีลงเวลา (แบบสมุดลงเวลา)</button>
       </div>
       <div id="repResult"></div>
     </section>
@@ -248,6 +249,11 @@
         <div class="card" id="calFormCard">
           <div class="card-title"><span class="ms">add_circle</span>เพิ่มวันหยุด / วันทำงานพิเศษ</div>
           <p class="small muted">ใช้เพิ่มวันหยุดของโรงเรียนเอง เช่น ปิดภาคเรียน กีฬาสี วันหยุดพิเศษตามประกาศ หรือวันทำงานชดเชย (เลือกช่วงหลายวันได้) · เลือกวันที่มีอยู่แล้วเพื่อแก้ไขชื่อ/ประเภท</p>
+          <div class="row" style="gap:6px;margin:4px 0 12px" id="calPresets">
+            <span class="small muted">ปุ่มลัด:</span>
+            <button type="button" class="btn outline sm" data-cal-preset="break2"><span class="ms">beach_access</span>ปิดภาคเรียนที่ 2 (เม.ย.–พ.ค.)</button>
+            <button type="button" class="btn outline sm" data-cal-preset="break1"><span class="ms">beach_access</span>ปิดภาคเรียนที่ 1 (ต.ค.)</button>
+          </div>
           <form id="calForm" novalidate>
             <div class="form-grid two">
               <div class="field"><label for="calStart">ตั้งแต่วันที่</label><input type="date" id="calStart" required></div>
@@ -1188,6 +1194,7 @@ window.Admin = (function () {
     $('#repRunBtn').addEventListener('click', runReport);
     $$('#repExportBar [data-export]').forEach(function (b) { b.addEventListener('click', function () { exportReport(b.getAttribute('data-export'), b); }); });
     $('#repPrintBtn').addEventListener('click', printReport);
+    $('#repSignBookBtn').addEventListener('click', printSignBook);
   }
   function syncRepControls() {
     $$('[data-rep]').forEach(function (el) { el.hidden = el.getAttribute('data-rep').split(' ').indexOf(st.repType) < 0; });
@@ -1235,6 +1242,7 @@ window.Admin = (function () {
       st.report = rep; st.reportType = st.repType; st.reportParams = p;
       renderReport(rep);
       $('#repExportBar').hidden = false;
+      $('#repSignBookBtn').hidden = rep.type !== 'daily';
     }).catch(err);
   }
   function cellHtml(col, row) {
@@ -1327,12 +1335,76 @@ window.Admin = (function () {
     setTimeout(function () { window.print(); setTimeout(cleanup, 1500); }, 100);
   }
 
+  /**
+   * บัญชีลงเวลาปฏิบัติราชการประจำวัน (แบบสมุดลงเวลา): เรียงตามเวลามา, "เส้นแดง" ที่เวลาถือว่าสาย,
+   * ผู้ไม่มา/ลา/ไปราชการอยู่ท้ายตาราง และช่องลงนามรับรองของผู้อำนวยการ
+   */
+  function printSignBook() {
+    var rep = st.report;
+    if (!rep || rep.type !== 'daily' || !rep.signBook) return;
+    var b = rep.signBook, rows = rep.tables[0].rows;
+    var came = rows.filter(function (r) { return r.checkIn && r.checkIn !== '-'; }).sort(function (x, y) { return x.checkIn < y.checkIn ? -1 : (x.checkIn > y.checkIn ? 1 : 0); });
+    var onTime = came.filter(function (r) { return r.statusCode !== 'LATE'; });
+    var late = came.filter(function (r) { return r.statusCode === 'LATE'; });
+    var notCame = rows.filter(function (r) { return !r.checkIn || r.checkIn === '-'; });
+    var n = 0;
+    var tr = function (r, note) {
+      n++;
+      return '<tr><td class="c">' + n + '</td><td>' + esc(r.fullName) + '</td><td>' + esc(r.position || '') + '</td><td class="c">' + esc(r.checkIn && r.checkIn !== '-' ? r.checkIn : '') + '</td>' +
+        '<td class="c">' + esc(r.checkOut && r.checkOut !== '-' ? r.checkOut : '') + '</td><td>' + esc(note || '') + '</td></tr>';
+    };
+    var cameNote = function (r) {
+      var parts = [];
+      if (r.statusCode === 'LATE' && r.lateMinutes) parts.push('สาย ' + r.lateMinutes + ' นาที');
+      if (r.note) parts.push(r.note);
+      return parts.join(', ');
+    };
+    var awayNote = function (r) {
+      if (r.leaveType === 'OFFICIAL') return 'ไปราชการ' + (r.leaveLabel && r.leaveLabel !== 'ไปราชการ' ? ' (' + r.leaveLabel + ')' : '');
+      if (r.leaveLabel) return r.leaveLabel;
+      if (r.statusCode === 'ABSENT') return 'ไม่ได้ลงเวลา';
+      if (r.statusCode === 'NOT_YET') return 'ยังไม่ลงเวลา';
+      return r.status || '';
+    };
+    var body = onTime.map(function (r) { return tr(r, cameNote(r)); }).join('') +
+      '<tr class="sb-red"><td colspan="6">เส้นแดง — ลงเวลามาหลัง ' + esc(b.lateAfter) + ' น. ถือว่ามาสาย</td></tr>' +
+      late.map(function (r) { return tr(r, cameNote(r)); }).join('') +
+      (notCame.length ? '<tr class="sb-gap"><td colspan="6">ไม่ได้ลงเวลามา</td></tr>' + notCame.map(function (r) { return tr(r, awayNote(r)); }).join('') : '');
+    var cnt = function (f) { return notCame.filter(f).length; };
+    var leave = cnt(function (r) { return r.leaveType && r.leaveType !== 'OFFICIAL'; });
+    var official = cnt(function (r) { return r.leaveType === 'OFFICIAL'; });
+    var other = notCame.length - leave - official;
+    var signer = rep.signer || {};
+    var dots = '..............................................';
+    A.printHtml('<div class="sb-doc"><div class="sb-title">บัญชีลงเวลาปฏิบัติราชการ</div><div class="sb-sub">' + esc(rep.school) + '</div>' +
+      '<div class="sb-sub">ประจำวัน' + esc(b.dayName) + 'ที่ ' + esc(b.day) + ' เดือน ' + esc(b.month) + ' พ.ศ. ' + esc(b.year) + '</div>' +
+      '<div class="sb-meta">เวลาปฏิบัติราชการ ' + esc(b.workStart) + ' – ' + esc(b.workEnd) + ' น. · ลงเวลามาหลัง ' + esc(b.lateAfter) + ' น. ถือว่ามาสาย' +
+      (rep.dayInfo && !rep.dayInfo.isWorkday ? ' · <b>วันหยุด: ' + esc(rep.dayInfo.holidayName || '') + '</b>' : '') + '</div>' +
+      '<table class="sb-table"><thead><tr><th style="width:7%">ที่</th><th style="width:30%">ชื่อ - สกุล</th><th style="width:17%">ตำแหน่ง</th><th style="width:10%">เวลามา</th><th style="width:10%">เวลากลับ</th><th>หมายเหตุ</th></tr></thead><tbody>' + body + '</tbody></table>' +
+      '<div class="sb-sum">สรุป บุคลากรทั้งหมด <b>' + rows.length + '</b> คน · มาปฏิบัติราชการ <b>' + came.length + '</b> คน (ตรงเวลา ' + onTime.length + ' คน, มาสาย ' + late.length + ' คน) · ลา <b>' + leave + '</b> คน · ไปราชการ <b>' + official + '</b> คน · ไม่ได้ลงเวลา <b>' + other + '</b> คน</div>' +
+      '<div class="sb-sign"><div>ลงชื่อ ' + dots + ' ผู้ตรวจสอบ<br>( ' + dots + ' )<br>ตำแหน่ง ' + dots + '</div>' +
+      '<div>ตรวจแล้วถูกต้อง<br>ลงชื่อ ' + dots + '<br>( ' + esc(signer.name || dots) + ' )<br>' + esc(signer.position || 'ผู้อำนวยการโรงเรียน') + '</div></div>' +
+      '<div class="sb-foot">เวลามา/เวลากลับบันทึกจากระบบลงเวลาปฏิบัติงานออนไลน์ (เวลาของเซิร์ฟเวอร์ Google และตรวจตำแหน่ง GPS) · พิมพ์เมื่อ ' + esc(rep.generatedAt) + '</div></div>', 'portrait');
+  }
+
   /* ------------------------------------------------------------------ calendar */
   function bindCalendar() {
     var p = A.bkkParts(A.serverNow());
     setOpts($('#calYear'), [p.y - 1, p.y, p.y + 1].map(function (y) { return [y, 'ปี พ.ศ. ' + (y + 543)]; }), p.y);
     $('#calYear').addEventListener('change', loadCalendar);
     $('#calStart').addEventListener('change', function () { if (!$('#calEnd').value || $('#calEnd').value < $('#calStart').value) $('#calEnd').value = $('#calStart').value; });
+    // ปุ่มลัดวันปิดภาคเรียน (วันที่โดยประมาณ — ให้ตรวจตามปฏิทินการศึกษาของเขตพื้นที่ก่อนบันทึก)
+    $$('#calPresets [data-cal-preset]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var y = +$('#calYear').value, two = b.getAttribute('data-cal-preset') === 'break2';
+        $('#calStart').value = two ? y + '-04-01' : y + '-10-11';
+        $('#calEnd').value = two ? y + '-05-15' : y + '-10-31';
+        $('#calType').value = 'SPECIAL_HOLIDAY';
+        $('#calTitle').value = two ? 'ปิดภาคเรียนที่ 2 ปีการศึกษา ' + (y + 542) : 'ปิดภาคเรียนที่ 1 ปีการศึกษา ' + (y + 543);
+        A.toast('กรอกวันที่โดยประมาณให้แล้ว — ตรวจตามปฏิทินการศึกษาของเขตพื้นที่ แล้วกด “บันทึก” (วันหยุดราชการในช่วงนี้คงไว้เหมือนเดิม)', 'info', 7000);
+        try { $('#calStart').focus(); } catch (e) { /* ignore */ }
+      });
+    });
     $('#calForm').addEventListener('submit', function (e) {
       e.preventDefault();
       A.api('cal.add', { startDate: $('#calStart').value, endDate: $('#calEnd').value, type: $('#calType').value, title: $('#calTitle').value.trim() })

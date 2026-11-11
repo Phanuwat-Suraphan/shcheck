@@ -1,5 +1,5 @@
 /*
- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.8.0
+ * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.9.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Code.gs (โค้ดฝั่ง Server ทั้งหมด)
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่
  */
@@ -35,7 +35,7 @@ var APP = {
   SCHOOL_FULL: 'โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่',
   NAME_EN: 'Wat Sao Hin School Attendance System',
   SLOGAN: 'ระบบลงเวลาอัจฉริยะ สะดวก โปร่งใส ตรวจสอบได้',
-  VERSION: '1.8.0',
+  VERSION: '1.9.0',
   TZ: 'Asia/Bangkok'
 };
 
@@ -2032,13 +2032,19 @@ function login(username, password, clientInfo) {
     if (!uname || typeof password !== 'string' || !password) throw appError_('กรุณากรอกชื่อผู้ใช้และรหัสผ่าน', 'VALIDATION');
     if (uname.length > 60 || password.length > 128) throw appError_('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง', 'INVALID_LOGIN');
     var s = getSettings_();
+    // เข้าสู่ระบบด้วย "ชื่อผู้ใช้" หรือ "รหัสประจำตัวบุคลากร" (เช่น T005) ก็ได้ — นับครั้งที่ผิดตามบัญชีเดียวกัน
+    var emp = findOne_('Employees', 'Username', uname);
+    if (!emp) {
+      var code = normalizeStaffCode_(username);
+      if (code) emp = readAll_('Employees').filter(function (e) { return normalizeStaffCode_(e.StaffCode) === code; })[0] || null;
+      if (emp) uname = normalizeUsername_(emp.Username);
+    }
     var st = getLoginState_(uname);
     if (st.lockedUntil && st.lockedUntil > nowMs_()) {
       var mins = Math.ceil((st.lockedUntil - nowMs_()) / 60000);
       throw appError_('บัญชีถูกล็อกชั่วคราวเนื่องจากใส่รหัสผ่านผิดเกินกำหนด กรุณาลองใหม่ในอีก ' + mins +
         ' นาที หรือติดต่อผู้ดูแลระบบ', 'LOCKED');
     }
-    var emp = findOne_('Employees', 'Username', uname);
     var verified = null;
     if (!emp) {
       dummyPasswordWork_(); // ใช้เวลาเท่ากัน ป้องกันการเดาชื่อผู้ใช้จากเวลาตอบสนอง
@@ -4352,8 +4358,10 @@ function addCalendarEntries_(ctx, p) {
     var rows = readAll_('WorkCalendar');
     var byDate = {};
     rows.forEach(function (r) { byDate[r.Date] = r; });
-    var added = [], updated = 0;
+    var added = [], updated = 0, kept = 0;
     dates.forEach(function (d) {
+      // เพิ่มเป็นช่วง (เช่น ปิดภาคเรียน) ไม่ทับวันหยุดราชการเดิมในช่วงนั้น — แก้ไขรายวันได้โดยเลือกวันเดียว
+      if (byDate[d] && start !== end && byDate[d].Type === 'OFFICIAL_HOLIDAY' && type !== 'SPECIAL_WORKDAY') { kept++; return; }
       if (byDate[d]) {
         updateRecord_('WorkCalendar', byDate[d]._row, { Type: type, Title: title, CreatedBy: ctx.user.FullName, CreatedAt: nowStamp_() });
         updated++;
@@ -4362,10 +4370,13 @@ function addCalendarEntries_(ctx, p) {
       }
     });
     appendRecords_('WorkCalendar', added);
-    return { added: added.length, updated: updated };
+    return { added: added.length, updated: updated, kept: kept };
   });
-  writeAudit_(ctx, 'CALENDAR_ADD', 'WorkCalendar', start + (end !== start ? '..' + end : ''), { type: type, title: title, added: res.added, updated: res.updated });
-  return { message: 'บันทึกปฏิทินแล้ว (เพิ่ม ' + res.added + ' วัน, ปรับปรุง ' + res.updated + ' วัน)' };
+  writeAudit_(ctx, 'CALENDAR_ADD', 'WorkCalendar', start + (end !== start ? '..' + end : ''), { type: type, title: title, added: res.added, updated: res.updated, kept: res.kept });
+  return {
+    added: res.added, updated: res.updated, kept: res.kept,
+    message: 'บันทึกปฏิทินแล้ว (เพิ่ม ' + res.added + ' วัน, ปรับปรุง ' + res.updated + ' วัน' + (res.kept ? ', คงวันหยุดราชการเดิม ' + res.kept + ' วัน' : '') + ')'
+  };
 }
 
 function removeCalendarEntry_(ctx, p) {
@@ -4729,10 +4740,16 @@ function reportDaily_(ctx, p) {
       status: d.statusLabel, statusCode: d.status, lateMinutes: d.lateMinutes || '',
       inDistance: d.inDistanceM !== null && d.inDistanceM !== undefined ? d.inDistanceM : '',
       outDistance: d.outDistanceM !== null && d.outDistanceM !== undefined ? d.outDistanceM : '',
-      note: d.note, inMaps: d.inMaps || null, outMaps: d.outMaps || null, employeeId: pp.emp.employeeId
+      note: d.note, inMaps: d.inMaps || null, outMaps: d.outMaps || null, employeeId: pp.emp.employeeId,
+      leaveType: d.leave ? d.leave.type : '', leaveLabel: d.leave ? d.leave.typeLabel + (d.leave.period !== 'FULL' ? ' (' + d.leave.periodLabel + ')' : '') : ''
     });
   });
   rep.dayInfo = { isWorkday: info ? info.isWorkday : true, holidayName: info ? info.holidayName : '' };
+  var dp = parseYmd_(date), s = res.settings;
+  rep.signBook = {
+    dayName: THAI_DAYS[dayOfWeek_(date)], day: dp.d, month: THAI_MONTHS[dp.m - 1], year: dp.y + 543,
+    workStart: s.workStart, lateAfter: s.lateAfter, workEnd: s.workEnd
+  };
   rep.tables.push({
     key: 'main',
     title: info && !info.isWorkday ? 'หมายเหตุ: วันนี้เป็น' + info.holidayName : '',

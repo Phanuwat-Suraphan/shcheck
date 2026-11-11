@@ -849,6 +849,45 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
     await boss.waitForFunction(() => document.querySelector('#approvalsCard').hidden || !/ใบลา/.test(document.querySelector('#apDetail').textContent));
   });
 
+  await step('E35', 'พิมพ์บัญชีลงเวลาปฏิบัติราชการประจำวัน (แบบสมุดลงเวลา + เส้นแดง + ช่องลงนาม ผอ.), ปุ่มลัดวันปิดภาคเรียน, เข้าสู่ระบบด้วยรหัสครู', async () => {
+    await setClock('2026-11-20 17:00:00');
+    const d = await newPage({ desktop: true });
+    await login(d, DEFAULTS.adminUser, ADMIN_NEW_PW);
+    await d.waitForSelector('#view-app:not([hidden])');
+    await d.click('#toAdminBtn');
+    await d.waitForSelector('#view-admin:not([hidden])');
+    await d.click('#adminNav [data-sec="reports"]');
+    await d.click('#repTypeSeg [data-val="daily"]');
+    await d.fill('#repDate', '2026-11-20');
+    await d.click('#repRunBtn');
+    await d.waitForSelector('#repSignBookBtn:not([hidden])');
+    await capturePrint(d);
+    await d.click('#repSignBookBtn');
+    await d.waitForFunction(() => !!window.__printHtml);
+    const html = await d.evaluate(() => window.__printHtml);
+    ['บัญชีลงเวลาปฏิบัติราชการ', 'ประจำวันศุกร์ที่ 20 เดือน พฤศจิกายน พ.ศ. 2569', 'เส้นแดง', 'นายสมปอง รักดี', 'นายสมชาย ใจดี', 'ตรวจแล้วถูกต้อง'].forEach(x => assert.ok(html.includes(x), x));
+    assert.ok(html.indexOf('เส้นแดง') < html.indexOf('ไม่ได้ลงเวลามา'), 'ผู้ไม่ได้ลงเวลาอยู่ท้ายตาราง');
+    assert.strictEqual(await printPreview(d, html, 'portrait', '26-signbook-print.png'), 1);
+    // ปุ่มลัดวันปิดภาคเรียน
+    await d.click('#adminNav [data-sec="calendar"]');
+    await d.waitForSelector('#calPresets');
+    await d.selectOption('#calYear', '2027');
+    await d.click('[data-cal-preset="break2"]');
+    assert.strictEqual(await d.inputValue('#calStart'), '2027-04-01');
+    assert.strictEqual(await d.inputValue('#calEnd'), '2027-05-15');
+    assert.strictEqual(await d.inputValue('#calType'), 'SPECIAL_HOLIDAY');
+    assert.ok(/ปิดภาคเรียนที่ 2 ปีการศึกษา 2569/.test(await d.inputValue('#calTitle')));
+    await d.click('#calForm button[type=submit]');
+    await toast(d, /คงวันหยุดราชการเดิม/);
+    // เข้าสู่ระบบด้วยรหัสครู
+    const code = app.env.SpreadsheetApp.openById(app.env.state.props.SPREADSHEET_ID).getSheetByName('Employees')._records().find(x => x.Username === 'somsri.j').StaffCode;
+    const p = await newPage();
+    assert.ok(/รหัสครู/.test(await p.textContent('label[for="loginUsername"]')));
+    await login(p, code, 'SomsriNew2026');
+    await p.waitForSelector('#view-app:not([hidden])');
+    assert.strictEqual(await p.textContent('#homeName'), 'นางสาวสมศรี ใจดี');
+  });
+
   await step('E20', 'ไม่มี JavaScript error ในทุกหน้าที่ทดสอบ', async () => {
     assert.deepStrictEqual(pageErrors, []);
   });

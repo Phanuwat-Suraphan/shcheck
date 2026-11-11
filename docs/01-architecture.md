@@ -280,3 +280,7 @@ flowchart LR
 | แอดมิน: ตั้งค่าเริ่มต้นให้ครบ | ผู้อำนวยการ: งานรออนุมัติบนหน้าแรก |
 |---|---|
 | ![](screenshots/24-setup-checklist-mobile.png) | ![](screenshots/25-approvals-home-mobile.png) |
+
+| บัญชีลงเวลาปฏิบัติราชการ (แบบสมุดลงเวลา) |
+|---|
+| ![](screenshots/26-signbook-print.png) |

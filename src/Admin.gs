@@ -782,8 +782,10 @@ function addCalendarEntries_(ctx, p) {
     var rows = readAll_('WorkCalendar');
     var byDate = {};
     rows.forEach(function (r) { byDate[r.Date] = r; });
-    var added = [], updated = 0;
+    var added = [], updated = 0, kept = 0;
     dates.forEach(function (d) {
+      // เพิ่มเป็นช่วง (เช่น ปิดภาคเรียน) ไม่ทับวันหยุดราชการเดิมในช่วงนั้น — แก้ไขรายวันได้โดยเลือกวันเดียว
+      if (byDate[d] && start !== end && byDate[d].Type === 'OFFICIAL_HOLIDAY' && type !== 'SPECIAL_WORKDAY') { kept++; return; }
       if (byDate[d]) {
         updateRecord_('WorkCalendar', byDate[d]._row, { Type: type, Title: title, CreatedBy: ctx.user.FullName, CreatedAt: nowStamp_() });
         updated++;
@@ -792,10 +794,13 @@ function addCalendarEntries_(ctx, p) {
       }
     });
     appendRecords_('WorkCalendar', added);
-    return { added: added.length, updated: updated };
+    return { added: added.length, updated: updated, kept: kept };
   });
-  writeAudit_(ctx, 'CALENDAR_ADD', 'WorkCalendar', start + (end !== start ? '..' + end : ''), { type: type, title: title, added: res.added, updated: res.updated });
-  return { message: 'บันทึกปฏิทินแล้ว (เพิ่ม ' + res.added + ' วัน, ปรับปรุง ' + res.updated + ' วัน)' };
+  writeAudit_(ctx, 'CALENDAR_ADD', 'WorkCalendar', start + (end !== start ? '..' + end : ''), { type: type, title: title, added: res.added, updated: res.updated, kept: res.kept });
+  return {
+    added: res.added, updated: res.updated, kept: res.kept,
+    message: 'บันทึกปฏิทินแล้ว (เพิ่ม ' + res.added + ' วัน, ปรับปรุง ' + res.updated + ' วัน' + (res.kept ? ', คงวันหยุดราชการเดิม ' + res.kept + ' วัน' : '') + ')'
+  };
 }
 
 function removeCalendarEntry_(ctx, p) {
