@@ -1755,6 +1755,27 @@ test('Y01', 'สถานะระบบ: งานกลางคืนติ�
   assert.ok(/ทดสอบล้มเหลว/.test(ok(sys.api(sys.admin, 'sys.status', {})).nightly.error));
 });
 
+test('N02', 'สรุปประจำวันสำหรับกลุ่ม LINE: ข้อมูลภาพรวมวันนี้มีประเภทการลาของแต่ละคน (รวมลาครึ่งวัน), เวลาของข้อมูล และชื่อโรงเรียน', () => {
+  const sys = newSystem({ now: '2026-11-09 07:00:00' });
+  const t = addTeacher(sys, 1), t2 = addTeacher(sys, 2), t3 = addTeacher(sys, 3);
+  ok(sys.api(sys.admin, 'leave.adminCreate', { employeeId: t.id, type: 'OFFICIAL', startDate: '2026-11-09', endDate: '2026-11-09', reason: 'ประชุมที่เขตพื้นที่' }));
+  ok(sys.api(sys.admin, 'leave.adminCreate', { employeeId: t2.id, type: 'PERSONAL', startDate: '2026-11-09', endDate: '2026-11-09', period: 'MORNING', reason: 'ธุระที่ธนาคาร' }));
+  sys.at('2026-11-09 08:45:00');
+  ok(sys.api(t3.token, 'att.checkIn', INSIDE));
+  const o = ok(sys.api(sys.admin, 'admin.overview', {}));
+  assert.deepStrictEqual([o.nowLabel, o.school], ['08:45', 'โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่']);
+  const by = id => o.today.find(r => r.employeeId === id);
+  assert.deepStrictEqual([by(t.id).leaveLabel, by(t.id).status], ['ไปราชการ', 'LEAVE']);
+  assert.deepStrictEqual([by(t2.id).leaveLabel, by(t2.id).status], ['ลากิจ ครึ่งวันเช้า', 'LEAVE']);
+  assert.deepStrictEqual([by(t3.id).leaveLabel, by(t3.id).status, by(t3.id).checkIn], ['', 'LATE', '08:45']);
+  assert.deepStrictEqual([o.counts.present, o.counts.late, o.counts.leave], [1, 1, 2]);
+  // ลาครึ่งวันเช้าแล้วมาทำงานช่วงบ่าย: ยังแสดงประเภทการลา และนับว่ามาปฏิบัติงาน
+  sys.at('2026-11-09 12:50:00');
+  ok(sys.api(t2.token, 'att.checkIn', INSIDE));
+  const r2 = ok(sys.api(sys.admin, 'admin.overview', {})).today.find(r => r.employeeId === t2.id);
+  assert.deepStrictEqual([r2.leaveLabel, r2.status], ['ลากิจ ครึ่งวันเช้า', 'PRESENT']);
+});
+
 test('D01', 'ลบพิกัด GPS อัตโนมัติเมื่อเกินระยะเวลาเก็บรักษา (คงระยะทาง/เวลาไว้)', () => {
   const sys = newSystem();
   const t = addTeacher(sys, 1);

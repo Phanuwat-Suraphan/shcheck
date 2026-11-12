@@ -1,5 +1,5 @@
 /*
- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.14.0
+ * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.15.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Code.gs (โค้ดฝั่ง Server ทั้งหมด)
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่
  */
@@ -35,7 +35,7 @@ var APP = {
   SCHOOL_FULL: 'โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่',
   NAME_EN: 'Wat Sao Hin School Attendance System',
   SLOGAN: 'ระบบลงเวลาอัจฉริยะ สะดวก โปร่งใส ตรวจสอบได้',
-  VERSION: '1.14.0',
+  VERSION: '1.15.0',
   TZ: 'Asia/Bangkok'
 };
 
@@ -3933,7 +3933,8 @@ function getAdminOverview_(ctx) {
     list.push({
       employeeId: pp.emp.employeeId, staffCode: pp.emp.staffCode, fullName: pp.emp.fullName, position: pp.emp.position,
       checkIn: d.checkIn ? d.checkIn.substr(0, 5) : '', checkOut: d.checkOut ? d.checkOut.substr(0, 5) : '',
-      status: d.status, statusLabel: d.statusLabel, note: d.note, lateMinutes: d.lateMinutes, missingOut: d.missingOut
+      status: d.status, statusLabel: d.statusLabel, note: d.note, lateMinutes: d.lateMinutes, missingOut: d.missingOut, missingIn: d.missingIn,
+      leaveLabel: d.leave ? d.leave.typeLabel + (d.leave.period !== 'FULL' ? ' ' + d.leave.periodLabel : '') : ''
     });
   });
   list.sort(function (a, b) {
@@ -3981,6 +3982,8 @@ function getAdminOverview_(ctx) {
     approvals: approvalCounts_(ctx.user),
     date: today,
     dateLabel: thaiDate_(today, 'long'),
+    nowLabel: nowTimeStr_().substr(0, 5),
+    school: APP.SCHOOL_FULL,
     isWorkday: info.isWorkday,
     holidayName: info.holidayName,
     serverNow: nowMs_(),

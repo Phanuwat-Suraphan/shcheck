@@ -106,7 +106,7 @@ async function printPreview(fromPage, html, orientation, shotName) {
 async function capturePrint(page) {
   await page.evaluate(() => { window.__printHtml = null; if (!window.__capturing) { const o = window.print; window.print = () => { window.__printHtml = document.getElementById('printArea').innerHTML; o(); }; window.__capturing = true; } });
 }
-async function toast(page, re) { await page.locator('.toast', { hasText: re }).first().waitFor({ timeout: 8000 }); }
+async function toast(page, re) { await page.locator('.toast', { hasText: re }).first().waitFor({ timeout: 15000 }); }
 
 (async function main() {
   app = createApp();
@@ -1118,13 +1118,55 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
     await d.click('#repRunBtn');
     await d.locator('#repResult tr', { hasText: 'นางสาวสมศรี ใจดี' }).locator('.ev-note.over').waitFor();
     assert.ok(/เกินเกณฑ์การเลื่อนเงินเดือน/.test(await d.textContent('#repResult .grid-stats')));
-    // คืนค่าเดิม
+    // คืนค่าเดิม — ล้างช่องก่อน แล้วรอค่าที่โหลดใหม่จาก Server (กันการแก้ช่องก่อนหน้าตั้งค่าโหลดเสร็จ)
+    await d.evaluate(() => { document.querySelector('#sEvLeaveT').value = ''; });
     await d.click('#adminNav [data-sec="settings"]');
     await d.waitForFunction(() => document.querySelector('#sEvLeaveT').value === '1');
+    await d.waitForSelector('#loadingOverlay', { state: 'hidden' });
     await d.fill('#sEvLeaveT', '');
     await d.evaluate(() => document.querySelectorAll('.toast').forEach(t => t.remove()));
     await d.click('#setForm button[type=submit]');
     await toast(d, /บันทึกการตั้งค่าแล้ว/);
+  });
+
+  await step('E43', 'ผู้บริหาร: “สรุปส่งกลุ่ม LINE” จากหน้าภาพรวม — ข้อความพร้อมวาง (มา/สาย/ลา/ยังไม่ลงเวลา + รายชื่อผู้ลาพร้อมประเภท), เลือกแสดงรายชื่อผู้มาสายได้, กดคัดลอก', async () => {
+    await setClock('2026-11-25 08:40:00');
+    const mp = await newPage();
+    await loginOk(mp, slips[0][1], 'Malee2026new');
+    const r = await mp.evaluate(() => new Promise(res => google.script.run.withSuccessHandler(res).api(sessionStorage.getItem('wsh_token'), 'att.checkIn', { lat: 18.7887, lng: 98.9853, accuracy: 10 })));
+    assert.ok(r.ok, JSON.stringify(r));
+    await setClock('2026-11-25 08:45:00');
+    const d = await newPage({ desktop: true });
+    await loginOk(d, DEFAULTS.adminUser, ADMIN_NEW_PW);
+    await d.click('#toAdminBtn');
+    await d.waitForSelector('#ovTable tr');
+    await d.click('#ovBriefBtn');
+    await d.waitForSelector('#lsText');
+    let txt = await d.inputValue('#lsText');
+    ['📋 สรุปการปฏิบัติงานประจำวัน', 'โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่', 'วันพุธที่ 25 พฤศจิกายน พ.ศ. 2569 · ข้อมูล ณ 08:45 น.', '✅ มาปฏิบัติงาน 1 คน (มาสาย 1 คน)',
+      '\nลา / ไปราชการ\n• นางสาวสมศรี ใจดี (ลากิจ)', '\nยังไม่ลงเวลา\n• '].forEach(x => assert.ok(txt.includes(x), x + '\n---\n' + txt));
+    assert.ok(!/\nมาสาย\n/.test(txt), 'ค่าเริ่มต้นไม่แสดงรายชื่อผู้มาสาย');
+    await d.click('label:has(#lsLate)');
+    await d.waitForFunction(() => /\nมาสาย\n• /.test(document.querySelector('#lsText').value));
+    txt = await d.inputValue('#lsText');
+    assert.ok(txt.includes('\nมาสาย\n• นางสาวมาลี ศรีสุข (08:40 น.)'), txt);
+    await shot(d, '37-line-brief-desktop.png');
+    await d.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: t => { window.__copied = t; return Promise.resolve(); } } }));
+    await modalAction(d, 'คัดลอกข้อความ');
+    await toast(d, /คัดลอกแล้ว — เปิด LINE/);
+    assert.strictEqual(await d.evaluate(() => window.__copied), txt);
+    // หลังเวลาเลิกงาน: สรุปผู้ขาดงานและผู้ไม่ลงเวลาออกด้วย
+    await setClock('2026-11-25 17:00:00');                 // ข้ามเวลา 8 ชม. → Session เดิมหมดอายุ ต้องเข้าสู่ระบบใหม่
+    const d2 = await newPage({ desktop: true });
+    await loginOk(d2, DEFAULTS.adminUser, ADMIN_NEW_PW);
+    await d2.click('#toAdminBtn');
+    await d2.waitForSelector('#ovTable tr');
+    await d2.click('#ovBriefBtn');
+    await d2.waitForSelector('#lsText');
+    txt = await d2.inputValue('#lsText');
+    ['ข้อมูล ณ 17:00 น.', '❌ ขาดงาน ', '⚠️ ไม่ลงเวลาออก 1 คน', '\nขาดงาน\n• ', '\nไม่ลงเวลาออก\n• นางสาวมาลี ศรีสุข'].forEach(x => assert.ok(txt.includes(x), x + '\n---\n' + txt));
+    assert.ok(!txt.includes('ยังไม่ลงเวลา'), txt);
+    await modalAction(d2, 'ปิด');
   });
 
   await step('E20', 'ไม่มี JavaScript error ในทุกหน้าที่ทดสอบ', async () => {

@@ -51,6 +51,8 @@
   .status-row.bad > .ms { color: var(--danger-500); }
   .status-row .st-main { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.45; }
   .pick-list { max-height: 260px; overflow-y: auto; border: 1px solid var(--border); border-radius: 12px; background: #fff; }
+  .ls-opts { display: flex; flex-direction: column; gap: 10px; margin: 4px 0 12px; }
+  #lsText { width: 100%; min-height: 300px; font-size: .92rem; line-height: 1.55; resize: vertical; }
   .pick-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--border); cursor: pointer; }
   .pick-item:last-child { border-bottom: 0; }
   .pick-item input { width: 20px; height: 20px; accent-color: var(--navy-700); flex-shrink: 0; }
@@ -139,7 +141,10 @@
       <div class="card" style="margin-top:16px">
         <div class="row-between">
           <div class="card-title"><span class="ms">fact_check</span>การลงเวลาวันนี้รายบุคคล</div>
-          <div class="field" style="margin:0;min-width:200px"><input type="search" id="ovSearch" placeholder="ค้นหาชื่อ/รหัส" aria-label="ค้นหา"></div>
+          <div class="row" style="gap:8px">
+            <button type="button" class="btn outline sm" id="ovBriefBtn"><span class="ms">forum</span>สรุปส่งกลุ่ม LINE</button>
+            <div class="field" style="margin:0;min-width:200px"><input type="search" id="ovSearch" placeholder="ค้นหาชื่อ/รหัส" aria-label="ค้นหา"></div>
+          </div>
         </div>
         <div id="ovTable"></div>
       </div>

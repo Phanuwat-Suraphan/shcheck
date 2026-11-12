@@ -1,6 +1,6 @@
 {
   "name": "watsaohin-attendance",
-  "version": "1.14.0",
+  "version": "1.15.0",
   "private": true,
   "description": "ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ (Google Apps Script + Google Sheets)",
   "scripts": {

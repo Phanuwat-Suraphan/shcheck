@@ -1,4 +1,4 @@
-<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.14.0
+<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.15.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Admin.html (หน้าผู้บริหาร/ผู้ดูแลระบบ)
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่ -->
 <!-- =====================================================================
@@ -54,6 +54,8 @@
   .status-row.bad > .ms { color: var(--danger-500); }
   .status-row .st-main { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.45; }
   .pick-list { max-height: 260px; overflow-y: auto; border: 1px solid var(--border); border-radius: 12px; background: #fff; }
+  .ls-opts { display: flex; flex-direction: column; gap: 10px; margin: 4px 0 12px; }
+  #lsText { width: 100%; min-height: 300px; font-size: .92rem; line-height: 1.55; resize: vertical; }
   .pick-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--border); cursor: pointer; }
   .pick-item:last-child { border-bottom: 0; }
   .pick-item input { width: 20px; height: 20px; accent-color: var(--navy-700); flex-shrink: 0; }
@@ -142,7 +144,10 @@
       <div class="card" style="margin-top:16px">
         <div class="row-between">
           <div class="card-title"><span class="ms">fact_check</span>การลงเวลาวันนี้รายบุคคล</div>
-          <div class="field" style="margin:0;min-width:200px"><input type="search" id="ovSearch" placeholder="ค้นหาชื่อ/รหัส" aria-label="ค้นหา"></div>
+          <div class="row" style="gap:8px">
+            <button type="button" class="btn outline sm" id="ovBriefBtn"><span class="ms">forum</span>สรุปส่งกลุ่ม LINE</button>
+            <div class="field" style="margin:0;min-width:200px"><input type="search" id="ovSearch" placeholder="ค้นหาชื่อ/รหัส" aria-label="ค้นหา"></div>
+          </div>
         </div>
         <div id="ovTable"></div>
       </div>
@@ -709,6 +714,7 @@ window.Admin = (function () {
   /* ------------------------------------------------------------------ overview */
   function bindOverview() {
     $('#ovRefresh').addEventListener('click', loadOverview);
+    $('#ovBriefBtn').addEventListener('click', openDailyBrief);
     $('#ovSearch').addEventListener('input', debounce(renderOverviewTable, 200));
   }
   function loadOverview() {
@@ -856,6 +862,63 @@ window.Admin = (function () {
       destroyChart('trend');
       st.charts.trend = new Chart($('#ovTrend'), stackedBarConfig(t.labels, t, {}));
     }).catch(function () { $('#ovTrend').parentNode.innerHTML = '<div class="alert warning">' + icon('signal_disconnected') + '<div>โหลดกราฟไม่สำเร็จ (ตรวจสอบอินเทอร์เน็ต) — ดูตัวเลขได้จากตารางด้านล่าง</div></div>'; });
+  }
+  /* ---------- สรุปประจำวันสำหรับกลุ่ม LINE ของโรงเรียน ---------- */
+  function dailyBriefText(o, opt) {
+    var c = o.counts, rows = o.today || [];
+    var byCode = function (a, b) { return String(a.staffCode).localeCompare(String(b.staffCode), 'th', { numeric: true }); };
+    var lines = ['📋 สรุปการปฏิบัติงานประจำวัน', o.school, A.thDate(o.date, 'long') + ' · ข้อมูล ณ ' + o.nowLabel + ' น.', ''];
+    if (!o.isWorkday) {
+      lines.push('วันนี้เป็นวันหยุด' + (o.holidayName ? ' (' + o.holidayName + ')' : '') + (c.holidayWork ? ' · มาปฏิบัติงาน ' + c.holidayWork + ' คน' : ''));
+      return lines.join('\n');
+    }
+    var noOut = rows.filter(function (r) { return r.missingOut; });
+    lines.push('👥 บุคลากรที่ต้องลงเวลา ' + c.total + ' คน');
+    lines.push('✅ มาปฏิบัติงาน ' + c.present + ' คน' + (c.late ? ' (มาสาย ' + c.late + ' คน)' : ''));
+    if (c.leave) lines.push('🗓️ ลา / ไปราชการ ' + c.leave + ' คน');
+    if (c.notYet) lines.push('⏳ ยังไม่ลงเวลา ' + c.notYet + ' คน');
+    if (c.absent) lines.push('❌ ขาดงาน ' + c.absent + ' คน');
+    if (noOut.length) lines.push('⚠️ ไม่ลงเวลาออก ' + noOut.length + ' คน');
+    function section(title, list, fmt) {
+      if (!list.length) return;
+      lines.push('', title);
+      list.forEach(function (r) { lines.push('• ' + fmt(r)); });
+    }
+    var name = function (r) { return r.fullName; };
+    if (opt.leave) section('ลา / ไปราชการ', rows.filter(function (r) { return r.leaveLabel; }).sort(byCode), function (r) { return r.fullName + ' (' + r.leaveLabel + ')'; });
+    if (opt.missing) {
+      section('ยังไม่ลงเวลา', rows.filter(function (r) { return r.status === 'NOT_YET'; }).sort(byCode), name);
+      section('ขาดงาน', rows.filter(function (r) { return r.status === 'ABSENT'; }).sort(byCode), name);
+      section('ไม่ลงเวลาออก', noOut.sort(byCode), name);
+    }
+    if (opt.late) {
+      section('มาสาย', rows.filter(function (r) { return r.status === 'LATE'; }).sort(function (a, b) { return a.checkIn < b.checkIn ? -1 : 1; }),
+        function (r) { return r.fullName + ' (' + r.checkIn + ' น.)'; });
+    }
+    return lines.join('\n');
+  }
+  function openDailyBrief() {
+    var o = st.overview; if (!o) return;
+    A.modal({
+      title: 'สรุปวันนี้สำหรับกลุ่ม LINE', icon: 'forum',
+      body: '<p class="small muted" style="margin-top:0">กดคัดลอกแล้วนำไปวางในกลุ่ม LINE ของโรงเรียน — ครูทุกคนรู้ทันทีว่าวันนี้ใครลาหรือไปราชการ เพื่อจัดสอนแทนได้</p>' +
+        '<div class="ls-opts">' +
+        '<label class="switch"><input type="checkbox" id="lsLeave" checked><span class="track"></span>รายชื่อผู้ลา / ไปราชการ</label>' +
+        '<label class="switch"><input type="checkbox" id="lsMissing" checked><span class="track"></span>รายชื่อผู้ยังไม่ลงเวลา / ขาดงาน</label>' +
+        '<label class="switch"><input type="checkbox" id="lsLate"><span class="track"></span>รายชื่อผู้มาสาย</label></div>' +
+        '<textarea id="lsText" readonly aria-label="ข้อความสรุปสำหรับส่งกลุ่ม LINE"></textarea>',
+      actions: [
+        { label: 'ปิด', cls: 'ghost' },
+        { label: 'คัดลอกข้อความ', icon: 'content_copy', onClick: function (close, b, root) { A.copyText($('#lsText', root).value, 'คัดลอกแล้ว — เปิด LINE แล้ววางในกลุ่มได้เลย'); } }
+      ],
+      onOpen: function (root) {
+        var upd = function () {
+          $('#lsText', root).value = dailyBriefText(o, { leave: $('#lsLeave', root).checked, missing: $('#lsMissing', root).checked, late: $('#lsLate', root).checked });
+        };
+        $$('.ls-opts input', root).forEach(function (x) { x.addEventListener('change', upd); });
+        upd();
+      }
+    });
   }
   function renderOverviewTable() {
     if (!st.overview) return;

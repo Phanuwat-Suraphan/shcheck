@@ -27,7 +27,7 @@ var APP = {
   SCHOOL_FULL: 'โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่',
   NAME_EN: 'Wat Sao Hin School Attendance System',
   SLOGAN: 'ระบบลงเวลาอัจฉริยะ สะดวก โปร่งใส ตรวจสอบได้',
-  VERSION: '1.14.0',
+  VERSION: '1.15.0',
   TZ: 'Asia/Bangkok'
 };
 

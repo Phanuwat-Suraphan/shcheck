@@ -76,7 +76,8 @@ function getAdminOverview_(ctx) {
     list.push({
       employeeId: pp.emp.employeeId, staffCode: pp.emp.staffCode, fullName: pp.emp.fullName, position: pp.emp.position,
       checkIn: d.checkIn ? d.checkIn.substr(0, 5) : '', checkOut: d.checkOut ? d.checkOut.substr(0, 5) : '',
-      status: d.status, statusLabel: d.statusLabel, note: d.note, lateMinutes: d.lateMinutes, missingOut: d.missingOut
+      status: d.status, statusLabel: d.statusLabel, note: d.note, lateMinutes: d.lateMinutes, missingOut: d.missingOut, missingIn: d.missingIn,
+      leaveLabel: d.leave ? d.leave.typeLabel + (d.leave.period !== 'FULL' ? ' ' + d.leave.periodLabel : '') : ''
     });
   });
   list.sort(function (a, b) {
@@ -124,6 +125,8 @@ function getAdminOverview_(ctx) {
     approvals: approvalCounts_(ctx.user),
     date: today,
     dateLabel: thaiDate_(today, 'long'),
+    nowLabel: nowTimeStr_().substr(0, 5),
+    school: APP.SCHOOL_FULL,
     isWorkday: info.isWorkday,
     holidayName: info.holidayName,
     serverNow: nowMs_(),
