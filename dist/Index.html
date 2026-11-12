@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.13.0
+<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.14.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Index.html
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่ -->
 <html lang="th">
@@ -509,6 +509,24 @@ table.table { width: 100%; border-collapse: collapse; font-size: .9rem; }
 .dec-item.bad > .ms { color: var(--danger-500); }
 .dec-item.warn > .ms { color: #D97706; }
 .dec-item .dec-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.45; }
+
+/* ---------- เกณฑ์การเลื่อนเงินเดือน ---------- */
+.eval-card { border: 1.5px solid #F5C451; background: #FFFBEB; display: flex; flex-direction: column; gap: 6px; }
+.eval-card.over { border-color: #F2A7A7; background: #FFF6F6; }
+.eval-card #evGoBtn { align-self: flex-start; margin-top: 4px; }
+.ev-item { display: flex; gap: 8px; align-items: flex-start; line-height: 1.45; padding: 2px 0; }
+.ev-item > .ms { margin-top: 1px; color: #D97706; }
+.ev-item.over > .ms { color: var(--danger-500); }
+.crit-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; padding: 12px 14px; border-radius: 14px; background: var(--sky-50); border: 1px solid var(--sky-100); }
+.crit-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; align-items: center; }
+.crit-row .crit-val { font-weight: 700; white-space: nowrap; }
+.crit-row.over .crit-val { color: var(--danger-500); }
+.crit-row .crit-bar { grid-column: 1 / -1; display: block; height: 8px; border-radius: 99px; background: #E2E8F0; overflow: hidden; }
+.crit-row .crit-bar > i { display: block; height: 100%; border-radius: 99px; background: var(--success-500); }
+.crit-row.near .crit-bar > i, .crit-row.limit .crit-bar > i { background: #F59E0B; }
+.crit-row.over .crit-bar > i { background: var(--danger-500); }
+.ev-note { font-weight: 700; color: #B45309; }
+.ev-note.over { color: var(--danger-500); }
 
 /* ---------- ประกาศถึงบุคลากร ---------- */
 .announce-card { display: flex; align-items: flex-start; gap: 12px; padding: 12px 8px 12px 16px; border-radius: 18px; background: #EEF6FF; border: 1.5px solid var(--sky-200); color: var(--navy-900); }
@@ -1048,6 +1066,13 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
               <div class="row-between"><div class="card-title mb-0"><span class="ms">notifications</span>ผลการพิจารณา</div>
                 <button type="button" class="btn sm" id="decAckBtn"><span class="ms">done</span>รับทราบ</button></div>
               <div id="decList"></div>
+            </div>
+            <div class="card eval-card o-quick" id="evalCard" hidden>
+              <div class="row-between"><div class="card-title mb-0"><span class="ms">military_tech</span>เกณฑ์การเลื่อนเงินเดือน</div>
+                <button type="button" class="icon-btn" id="evClose" aria-label="ซ่อนคำเตือนนี้"><span class="ms">close</span></button></div>
+              <div class="small muted" id="evRound"></div>
+              <div id="evList"></div>
+              <button type="button" class="btn outline sm" id="evGoBtn"><span class="ms">bar_chart</span>ดูสถิติการลาและมาสาย</button>
             </div>
             <div id="geoNotSetAlert" class="alert warning o-geo" hidden><span class="ms">warning</span><div>ผู้ดูแลระบบยังไม่ได้ตั้งค่าพิกัดโรงเรียน จึงยังลงเวลาไม่ได้</div></div>
             <div class="home-tip o-tip" id="homeTip" hidden>
@@ -1860,6 +1885,8 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
     $('#homeTipClose').addEventListener('click', function () { local.set('wsh_tip_home', '1'); renderHomeTip(); });
     $('#toAdminBtn').addEventListener('click', function () { openAdmin(); });
     $('#apGoBtn').addEventListener('click', function () { openAdmin($('#apGoBtn').getAttribute('data-sec')); });
+    $('#evClose').addEventListener('click', function () { local.set('wsh_eval_hide', $('#evClose').getAttribute('data-sig') || ''); $('#evalCard').hidden = true; });
+    $('#evGoBtn').addEventListener('click', function () { switchTab('leave'); setTimeout(function () { var c = $('#lvStatsCard'); if (c) c.scrollIntoView({ block: 'start', behavior: 'smooth' }); }, 150); });
     $('#decAckBtn').addEventListener('click', function () { if (S.decLatest) local.set(decSeenKey(), S.decLatest); $('#decisionsCard').hidden = true; });
     $('#anClose').addEventListener('click', function () { local.set('wsh_an_hide', $('#anClose').getAttribute('data-id') || ''); $('#announceCard').hidden = true; });
     $$('#userTabs [data-tab]').forEach(function (b) { b.addEventListener('click', function () { switchTab(b.getAttribute('data-tab')); }); });
@@ -2245,6 +2272,24 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
         (x.note ? '<span class="small muted">เหตุผล/ความเห็น: ' + esc(x.note) + '</span>' : '') + '</div></div>';
     }).join('');
   }
+  /* ---------- เกณฑ์การเลื่อนเงินเดือน: เตือนเมื่อใกล้ถึง/ครบ/เกินในรอบการประเมินปัจจุบัน ---------- */
+  function evalSig(w) { return w.fiscalYear + '-' + w.round + '|' + w.items.map(function (x) { return x.key + ':' + x.value + ':' + x.max; }).join(','); }
+  function renderEvalWarn(w) {
+    var sig = w && w.items && w.items.length ? evalSig(w) : '';
+    var show = !!sig && local.get('wsh_eval_hide') !== sig; // ซ่อนแล้วจะแสดงใหม่เมื่อตัวเลขเปลี่ยน
+    $('#evalCard').hidden = !show;
+    if (!show) return;
+    var over = w.items.some(function (x) { return x.level === 'over'; });
+    $('#evalCard').classList.toggle('over', over);
+    $('#evClose').setAttribute('data-sig', sig);
+    $('#evRound').textContent = w.label + ' (' + w.rangeLabel + ')';
+    $('#evList').innerHTML = w.items.map(function (x) {
+      var verb = x.key === 'lateTimes' ? 'มาสาย' : 'ลา';
+      var msg = x.level === 'over' ? 'เกินเกณฑ์แล้ว (เกณฑ์ไม่เกิน ' + x.max + ' ' + x.unit + ')'
+        : (x.level === 'limit' ? 'ครบเกณฑ์แล้ว — หาก' + verb + 'อีกจะเกินเกณฑ์' : 'ใกล้ถึงเกณฑ์ (ไม่เกิน ' + x.max + ' ' + x.unit + ')');
+      return '<div class="ev-item ' + x.level + '">' + icon(x.level === 'over' ? 'error' : 'warning') + '<span><b>' + esc(x.label) + ' ' + esc(x.value) + ' ' + esc(x.unit) + '</b> — ' + esc(msg) + '</span></div>';
+    }).join('') + '<div class="tiny muted" style="margin-top:4px">นับลาป่วย + ลากิจที่อนุมัติแล้ว และการมาสายในรอบนี้ · เป็นการเตือนล่วงหน้า</div>';
+  }
   function renderAnnouncement(a) {
     var show = !!(a && a.text) && local.get('wsh_an_hide') !== a.id;
     $('#announceCard').hidden = !show;
@@ -2263,6 +2308,7 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
     ['edit_calendar', 'ลืมลงเวลา', 'ลืมกดตอนเช้า: กดลงเวลาเข้า แล้วเลือก <b>ลืมกด — แจ้งเวลาที่มาถึงจริง</b> (ตอนเย็นยังลงเวลาออกได้) · ลืมวันก่อน ๆ: แตะ <b>ขอแก้ไขเวลา</b> ในกล่อง “ลงเวลาไม่ครบ” บนหน้าแรก · หรือแจ้งผู้บริหารให้บันทึกเวลาแทน'],
     ['event_busy', 'แจ้งลา / พิมพ์ใบลา', 'เมนู <b>การลา</b> → เลือกวัน → แตะประเภทการลา → ยืนยัน · ใบลาป่วย/กิจ/คลอด/พักผ่อน กด <b>พิมพ์ใบลา</b> ได้ใบลาแบบราชการพร้อมสถิติการลา · ดูสถิติการลาของตัวเองแยกรอบการประเมินได้ในเมนูเดียวกัน'],
     ['notifications', 'รู้ได้อย่างไรว่าใบลา/คำร้องอนุมัติแล้ว', 'เมื่อผู้บริหารพิจารณาแล้ว หน้าแรกจะขึ้นกล่อง <b>ผลการพิจารณา</b> ใต้ปุ่มลงเวลา บอกว่าอนุมัติหรือไม่อนุมัติ พร้อม <b>เหตุผล</b> · อ่านแล้วกด <b>รับทราบ</b> · ดูย้อนหลังได้ในเมนู <b>การลา</b> / <b>แก้ไขเวลา</b>'],
+    ['military_tech', 'ลา/มาสายไปกี่ครั้งแล้ว (เกณฑ์เลื่อนเงินเดือน)', 'เมนู <b>การลา</b> → <b>สถิติการลาของฉัน</b> แสดงจำนวนครั้ง/วันลา และมาสายในแต่ละรอบ พร้อมแถบเทียบ <b>เกณฑ์ที่โรงเรียนกำหนด</b> · เมื่อใกล้ถึงเกณฑ์ หน้าแรกจะเตือนให้ทราบล่วงหน้า'],
     ['print', 'พิมพ์สรุปการลงเวลาของฉัน', 'เมนู <b>ประวัติ</b> → เลือกเดือน → <b>พิมพ์สรุปเดือนนี้</b> (ใช้เป็นหลักฐานประกอบ PA ได้)'],
     ['bookmark_added', 'ไม่อยากใส่รหัสผ่านทุกวัน', 'ตอนเข้าสู่ระบบติ๊ก <b>จำการเข้าสู่ระบบบนเครื่องนี้</b> (เฉพาะโทรศัพท์ส่วนตัว) · เพิ่มไอคอนไว้บนหน้าจอ: เมนู <b>บัญชี → เพิ่มไอคอนบนหน้าจอ</b>'],
     ['text_increase', 'ตัวหนังสือเล็กอ่านยาก', 'เมนู <b>บัญชี → ขนาดตัวอักษร</b> เลือก <b>ใหญ่</b> หรือ <b>ใหญ่มาก</b>'],
@@ -2418,6 +2464,7 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
     renderApprovals(d.approvals);
     renderAnnouncement(d.announcement);
     renderDecisions(d.decisions);
+    renderEvalWarn(d.evalWarn);
     setTimeout(maybeShowWelcome, 300);
     var hh = bkkParts(serverNow()).hh;
     $('#greeting').textContent = hh < 12 ? 'สวัสดีตอนเช้า' : (hh < 17 ? 'สวัสดีตอนบ่าย' : 'สวัสดีตอนเย็น');
@@ -2935,6 +2982,21 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
       renderLeaveStats(st);
     }).catch(function (e) { if (e.code !== 'AUTH') $('#lvStats').innerHTML = '<div class="small muted">โหลดสถิติไม่สำเร็จ</div>'; });
   }
+  /** แถบเทียบเกณฑ์การเลื่อนเงินเดือนของรอบปัจจุบัน (หรือรอบล่าสุดของปีงบประมาณที่เลือก) */
+  function critBlock(st) {
+    var rs = st.rounds.filter(function (r) { return r.round && r.started && r.criteria && r.criteria.length; });
+    var r = rs.filter(function (x) { return x.current; })[0] || rs[rs.length - 1];
+    if (!r) return '';
+    var NOTE = { over: ['danger', 'เกินเกณฑ์'], limit: ['warning', 'ครบเกณฑ์'], near: ['warning', 'ใกล้เกณฑ์'] };
+    return '<div class="crit-list" id="lvCriteria"><div class="small"><b>เกณฑ์การเลื่อนเงินเดือน</b> · ' + esc(r.label) + ' (' + esc(r.shortLabel) + ')</div>' +
+      r.criteria.map(function (x) {
+        var pct = Math.min(100, Math.round(x.value / x.max * 100)), n = NOTE[x.level];
+        return '<div class="crit-row ' + x.level + '"><span>' + esc(x.label) + (n ? ' <span class="badge ' + n[0] + '">' + n[1] + '</span>' : '') + '</span>' +
+          '<span class="crit-val">' + esc(x.value) + ' / ' + esc(x.max) + ' ' + esc(x.unit) + '</span>' +
+          '<span class="crit-bar" role="img" aria-label="' + esc(x.label + ' ' + x.value + ' จากเกณฑ์ ' + x.max + ' ' + x.unit) + '"><i style="width:' + pct + '%"></i></span></div>';
+      }).join('') +
+      '<div class="tiny muted">เกณฑ์ที่โรงเรียนกำหนดต่อรอบ: ' + esc(st.criteriaText) + ' · นับลาป่วย + ลากิจที่อนุมัติแล้ว (ไม่นับลาคลอดบุตร ไปราชการ)</div></div>';
+  }
   function renderLeaveStats(st) {
     var r1 = st.rounds[0], r2 = st.rounds[1], all = st.rounds[2];
     function cell(r, v, unit, times) {
@@ -2955,7 +3017,7 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
     $('#lvStats').innerHTML = '<div class="table-wrap"><table class="table compact stats-table"><thead><tr><th>ประเภท</th>' +
       head(r1, 'รอบที่ 1') + head(r2, 'รอบที่ 2') + head({ shortLabel: 'ทั้งปี' }, 'รวม') + '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
       '<p class="tiny muted" style="margin:8px 0 0">นับเฉพาะใบลาที่อนุมัติแล้ว · ลาป่วย/ลากิจนับวันทำการ' +
-      (st.pending ? ' · <b>มีใบลารออนุมัติ ' + st.pending + ' รายการ (ยังไม่นับ)</b>' : '') + '</p>';
+      (st.pending ? ' · <b>มีใบลารออนุมัติ ' + st.pending + ' รายการ (ยังไม่นับ)</b>' : '') + '</p>' + critBlock(st);
   }
 
   /* ---------- พิมพ์ใบลา (แบบของทางราชการ) ---------- */

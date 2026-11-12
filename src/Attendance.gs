@@ -250,6 +250,7 @@ function getMyDashboard_(ctx) {
     pending: { leaves: myLeaves, corrections: myCorr, todayIn: hasPendingInCorrection_(emp.EmployeeID, today) },
     approvals: approvalCounts_(emp),
     decisions: myRecentDecisions_(emp),
+    evalWarn: myEvalWarning_(emp),
     announcement: getAnnouncement_(),
     issues: myAttendanceIssues_(emp, s, today)
   };
@@ -305,6 +306,26 @@ function myRecentDecisions_(emp) {
     });
   });
   return out.sort(function (a, b) { return a.at < b.at ? 1 : -1; }).slice(0, 6);
+}
+
+/**
+ * เตือนบนหน้าแรกเมื่อสถิติในรอบการประเมินปัจจุบัน ใกล้ถึง/ครบ/เกินเกณฑ์การเลื่อนเงินเดือนที่โรงเรียนตั้งไว้
+ * (ใบลาที่อนุมัติล่วงหน้าภายในรอบนับรวมด้วย เพื่อให้วางแผนได้)
+ */
+function myEvalWarning_(emp) {
+  var crit = evalCriteria_();
+  if (!crit.any) return null;
+  var today = todayStr_();
+  var r = fiscalRange_(fiscalYearOf_(today), roundOf_(today));
+  var lt = leaveTotals_(readAll_('LeaveRequests').filter(function (l) { return l.EmployeeID === emp.EmployeeID; }), r.from, r.to);
+  var late = 0;
+  if (crit.lateTimes) {
+    var p = computeAttendance_({ employees: [emp], from: r.from, to: today }).people[0];
+    (p ? p.days : []).forEach(function (d) { if (d.status === 'LATE') late++; });
+  }
+  var items = evalCheckTotals_(crit, lt, late).filter(function (x) { return x.level !== 'ok'; });
+  if (!items.length) return null;
+  return { round: r.round, fiscalYear: r.fiscalYear, label: r.label, rangeLabel: r.rangeLabel, items: items };
 }
 
 /** มีคำร้องแก้ไข "เวลาเข้า" ของวันที่ระบุรอพิจารณาอยู่หรือไม่ */

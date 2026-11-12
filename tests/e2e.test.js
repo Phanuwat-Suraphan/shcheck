@@ -1077,6 +1077,56 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
     }
   });
 
+  await step('E42', 'เกณฑ์การเลื่อนเงินเดือน: ผู้ดูแลตั้งเกณฑ์ในหน้าตั้งค่า → ครูเห็นคำเตือนบนหน้าแรก → แตะดูแถบเทียบเกณฑ์ในสถิติการลา → ซ่อนได้; บัญชีสรุปรายรอบแสดงผู้เกินเกณฑ์', async () => {
+    await setClock('2026-11-25 08:00:00');
+    const d = await newPage({ desktop: true });
+    await loginOk(d, DEFAULTS.adminUser, ADMIN_NEW_PW);
+    await d.click('#toAdminBtn');
+    await d.waitForSelector('#view-admin:not([hidden])');
+    await d.click('#adminNav [data-sec="settings"]');
+    await d.waitForFunction(() => document.querySelector('#sEvLeaveD').value === '23');
+    assert.strictEqual(await d.inputValue('#sEvLeaveT'), '');
+    await d.fill('#sEvLeaveT', '1');
+    await d.evaluate(() => document.querySelector('[data-field="EVAL_LEAVE_MAX_TIMES"]').closest('.set-group').scrollIntoView({ block: 'center' }));
+    await shot(d, '34-eval-settings-desktop.png');
+    await d.click('#setForm button[type=submit]');
+    await toast(d, /บันทึกการตั้งค่าแล้ว/);
+    // ครู: หน้าแรกเตือนว่าเกินเกณฑ์ (ลากิจ 2 ครั้งในรอบนี้ เกณฑ์ไม่เกิน 1 ครั้ง)
+    const tp = await newPage();
+    await loginOk(tp, 'somsri.j', 'SomsriNew2026');
+    await tp.waitForSelector('#evalCard.over:not([hidden])');
+    const txt = await tp.textContent('#evalCard');
+    assert.ok(/ลาป่วย \+ ลากิจ \d+ ครั้ง/.test(txt) && /เกินเกณฑ์แล้ว \(เกณฑ์ไม่เกิน 1 ครั้ง\)/.test(txt) && /รอบที่ 1 ปีงบประมาณ 2570/.test(txt), txt);
+    await tp.locator('#evalCard').scrollIntoViewIfNeeded();
+    await shot(tp, '35-eval-warning-mobile.png');
+    await tp.click('#evGoBtn');
+    await tp.waitForSelector('#lvCriteria .crit-row.over');
+    assert.ok(/วันลาป่วย \+ ลากิจ/.test(await tp.textContent('#lvCriteria')));
+    await tp.evaluate(() => document.querySelector('#lvCriteria').scrollIntoView({ block: 'center' }));
+    await shot(tp, '36-eval-stats-mobile.png');
+    // ซ่อนคำเตือน → ไม่แสดงซ้ำ (จนกว่าตัวเลขจะเปลี่ยน)
+    await tp.click('#userTabs [data-tab="home"]');
+    await tp.click('#evClose');
+    await tp.waitForSelector('#evalCard', { state: 'hidden' });
+    await tp.reload();
+    await tp.waitForSelector('#view-app:not([hidden])');
+    await tp.waitForFunction(() => document.querySelector('#homeName').textContent.length > 1);
+    assert.ok(await tp.isHidden('#evalCard'), 'ซ่อนแล้วไม่แสดงซ้ำ');
+    // ผู้บริหาร: บัญชีสรุปรายรอบแสดงผู้เกินเกณฑ์
+    await d.click('#adminNav [data-sec="reports"]');
+    await d.click('#repTypeSeg [data-val="leaveSummary"]');
+    await d.click('#repRunBtn');
+    await d.locator('#repResult tr', { hasText: 'นางสาวสมศรี ใจดี' }).locator('.ev-note.over').waitFor();
+    assert.ok(/เกินเกณฑ์การเลื่อนเงินเดือน/.test(await d.textContent('#repResult .grid-stats')));
+    // คืนค่าเดิม
+    await d.click('#adminNav [data-sec="settings"]');
+    await d.waitForFunction(() => document.querySelector('#sEvLeaveT').value === '1');
+    await d.fill('#sEvLeaveT', '');
+    await d.evaluate(() => document.querySelectorAll('.toast').forEach(t => t.remove()));
+    await d.click('#setForm button[type=submit]');
+    await toast(d, /บันทึกการตั้งค่าแล้ว/);
+  });
+
   await step('E20', 'ไม่มี JavaScript error ในทุกหน้าที่ทดสอบ', async () => {
     assert.deepStrictEqual(pageErrors, []);
   });

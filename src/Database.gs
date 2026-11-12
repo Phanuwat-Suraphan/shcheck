@@ -216,6 +216,9 @@ var DEFAULT_SETTINGS_ = [
   ['GPS_RETENTION_DAYS', '365', 'ระยะเวลาเก็บพิกัด GPS ก่อนลบอัตโนมัติ (วัน)'],
   ['CORRECTION_MAX_DAYS', '30', 'ยื่นคำร้องแก้ไขเวลาย้อนหลังได้ไม่เกิน (วัน)'],
   ['LEAVE_REQUIRES_APPROVAL', 'TRUE', 'การลาที่บุคลากรบันทึกเองต้องรอผู้บริหาร/ผู้ดูแลอนุมัติ (FALSE = มีผลทันทีเมื่อกดยืนยัน)'],
+  ['EVAL_LEAVE_MAX_TIMES', '', 'เกณฑ์การเลื่อนเงินเดือน: ลาป่วย + ลากิจ ไม่เกินกี่ครั้งต่อรอบการประเมิน (ว่าง = ไม่ใช้)'],
+  ['EVAL_LEAVE_MAX_DAYS', '23', 'เกณฑ์การเลื่อนเงินเดือน: ลาป่วย + ลากิจ ไม่เกินกี่วันต่อรอบการประเมิน (ว่าง = ไม่ใช้)'],
+  ['EVAL_LATE_MAX_TIMES', '', 'เกณฑ์การเลื่อนเงินเดือน: มาสายไม่เกินกี่ครั้งต่อรอบการประเมิน (ว่าง = ไม่ใช้)'],
   ['ALLOW_REGISTRATION', 'TRUE', 'เปิดให้บุคลากรสมัครสมาชิกด้วยตนเอง'],
   ['DIRECTOR_NAME', '', 'ชื่อ-นามสกุลผู้อำนวยการโรงเรียน (ใช้ในช่องลงนามของใบลาและรายงาน)'],
   ['DIRECTOR_POSITION', 'ผู้อำนวยการโรงเรียนวัดเสาหิน', 'ตำแหน่งผู้ลงนามอนุญาตการลา/รับรองรายงาน'],
@@ -571,6 +574,7 @@ function parseSettings_(raw) {
   function num(k, def) { var n = toNumber_(raw[k]); return isFinite(n) ? n : def; }
   function bool(k) { return String(raw[k]).toUpperCase() === 'TRUE'; }
   function time(k, def) { return isValidTime_(raw[k]) ? String(raw[k]).substr(0, 5) : def; }
+  function optInt(k) { var n = toNumber_(raw[k]); return isFinite(n) && n >= 1 ? Math.round(n) : 0; } // 0 = ไม่ใช้
   var lat = toNumber_(raw.SCHOOL_LAT), lng = toNumber_(raw.SCHOOL_LNG);
   var workDays = String(raw.WORK_DAYS || '').split(',').map(function (x) { return parseInt(x, 10); })
     .filter(function (x) { return x >= 0 && x <= 6; });
@@ -599,6 +603,9 @@ function parseSettings_(raw) {
     directorPosition: String(raw.DIRECTOR_POSITION || '').trim() || 'ผู้อำนวยการ' + APP.SCHOOL_NAME,
     affiliation: String(raw.SCHOOL_AFFILIATION || '').trim(),
     leaveRequiresApproval: String(raw.LEAVE_REQUIRES_APPROVAL === undefined ? 'TRUE' : raw.LEAVE_REQUIRES_APPROVAL).toUpperCase() !== 'FALSE',
+    evalLeaveMaxTimes: optInt('EVAL_LEAVE_MAX_TIMES'),
+    evalLeaveMaxDays: optInt('EVAL_LEAVE_MAX_DAYS'),
+    evalLateMaxTimes: optInt('EVAL_LATE_MAX_TIMES'),
     settingsConfirmed: bool('SETTINGS_CONFIRMED')
   };
 }

@@ -570,6 +570,9 @@ var SETTING_RULES_ = {
   CORRECTION_MAX_DAYS: { type: 'int', min: 1, max: 365, label: 'ยื่นคำร้องย้อนหลังได้ (วัน)' },
   ALLOW_REGISTRATION: { type: 'bool', label: 'เปิดรับสมัครสมาชิก' },
   LEAVE_REQUIRES_APPROVAL: { type: 'bool', label: 'การลาที่บุคลากรบันทึกเองต้องรออนุมัติ' },
+  EVAL_LEAVE_MAX_TIMES: { type: 'optint', min: 1, max: 99, label: 'เกณฑ์จำนวนครั้งที่ลา' },
+  EVAL_LEAVE_MAX_DAYS: { type: 'optint', min: 1, max: 99, label: 'เกณฑ์จำนวนวันลา' },
+  EVAL_LATE_MAX_TIMES: { type: 'optint', min: 1, max: 99, label: 'เกณฑ์จำนวนครั้งที่มาสาย' },
   DIRECTOR_NAME: { type: 'text', max: 80, label: 'ชื่อผู้อำนวยการ' },
   DIRECTOR_POSITION: { type: 'text', max: 100, label: 'ตำแหน่งผู้ลงนาม' },
   SCHOOL_AFFILIATION: { type: 'text', max: 100, label: 'สังกัด' },
@@ -621,6 +624,13 @@ function normalizeSetting_(key, value) {
       });
       if (!uniq.length) throw appError_('กรุณาเลือกวันทำงานอย่างน้อย 1 วัน', 'VALIDATION', { field: key });
       return uniq.sort().join(',');
+    case 'optint': // เว้นว่าง = ไม่ใช้
+      if (v === '') return '';
+      var o = toNumber_(v);
+      if (!isFinite(o) || Math.round(o) !== o || o < rule.min || o > rule.max) {
+        throw appError_(rule.label + ' ต้องเป็นจำนวนเต็มระหว่าง ' + rule.min + '–' + rule.max + ' หรือเว้นว่างเพื่อไม่ใช้', 'VALIDATION', { field: key });
+      }
+      return String(o);
     case 'bool':
       return (value === true || String(value).toUpperCase() === 'TRUE') ? 'TRUE' : 'FALSE';
     case 'text':

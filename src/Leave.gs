@@ -373,6 +373,60 @@ function parseFiscalYear_(v) {
   return isFinite(fy) && fy >= cur - 20 && fy <= cur + 1 ? fy : cur;
 }
 
+/* ---------- เกณฑ์การเลื่อนเงินเดือน (ต่อรอบการประเมิน) ---------- */
+
+/** เกณฑ์ที่โรงเรียนตั้งไว้ (0 = ไม่ใช้เกณฑ์นั้น) */
+function evalCriteria_() {
+  var s = getSettings_();
+  return {
+    leaveTimes: s.evalLeaveMaxTimes || 0, leaveDays: s.evalLeaveMaxDays || 0, lateTimes: s.evalLateMaxTimes || 0,
+    any: !!(s.evalLeaveMaxTimes || s.evalLeaveMaxDays || s.evalLateMaxTimes)
+  };
+}
+
+/**
+ * เทียบสถิติในรอบกับเกณฑ์ → [{key, label, value, max, unit, level}]
+ * level: ok | near (ใกล้ถึง: ตั้งแต่ราว 80% ของเกณฑ์) | limit (ครบพอดี — อีกครั้งจะเกิน) | over (เกินแล้ว)
+ * นับเฉพาะลาป่วย + ลากิจที่อนุมัติแล้ว (ไม่นับลาคลอดบุตร ไปราชการ และลาประเภทอื่น)
+ */
+function evalCheck_(crit, spTimes, spDays, late) {
+  var out = [];
+  function add(key, label, value, max, unit) {
+    if (!max) return;
+    var margin = Math.max(1, Math.ceil(max * 0.2));
+    var level = value > max ? 'over' : (value === max ? 'limit' : (value > 0 && value >= max - margin ? 'near' : 'ok'));
+    out.push({ key: key, label: label, value: value, max: max, unit: unit, level: level });
+  }
+  add('leaveTimes', 'ลาป่วย + ลากิจ', spTimes, crit.leaveTimes, 'ครั้ง');
+  add('leaveDays', 'วันลาป่วย + ลากิจ', spDays, crit.leaveDays, 'วัน');
+  add('lateTimes', 'มาสาย', late, crit.lateTimes, 'ครั้ง');
+  return out;
+}
+
+/** เทียบเกณฑ์จากผลรวมการลา (leaveTotals_) และจำนวนครั้งที่มาสาย */
+function evalCheckTotals_(crit, lt, late) {
+  return evalCheck_(crit, lt.SICK.times + lt.PERSONAL.times, round_(lt.SICK.days + lt.PERSONAL.days, 1), late);
+}
+
+/** ข้อความสรุปสำหรับรายงาน เช่น "เกินเกณฑ์: มาสาย 12/10 ครั้ง" */
+function evalNote_(items) {
+  var fmt = function (x) { return x.label + ' ' + x.value + '/' + x.max + ' ' + x.unit; };
+  var over = items.filter(function (x) { return x.level === 'over'; });
+  if (over.length) return 'เกินเกณฑ์: ' + over.map(fmt).join(', ');
+  var near = items.filter(function (x) { return x.level === 'limit' || x.level === 'near'; });
+  return near.length ? 'ใกล้เกณฑ์: ' + near.map(fmt).join(', ') : '';
+}
+
+/** "ลาป่วย + ลากิจไม่เกิน 10 ครั้ง / 23 วัน · มาสายไม่เกิน 10 ครั้ง" */
+function evalCriteriaText_(c) {
+  var parts = [];
+  if (c.leaveTimes || c.leaveDays) {
+    parts.push('ลาป่วย + ลากิจไม่เกิน ' + [c.leaveTimes ? c.leaveTimes + ' ครั้ง' : '', c.leaveDays ? c.leaveDays + ' วัน' : ''].filter(String).join(' / '));
+  }
+  if (c.lateTimes) parts.push('มาสายไม่เกิน ' + c.lateTimes + ' ครั้ง');
+  return parts.join(' · ');
+}
+
 /** สถิติการลา/มาสาย/ขาดงานของตนเอง แยกรอบการประเมิน (รอบที่ 1, รอบที่ 2, ทั้งปีงบประมาณ) */
 function getMyLeaveStats_(ctx, p) {
   var emp = ctx.user;
@@ -383,8 +437,10 @@ function getMyLeaveStats_(ctx, p) {
   var mine = readAll_('LeaveRequests').filter(function (l) { return l.EmployeeID === emp.EmployeeID; });
   var att = computeAttendance_({ employees: [emp], from: ranges[2].from, to: ranges[2].to });
   var days = att.people.length ? att.people[0].days : [];
+  var crit = evalCriteria_();
   return {
     fiscalYear: fy,
+    criteriaText: crit.any ? evalCriteriaText_(crit) : '',
     options: [cur, cur - 1, cur - 2],
     pending: mine.filter(function (l) {
       return l.Status === REQUEST_STATUS.PENDING && l.EndDate >= ranges[2].from && l.StartDate <= ranges[2].to;
@@ -397,10 +453,12 @@ function getMyLeaveStats_(ctx, p) {
         if (d.status === 'LATE') { late++; lateMinutes += d.lateMinutes || 0; }
         if (d.status === 'ABSENT') absent++;
       });
+      var lt = leaveTotals_(mine, r.from, r.to);
       return {
         round: r.round, label: r.round ? 'รอบที่ ' + r.round : 'ทั้งปีงบประมาณ', shortLabel: r.shortLabel,
         from: r.from, to: r.to, rangeLabel: r.rangeLabel, started: r.from <= today, current: r.from <= today && today <= r.to,
-        leaves: leaveTotals_(mine, r.from, r.to), late: late, lateMinutes: Math.round(lateMinutes), absent: absent
+        leaves: lt, late: late, lateMinutes: Math.round(lateMinutes), absent: absent,
+        criteria: r.round && crit.any ? evalCheckTotals_(crit, lt, late) : []
       };
     })
   };

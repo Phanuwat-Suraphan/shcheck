@@ -1,5 +1,5 @@
 /*
- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.13.0
+ * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.14.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Code.gs (โค้ดฝั่ง Server ทั้งหมด)
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่
  */
@@ -35,7 +35,7 @@ var APP = {
   SCHOOL_FULL: 'โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่',
   NAME_EN: 'Wat Sao Hin School Attendance System',
   SLOGAN: 'ระบบลงเวลาอัจฉริยะ สะดวก โปร่งใส ตรวจสอบได้',
-  VERSION: '1.13.0',
+  VERSION: '1.14.0',
   TZ: 'Asia/Bangkok'
 };
 
@@ -391,6 +391,8 @@ function fiscalRange_(fy, round) {
   r.shortLabel = round === 0 ? 'ทั้งปี' : (round === 1 ? 'ต.ค. – มี.ค.' : 'เม.ย. – ก.ย.');
   return r;
 }
+/** รอบการประเมินของวันที่: 1 = 1 ต.ค. – 31 มี.ค., 2 = 1 เม.ย. – 30 ก.ย. */
+function roundOf_(ymd) { var m = parseYmd_(ymd).m; return m >= 4 && m <= 9 ? 2 : 1; }
 function pad2_(n) { return (n < 10 ? '0' : '') + n; }
 
 /** รายการวันที่จาก a ถึง b (รวมปลายทั้งสองด้าน) */
@@ -722,6 +724,9 @@ var DEFAULT_SETTINGS_ = [
   ['GPS_RETENTION_DAYS', '365', 'ระยะเวลาเก็บพิกัด GPS ก่อนลบอัตโนมัติ (วัน)'],
   ['CORRECTION_MAX_DAYS', '30', 'ยื่นคำร้องแก้ไขเวลาย้อนหลังได้ไม่เกิน (วัน)'],
   ['LEAVE_REQUIRES_APPROVAL', 'TRUE', 'การลาที่บุคลากรบันทึกเองต้องรอผู้บริหาร/ผู้ดูแลอนุมัติ (FALSE = มีผลทันทีเมื่อกดยืนยัน)'],
+  ['EVAL_LEAVE_MAX_TIMES', '', 'เกณฑ์การเลื่อนเงินเดือน: ลาป่วย + ลากิจ ไม่เกินกี่ครั้งต่อรอบการประเมิน (ว่าง = ไม่ใช้)'],
+  ['EVAL_LEAVE_MAX_DAYS', '23', 'เกณฑ์การเลื่อนเงินเดือน: ลาป่วย + ลากิจ ไม่เกินกี่วันต่อรอบการประเมิน (ว่าง = ไม่ใช้)'],
+  ['EVAL_LATE_MAX_TIMES', '', 'เกณฑ์การเลื่อนเงินเดือน: มาสายไม่เกินกี่ครั้งต่อรอบการประเมิน (ว่าง = ไม่ใช้)'],
   ['ALLOW_REGISTRATION', 'TRUE', 'เปิดให้บุคลากรสมัครสมาชิกด้วยตนเอง'],
   ['DIRECTOR_NAME', '', 'ชื่อ-นามสกุลผู้อำนวยการโรงเรียน (ใช้ในช่องลงนามของใบลาและรายงาน)'],
   ['DIRECTOR_POSITION', 'ผู้อำนวยการโรงเรียนวัดเสาหิน', 'ตำแหน่งผู้ลงนามอนุญาตการลา/รับรองรายงาน'],
@@ -1077,6 +1082,7 @@ function parseSettings_(raw) {
   function num(k, def) { var n = toNumber_(raw[k]); return isFinite(n) ? n : def; }
   function bool(k) { return String(raw[k]).toUpperCase() === 'TRUE'; }
   function time(k, def) { return isValidTime_(raw[k]) ? String(raw[k]).substr(0, 5) : def; }
+  function optInt(k) { var n = toNumber_(raw[k]); return isFinite(n) && n >= 1 ? Math.round(n) : 0; } // 0 = ไม่ใช้
   var lat = toNumber_(raw.SCHOOL_LAT), lng = toNumber_(raw.SCHOOL_LNG);
   var workDays = String(raw.WORK_DAYS || '').split(',').map(function (x) { return parseInt(x, 10); })
     .filter(function (x) { return x >= 0 && x <= 6; });
@@ -1105,6 +1111,9 @@ function parseSettings_(raw) {
     directorPosition: String(raw.DIRECTOR_POSITION || '').trim() || 'ผู้อำนวยการ' + APP.SCHOOL_NAME,
     affiliation: String(raw.SCHOOL_AFFILIATION || '').trim(),
     leaveRequiresApproval: String(raw.LEAVE_REQUIRES_APPROVAL === undefined ? 'TRUE' : raw.LEAVE_REQUIRES_APPROVAL).toUpperCase() !== 'FALSE',
+    evalLeaveMaxTimes: optInt('EVAL_LEAVE_MAX_TIMES'),
+    evalLeaveMaxDays: optInt('EVAL_LEAVE_MAX_DAYS'),
+    evalLateMaxTimes: optInt('EVAL_LATE_MAX_TIMES'),
     settingsConfirmed: bool('SETTINGS_CONFIRMED')
   };
 }
@@ -2921,6 +2930,7 @@ function getMyDashboard_(ctx) {
     pending: { leaves: myLeaves, corrections: myCorr, todayIn: hasPendingInCorrection_(emp.EmployeeID, today) },
     approvals: approvalCounts_(emp),
     decisions: myRecentDecisions_(emp),
+    evalWarn: myEvalWarning_(emp),
     announcement: getAnnouncement_(),
     issues: myAttendanceIssues_(emp, s, today)
   };
@@ -2976,6 +2986,26 @@ function myRecentDecisions_(emp) {
     });
   });
   return out.sort(function (a, b) { return a.at < b.at ? 1 : -1; }).slice(0, 6);
+}
+
+/**
+ * เตือนบนหน้าแรกเมื่อสถิติในรอบการประเมินปัจจุบัน ใกล้ถึง/ครบ/เกินเกณฑ์การเลื่อนเงินเดือนที่โรงเรียนตั้งไว้
+ * (ใบลาที่อนุมัติล่วงหน้าภายในรอบนับรวมด้วย เพื่อให้วางแผนได้)
+ */
+function myEvalWarning_(emp) {
+  var crit = evalCriteria_();
+  if (!crit.any) return null;
+  var today = todayStr_();
+  var r = fiscalRange_(fiscalYearOf_(today), roundOf_(today));
+  var lt = leaveTotals_(readAll_('LeaveRequests').filter(function (l) { return l.EmployeeID === emp.EmployeeID; }), r.from, r.to);
+  var late = 0;
+  if (crit.lateTimes) {
+    var p = computeAttendance_({ employees: [emp], from: r.from, to: today }).people[0];
+    (p ? p.days : []).forEach(function (d) { if (d.status === 'LATE') late++; });
+  }
+  var items = evalCheckTotals_(crit, lt, late).filter(function (x) { return x.level !== 'ok'; });
+  if (!items.length) return null;
+  return { round: r.round, fiscalYear: r.fiscalYear, label: r.label, rangeLabel: r.rangeLabel, items: items };
 }
 
 /** มีคำร้องแก้ไข "เวลาเข้า" ของวันที่ระบุรอพิจารณาอยู่หรือไม่ */
@@ -3434,6 +3464,60 @@ function parseFiscalYear_(v) {
   return isFinite(fy) && fy >= cur - 20 && fy <= cur + 1 ? fy : cur;
 }
 
+/* ---------- เกณฑ์การเลื่อนเงินเดือน (ต่อรอบการประเมิน) ---------- */
+
+/** เกณฑ์ที่โรงเรียนตั้งไว้ (0 = ไม่ใช้เกณฑ์นั้น) */
+function evalCriteria_() {
+  var s = getSettings_();
+  return {
+    leaveTimes: s.evalLeaveMaxTimes || 0, leaveDays: s.evalLeaveMaxDays || 0, lateTimes: s.evalLateMaxTimes || 0,
+    any: !!(s.evalLeaveMaxTimes || s.evalLeaveMaxDays || s.evalLateMaxTimes)
+  };
+}
+
+/**
+ * เทียบสถิติในรอบกับเกณฑ์ → [{key, label, value, max, unit, level}]
+ * level: ok | near (ใกล้ถึง: ตั้งแต่ราว 80% ของเกณฑ์) | limit (ครบพอดี — อีกครั้งจะเกิน) | over (เกินแล้ว)
+ * นับเฉพาะลาป่วย + ลากิจที่อนุมัติแล้ว (ไม่นับลาคลอดบุตร ไปราชการ และลาประเภทอื่น)
+ */
+function evalCheck_(crit, spTimes, spDays, late) {
+  var out = [];
+  function add(key, label, value, max, unit) {
+    if (!max) return;
+    var margin = Math.max(1, Math.ceil(max * 0.2));
+    var level = value > max ? 'over' : (value === max ? 'limit' : (value > 0 && value >= max - margin ? 'near' : 'ok'));
+    out.push({ key: key, label: label, value: value, max: max, unit: unit, level: level });
+  }
+  add('leaveTimes', 'ลาป่วย + ลากิจ', spTimes, crit.leaveTimes, 'ครั้ง');
+  add('leaveDays', 'วันลาป่วย + ลากิจ', spDays, crit.leaveDays, 'วัน');
+  add('lateTimes', 'มาสาย', late, crit.lateTimes, 'ครั้ง');
+  return out;
+}
+
+/** เทียบเกณฑ์จากผลรวมการลา (leaveTotals_) และจำนวนครั้งที่มาสาย */
+function evalCheckTotals_(crit, lt, late) {
+  return evalCheck_(crit, lt.SICK.times + lt.PERSONAL.times, round_(lt.SICK.days + lt.PERSONAL.days, 1), late);
+}
+
+/** ข้อความสรุปสำหรับรายงาน เช่น "เกินเกณฑ์: มาสาย 12/10 ครั้ง" */
+function evalNote_(items) {
+  var fmt = function (x) { return x.label + ' ' + x.value + '/' + x.max + ' ' + x.unit; };
+  var over = items.filter(function (x) { return x.level === 'over'; });
+  if (over.length) return 'เกินเกณฑ์: ' + over.map(fmt).join(', ');
+  var near = items.filter(function (x) { return x.level === 'limit' || x.level === 'near'; });
+  return near.length ? 'ใกล้เกณฑ์: ' + near.map(fmt).join(', ') : '';
+}
+
+/** "ลาป่วย + ลากิจไม่เกิน 10 ครั้ง / 23 วัน · มาสายไม่เกิน 10 ครั้ง" */
+function evalCriteriaText_(c) {
+  var parts = [];
+  if (c.leaveTimes || c.leaveDays) {
+    parts.push('ลาป่วย + ลากิจไม่เกิน ' + [c.leaveTimes ? c.leaveTimes + ' ครั้ง' : '', c.leaveDays ? c.leaveDays + ' วัน' : ''].filter(String).join(' / '));
+  }
+  if (c.lateTimes) parts.push('มาสายไม่เกิน ' + c.lateTimes + ' ครั้ง');
+  return parts.join(' · ');
+}
+
 /** สถิติการลา/มาสาย/ขาดงานของตนเอง แยกรอบการประเมิน (รอบที่ 1, รอบที่ 2, ทั้งปีงบประมาณ) */
 function getMyLeaveStats_(ctx, p) {
   var emp = ctx.user;
@@ -3444,8 +3528,10 @@ function getMyLeaveStats_(ctx, p) {
   var mine = readAll_('LeaveRequests').filter(function (l) { return l.EmployeeID === emp.EmployeeID; });
   var att = computeAttendance_({ employees: [emp], from: ranges[2].from, to: ranges[2].to });
   var days = att.people.length ? att.people[0].days : [];
+  var crit = evalCriteria_();
   return {
     fiscalYear: fy,
+    criteriaText: crit.any ? evalCriteriaText_(crit) : '',
     options: [cur, cur - 1, cur - 2],
     pending: mine.filter(function (l) {
       return l.Status === REQUEST_STATUS.PENDING && l.EndDate >= ranges[2].from && l.StartDate <= ranges[2].to;
@@ -3458,10 +3544,12 @@ function getMyLeaveStats_(ctx, p) {
         if (d.status === 'LATE') { late++; lateMinutes += d.lateMinutes || 0; }
         if (d.status === 'ABSENT') absent++;
       });
+      var lt = leaveTotals_(mine, r.from, r.to);
       return {
         round: r.round, label: r.round ? 'รอบที่ ' + r.round : 'ทั้งปีงบประมาณ', shortLabel: r.shortLabel,
         from: r.from, to: r.to, rangeLabel: r.rangeLabel, started: r.from <= today, current: r.from <= today && today <= r.to,
-        leaves: leaveTotals_(mine, r.from, r.to), late: late, lateMinutes: Math.round(lateMinutes), absent: absent
+        leaves: lt, late: late, lateMinutes: Math.round(lateMinutes), absent: absent,
+        criteria: r.round && crit.any ? evalCheckTotals_(crit, lt, late) : []
       };
     })
   };
@@ -4339,6 +4427,9 @@ var SETTING_RULES_ = {
   CORRECTION_MAX_DAYS: { type: 'int', min: 1, max: 365, label: 'ยื่นคำร้องย้อนหลังได้ (วัน)' },
   ALLOW_REGISTRATION: { type: 'bool', label: 'เปิดรับสมัครสมาชิก' },
   LEAVE_REQUIRES_APPROVAL: { type: 'bool', label: 'การลาที่บุคลากรบันทึกเองต้องรออนุมัติ' },
+  EVAL_LEAVE_MAX_TIMES: { type: 'optint', min: 1, max: 99, label: 'เกณฑ์จำนวนครั้งที่ลา' },
+  EVAL_LEAVE_MAX_DAYS: { type: 'optint', min: 1, max: 99, label: 'เกณฑ์จำนวนวันลา' },
+  EVAL_LATE_MAX_TIMES: { type: 'optint', min: 1, max: 99, label: 'เกณฑ์จำนวนครั้งที่มาสาย' },
   DIRECTOR_NAME: { type: 'text', max: 80, label: 'ชื่อผู้อำนวยการ' },
   DIRECTOR_POSITION: { type: 'text', max: 100, label: 'ตำแหน่งผู้ลงนาม' },
   SCHOOL_AFFILIATION: { type: 'text', max: 100, label: 'สังกัด' },
@@ -4390,6 +4481,13 @@ function normalizeSetting_(key, value) {
       });
       if (!uniq.length) throw appError_('กรุณาเลือกวันทำงานอย่างน้อย 1 วัน', 'VALIDATION', { field: key });
       return uniq.sort().join(',');
+    case 'optint': // เว้นว่าง = ไม่ใช้
+      if (v === '') return '';
+      var o = toNumber_(v);
+      if (!isFinite(o) || Math.round(o) !== o || o < rule.min || o > rule.max) {
+        throw appError_(rule.label + ' ต้องเป็นจำนวนเต็มระหว่าง ' + rule.min + '–' + rule.max + ' หรือเว้นว่างเพื่อไม่ใช้', 'VALIDATION', { field: key });
+      }
+      return String(o);
     case 'bool':
       return (value === true || String(value).toUpperCase() === 'TRUE') ? 'TRUE' : 'FALSE';
     case 'text':
@@ -5318,7 +5416,8 @@ function reportLeaveSummary_(ctx, p) {
   var res = computeAttendance_({ employees: emps, from: r.from, to: r.to });
   var byEmp = {};
   readAll_('LeaveRequests').forEach(function (l) { (byEmp[l.EmployeeID] = byEmp[l.EmployeeID] || []).push(l); });
-  var tot = { sickT: 0, sickD: 0, persT: 0, persD: 0, late: 0, absent: 0, perfect: 0 };
+  var tot = { sickT: 0, sickD: 0, persT: 0, persD: 0, late: 0, absent: 0, perfect: 0, evalOver: 0, evalNear: 0 };
+  var crit = round ? evalCriteria_() : { any: false }; // เกณฑ์การเลื่อนเงินเดือนใช้ต่อรอบการประเมิน
   var rows = res.people.map(function (pp, i) {
     var lt = leaveTotals_(byEmp[pp.emp.employeeId] || [], r.from, r.to);
     var late = 0, absent = 0;
@@ -5327,7 +5426,10 @@ function reportLeaveSummary_(ctx, p) {
     tot.sickT += lt.SICK.times; tot.sickD += lt.SICK.days; tot.persT += lt.PERSONAL.times; tot.persD += lt.PERSONAL.days;
     tot.late += late; tot.absent += absent;
     if (!leaveCount && !late && !absent && pp.totals.workdays > 0) tot.perfect++;
+    var evalNote = crit.any ? evalNote_(evalCheckTotals_(crit, lt, late)) : '';
+    if (/^เกิน/.test(evalNote)) tot.evalOver++; else if (evalNote) tot.evalNear++;
     return {
+      evalNote: evalNote,
       no: i + 1, staffCode: pp.emp.staffCode, fullName: pp.emp.fullName, position: pp.emp.position,
       sickT: lt.SICK.times, sickD: lt.SICK.days, persT: lt.PERSONAL.times, persD: lt.PERSONAL.days,
       spT: lt.SICK.times + lt.PERSONAL.times, spD: round_(lt.SICK.days + lt.PERSONAL.days, 1),
@@ -5365,6 +5467,13 @@ function reportLeaveSummary_(ctx, p) {
     { label: 'ขาดงานรวม', value: tot.absent, unit: 'วัน', tone: 'danger' },
     { label: 'ไม่ลา ไม่สาย ไม่ขาด', value: tot.perfect, unit: 'คน', tone: 'success' }
   ];
+  if (crit.any) {
+    var tb = rep.tables[rep.tables.length - 1];
+    tb.columns.push({ key: 'evalNote', label: 'เกณฑ์การเลื่อนเงินเดือน', width: 150 });
+    tb.title += ' · เกณฑ์ต่อรอบ: ' + evalCriteriaText_(crit);
+    rep.summary.push({ label: 'เกินเกณฑ์การเลื่อนเงินเดือน', value: tot.evalOver, unit: 'คน', tone: 'danger' },
+      { label: 'ใกล้/ครบเกณฑ์', value: tot.evalNear, unit: 'คน', tone: 'warning' });
+  }
   if (r.from > res.today) rep.notice = 'รอบนี้ยังไม่เริ่ม';
   else if (r.to > res.today) rep.notice = 'ข้อมูลถึงวันที่ ' + thaiDate_(res.today) + ' (รอบยังไม่สิ้นสุด)';
   rep.params = { fiscalYear: fy, round: round };

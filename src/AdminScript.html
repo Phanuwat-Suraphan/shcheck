@@ -1000,6 +1000,7 @@ window.Admin = (function () {
         (row.outMaps ? '<a class="mini-link" target="_blank" rel="noopener" href="' + esc(row.outMaps.google) + '" title="ตำแหน่งตอนออกงาน">' + icon('pin_drop') + 'ออก</a>' : '');
     }
     if (col.key === 'fullName') return '<b>' + esc(v) + '</b>';
+    if (col.key === 'evalNote') return v ? '<span class="ev-note' + (/^เกิน/.test(v) ? ' over' : '') + '">' + esc(v) + '</span>' : '-';
     return esc(v === null || v === undefined || v === '' ? '-' : v);
   }
   function tableHtml(t) {
@@ -1235,7 +1236,7 @@ window.Admin = (function () {
   }
   var TEXT_SETTINGS = ['SCHOOL_LAT', 'SCHOOL_LNG', 'GEOFENCE_RADIUS_M', 'MAX_GPS_ACCURACY_M', 'WORK_START_TIME', 'LATE_AFTER_TIME', 'WORK_END_TIME', 'CHECKIN_EARLIEST_TIME',
     'SESSION_TIMEOUT_MIN', 'MAX_LOGIN_ATTEMPTS', 'LOCKOUT_MIN', 'REMEMBER_DEVICE_DAYS', 'GPS_RETENTION_DAYS', 'CORRECTION_MAX_DAYS',
-    'DIRECTOR_NAME', 'DIRECTOR_POSITION', 'SCHOOL_AFFILIATION'];
+    'DIRECTOR_NAME', 'DIRECTOR_POSITION', 'SCHOOL_AFFILIATION', 'EVAL_LEAVE_MAX_TIMES', 'EVAL_LEAVE_MAX_DAYS', 'EVAL_LATE_MAX_TIMES'];
   function loadSettings() {
     A.api('settings.get', {}, { loadingText: 'กำลังโหลดการตั้งค่า...' }).then(function (s) {
       var f = $('#setForm'), v = s.values;

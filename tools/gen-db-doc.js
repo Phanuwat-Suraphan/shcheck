@@ -35,7 +35,7 @@ Object.keys(c.SCHEMA_).forEach(n => {
   c.SCHEMA_[n].cols.forEach((col, i) => out.push(`| ${i + 1} | \`${col[0]}\` | ${TYPE[col[1]]} | ${col[2]} |`));
 });
 out.push('', '## ค่าเริ่มต้นในชีต Settings', '', '| Key | ค่าเริ่มต้น | คำอธิบาย |', '|---|---|---|');
-c.DEFAULT_SETTINGS_.forEach(d => out.push(`| \`${d[0]}\` | ${d[1] === '' ? '(ว่าง — ต้องตั้งค่า)' : '`' + d[1] + '`'} | ${d[2]} |`));
+c.DEFAULT_SETTINGS_.forEach(d => out.push(`| \`${d[0]}\` | ${d[1] === '' ? (/ว่าง = ไม่ใช้/.test(d[2]) ? '(ว่าง)' : '(ว่าง — ต้องตั้งค่า)') : '`' + d[1] + '`'} | ${d[2]} |`));
 out.push('', '## Script Properties (เก็บนอก Google Sheets — ไม่เปิดเผยต่อผู้ใช้)', '',
   '| Property | สร้างโดย | คำอธิบาย |', '|---|---|---|',
   '| `SPREADSHEET_ID` | SetupSystem | รหัส Spreadsheet ฐานข้อมูล (ไม่ส่งไปหน้าเว็บ) |',

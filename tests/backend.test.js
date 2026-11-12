@@ -409,6 +409,64 @@ test('H04', 'หน้าแรกแจ้ง "ผลการพิจาร�
   assert.deepStrictEqual(decisions(t.token), []);
 });
 
+test('G01', 'เกณฑ์การเลื่อนเงินเดือน: ค่าเริ่มต้น 23 วัน, ตั้งค่า (เว้นว่าง = ไม่ใช้, ตรวจช่วงค่า), สถิติของฉันเทียบเกณฑ์รายรอบ, หน้าแรกเตือนเมื่อใกล้/ครบ/เกิน, บัญชีสรุปรายรอบแสดงผู้เกินเกณฑ์', () => {
+  const sys = newSystem({ now: '2026-11-02 07:00:00' }); // จันทร์ รอบที่ 1 ปีงบประมาณ 2570
+  const t = addTeacher(sys, 1);
+  const t2 = addTeacher(sys, 2);
+  let st = ok(sys.api(t.token, 'leave.myStats', {}));
+  assert.strictEqual(st.criteriaText, 'ลาป่วย + ลากิจไม่เกิน 23 วัน');
+  assert.deepStrictEqual(st.rounds[0].criteria.map(x => [x.key, x.value, x.max, x.level]), [['leaveDays', 0, 23, 'ok']]);
+  assert.deepStrictEqual(st.rounds[2].criteria, []);                               // ทั้งปีไม่เทียบเกณฑ์ (เกณฑ์ใช้ต่อรอบ)
+  assert.strictEqual(ok(sys.api(t.token, 'me.dashboard', {})).evalWarn, null);
+  // ตั้งค่า: เว้นว่างได้ / ต้องเป็นจำนวนเต็ม 1–99
+  expectErr(sys.api(sys.admin, 'settings.save', { values: { EVAL_LATE_MAX_TIMES: '0' } }), 'VALIDATION');
+  expectErr(sys.api(sys.admin, 'settings.save', { values: { EVAL_LEAVE_MAX_TIMES: '2.5' } }), 'VALIDATION');
+  expectErr(sys.api(sys.admin, 'settings.save', { values: { EVAL_LEAVE_MAX_DAYS: '100' } }), 'VALIDATION');
+  ok(sys.api(sys.admin, 'settings.save', { values: { EVAL_LEAVE_MAX_TIMES: '3', EVAL_LATE_MAX_TIMES: '2', EVAL_LEAVE_MAX_DAYS: '' } }));
+  const sg = ok(sys.api(sys.admin, 'settings.get', {})).values;
+  assert.deepStrictEqual([sg.EVAL_LEAVE_MAX_TIMES, sg.EVAL_LEAVE_MAX_DAYS, sg.EVAL_LATE_MAX_TIMES], ['3', '', '2']);
+  // มาสาย 2 ครั้ง + ลาป่วย 1 + ลากิจ 1 (ไปราชการไม่นับ)
+  sys.at('2026-11-02 08:40:00'); ok(sys.api(t.token, 'att.checkIn', INSIDE));
+  sys.at('2026-11-03 08:45:00'); ok(sys.api(t.token, 'att.checkIn', INSIDE));
+  sys.at('2026-11-03 09:00:00');
+  const lv = [['SICK', '2026-11-04', 'ไปพบแพทย์'], ['PERSONAL', '2026-11-05', 'ธุระที่บ้าน'], ['OFFICIAL', '2026-11-09', 'อบรมที่เขตพื้นที่']]
+    .map(([type, d, reason]) => ok(sys.api(t.token, 'leave.submit', { type, startDate: d, endDate: d, reason })).leave);
+  assert.strictEqual(ok(sys.api(t.token, 'me.dashboard', {})).evalWarn.items.map(x => x.key).join(), 'lateTimes'); // ใบลายังไม่อนุมัติ → ยังไม่นับ
+  lv.forEach(l => ok(sys.api(sys.admin, 'leave.review', { leaveId: l.leaveId, decision: 'APPROVE' })));
+  let w = ok(sys.api(t.token, 'me.dashboard', {})).evalWarn;
+  assert.deepStrictEqual(w.items.map(x => [x.key, x.value, x.max, x.level]), [['leaveTimes', 2, 3, 'near'], ['lateTimes', 2, 2, 'limit']]);
+  assert.deepStrictEqual([w.round, w.fiscalYear, w.label], [1, 2570, 'รอบที่ 1 ปีงบประมาณ 2570']);
+  assert.strictEqual(ok(sys.api(t2.token, 'me.dashboard', {})).evalWarn, null);
+  st = ok(sys.api(t.token, 'leave.myStats', {}));
+  assert.strictEqual(st.criteriaText, 'ลาป่วย + ลากิจไม่เกิน 3 ครั้ง · มาสายไม่เกิน 2 ครั้ง');
+  assert.deepStrictEqual(st.rounds[0].criteria.map(x => [x.key, x.value, x.level]), [['leaveTimes', 2, 'near'], ['lateTimes', 2, 'limit']]);
+  assert.deepStrictEqual(st.rounds[1].criteria.map(x => x.level), ['ok', 'ok']);
+  // มาสายครั้งที่ 3 → เกินเกณฑ์
+  sys.at('2026-11-06 08:50:00'); ok(sys.api(t.token, 'att.checkIn', INSIDE));
+  w = ok(sys.api(t.token, 'me.dashboard', {})).evalWarn;
+  assert.deepStrictEqual(w.items.map(x => [x.key, x.level]), [['leaveTimes', 'near'], ['lateTimes', 'over']]);
+  // บัญชีสรุปรายรอบ: คอลัมน์เกณฑ์ + จำนวนผู้เกินเกณฑ์; ทั้งปีงบประมาณไม่เทียบเกณฑ์
+  sys.at('2026-11-06 12:00:00');
+  const rep = ok(sys.api(sys.admin, 'report.leaveSummary', { fiscalYear: 2570, round: 1 }));
+  const tb = rep.tables[0];
+  assert.ok(tb.columns.some(c => c.key === 'evalNote') && / · เกณฑ์ต่อรอบ: ลาป่วย \+ ลากิจไม่เกิน 3 ครั้ง · มาสายไม่เกิน 2 ครั้ง$/.test(tb.title), tb.title);
+  assert.strictEqual(tb.rows.find(r => r.employeeId === t.id).evalNote, 'เกินเกณฑ์: มาสาย 3/2 ครั้ง');
+  assert.strictEqual(tb.rows.find(r => r.employeeId === t2.id).evalNote, '');
+  assert.strictEqual(rep.summary.find(x => x.label === 'เกินเกณฑ์การเลื่อนเงินเดือน').value, 1);
+  assert.ok(!ok(sys.api(sys.admin, 'report.leaveSummary', { fiscalYear: 2570, round: 0 })).tables[0].columns.some(c => c.key === 'evalNote'));
+  // Export Excel มีคอลัมน์เกณฑ์ด้วย
+  const ex = ok(sys.api(sys.admin, 'report.export', { reportType: 'leaveSummary', params: { fiscalYear: 2570, round: 1 }, format: 'xlsx' }));
+  assert.strictEqual(ex.fileName, 'WatSaoHin_Attendance_LeaveSummary_FY2570_R1.xlsx');
+  const xl = Buffer.from(ex.base64, 'base64').toString('utf8');
+  assert.ok(xl.includes('เกณฑ์การเลื่อนเงินเดือน') && xl.includes('เกินเกณฑ์: มาสาย 3/2 ครั้ง'));
+  // เว้นว่างทั้งหมด → ปิดเกณฑ์
+  ok(sys.api(sys.admin, 'settings.save', { values: { EVAL_LEAVE_MAX_TIMES: '', EVAL_LATE_MAX_TIMES: '' } }));
+  assert.strictEqual(ok(sys.api(t.token, 'me.dashboard', {})).evalWarn, null);
+  st = ok(sys.api(t.token, 'leave.myStats', {}));
+  assert.deepStrictEqual([st.criteriaText, st.rounds[0].criteria], ['', []]);
+  assert.ok(!ok(sys.api(sys.admin, 'report.leaveSummary', { fiscalYear: 2570, round: 1 })).tables[0].columns.some(c => c.key === 'evalNote'));
+});
+
 test('L01', 'รหัสผ่านผิด/ไม่มีผู้ใช้ ได้ข้อความเดียวกัน (ไม่เปิดเผยว่ามีบัญชีหรือไม่)', () => {
   const sys = newSystem();
   const a = expectErr(sys.login('admin.saohin', 'WrongPass123'), 'INVALID_LOGIN');

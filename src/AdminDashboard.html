@@ -357,6 +357,16 @@
           <div class="field" data-field="SCHOOL_AFFILIATION"><label for="sAffil">สังกัด</label><input type="text" id="sAffil" name="SCHOOL_AFFILIATION" maxlength="100" placeholder="เช่น สำนักงานเขตพื้นที่การศึกษาประถมศึกษาเชียงใหม่ เขต ..."><span class="hint">ต่อท้ายชื่อโรงเรียนในช่อง “สังกัด” ของใบลา</span><span class="err"></span></div>
         </div>
         <div class="set-group">
+          <h3><span class="ms">military_tech</span>เกณฑ์การเลื่อนเงินเดือน (ต่อรอบการประเมิน)</h3>
+          <p class="small muted" style="margin:-4px 0 10px">ครูเห็นแถบเทียบเกณฑ์ในสถิติการลาของตนเอง และหน้าแรกจะเตือนเมื่อใกล้ถึง/เกินเกณฑ์ · บัญชีสรุปวันลา มาสาย และขาดงาน (รายรอบ) แสดงผู้ที่เกินเกณฑ์ · <b>เว้นว่าง = ไม่ใช้เกณฑ์นั้น</b></p>
+          <div class="form-grid two">
+            <div class="field" data-field="EVAL_LEAVE_MAX_TIMES"><label for="sEvLeaveT">ลาป่วย + ลากิจ ไม่เกิน (ครั้ง)</label><input type="number" id="sEvLeaveT" name="EVAL_LEAVE_MAX_TIMES" min="1" max="99" placeholder="ไม่ใช้"><span class="hint">ตามที่โรงเรียน/เขตพื้นที่กำหนด</span><span class="err"></span></div>
+            <div class="field" data-field="EVAL_LEAVE_MAX_DAYS"><label for="sEvLeaveD">ลาป่วย + ลากิจ ไม่เกิน (วัน)</label><input type="number" id="sEvLeaveD" name="EVAL_LEAVE_MAX_DAYS" min="1" max="99" placeholder="ไม่ใช้"><span class="hint">ค่าเริ่มต้น 23 วันต่อรอบ</span><span class="err"></span></div>
+            <div class="field" data-field="EVAL_LATE_MAX_TIMES"><label for="sEvLate">มาสาย ไม่เกิน (ครั้ง)</label><input type="number" id="sEvLate" name="EVAL_LATE_MAX_TIMES" min="1" max="99" placeholder="ไม่ใช้"><span class="hint">ตามที่โรงเรียน/เขตพื้นที่กำหนด</span><span class="err"></span></div>
+          </div>
+          <p class="tiny muted" style="margin:0">นับเฉพาะลาป่วยและลากิจที่อนุมัติแล้ว (ไม่นับลาคลอดบุตร ไปราชการ และลาประเภทอื่น) · ใช้เพื่อเตือนล่วงหน้า การพิจารณาจริงเป็นไปตามหลักเกณฑ์และการตรวจสอบของงานบุคคล</p>
+        </div>
+        <div class="set-group">
           <h3><span class="ms">database</span>ข้อมูลและความเป็นส่วนตัว</h3>
           <div class="form-grid two">
             <div class="field" data-field="GPS_RETENTION_DAYS"><label for="sRetention">ระยะเวลาเก็บพิกัด GPS (วัน)</label><input type="number" id="sRetention" name="GPS_RETENTION_DAYS" min="30" max="3650"><span class="hint">พ้นกำหนดระบบจะลบพิกัดอัตโนมัติทุกคืน</span><span class="err"></span></div>

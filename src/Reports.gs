@@ -549,7 +549,8 @@ function reportLeaveSummary_(ctx, p) {
   var res = computeAttendance_({ employees: emps, from: r.from, to: r.to });
   var byEmp = {};
   readAll_('LeaveRequests').forEach(function (l) { (byEmp[l.EmployeeID] = byEmp[l.EmployeeID] || []).push(l); });
-  var tot = { sickT: 0, sickD: 0, persT: 0, persD: 0, late: 0, absent: 0, perfect: 0 };
+  var tot = { sickT: 0, sickD: 0, persT: 0, persD: 0, late: 0, absent: 0, perfect: 0, evalOver: 0, evalNear: 0 };
+  var crit = round ? evalCriteria_() : { any: false }; // เกณฑ์การเลื่อนเงินเดือนใช้ต่อรอบการประเมิน
   var rows = res.people.map(function (pp, i) {
     var lt = leaveTotals_(byEmp[pp.emp.employeeId] || [], r.from, r.to);
     var late = 0, absent = 0;
@@ -558,7 +559,10 @@ function reportLeaveSummary_(ctx, p) {
     tot.sickT += lt.SICK.times; tot.sickD += lt.SICK.days; tot.persT += lt.PERSONAL.times; tot.persD += lt.PERSONAL.days;
     tot.late += late; tot.absent += absent;
     if (!leaveCount && !late && !absent && pp.totals.workdays > 0) tot.perfect++;
+    var evalNote = crit.any ? evalNote_(evalCheckTotals_(crit, lt, late)) : '';
+    if (/^เกิน/.test(evalNote)) tot.evalOver++; else if (evalNote) tot.evalNear++;
     return {
+      evalNote: evalNote,
       no: i + 1, staffCode: pp.emp.staffCode, fullName: pp.emp.fullName, position: pp.emp.position,
       sickT: lt.SICK.times, sickD: lt.SICK.days, persT: lt.PERSONAL.times, persD: lt.PERSONAL.days,
       spT: lt.SICK.times + lt.PERSONAL.times, spD: round_(lt.SICK.days + lt.PERSONAL.days, 1),
@@ -596,6 +600,13 @@ function reportLeaveSummary_(ctx, p) {
     { label: 'ขาดงานรวม', value: tot.absent, unit: 'วัน', tone: 'danger' },
     { label: 'ไม่ลา ไม่สาย ไม่ขาด', value: tot.perfect, unit: 'คน', tone: 'success' }
   ];
+  if (crit.any) {
+    var tb = rep.tables[rep.tables.length - 1];
+    tb.columns.push({ key: 'evalNote', label: 'เกณฑ์การเลื่อนเงินเดือน', width: 150 });
+    tb.title += ' · เกณฑ์ต่อรอบ: ' + evalCriteriaText_(crit);
+    rep.summary.push({ label: 'เกินเกณฑ์การเลื่อนเงินเดือน', value: tot.evalOver, unit: 'คน', tone: 'danger' },
+      { label: 'ใกล้/ครบเกณฑ์', value: tot.evalNear, unit: 'คน', tone: 'warning' });
+  }
   if (r.from > res.today) rep.notice = 'รอบนี้ยังไม่เริ่ม';
   else if (r.to > res.today) rep.notice = 'ข้อมูลถึงวันที่ ' + thaiDate_(res.today) + ' (รอบยังไม่สิ้นสุด)';
   rep.params = { fiscalYear: fy, round: round };

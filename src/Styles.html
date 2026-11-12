@@ -494,6 +494,24 @@ table.table { width: 100%; border-collapse: collapse; font-size: .9rem; }
 .dec-item.warn > .ms { color: #D97706; }
 .dec-item .dec-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.45; }
 
+/* ---------- เกณฑ์การเลื่อนเงินเดือน ---------- */
+.eval-card { border: 1.5px solid #F5C451; background: #FFFBEB; display: flex; flex-direction: column; gap: 6px; }
+.eval-card.over { border-color: #F2A7A7; background: #FFF6F6; }
+.eval-card #evGoBtn { align-self: flex-start; margin-top: 4px; }
+.ev-item { display: flex; gap: 8px; align-items: flex-start; line-height: 1.45; padding: 2px 0; }
+.ev-item > .ms { margin-top: 1px; color: #D97706; }
+.ev-item.over > .ms { color: var(--danger-500); }
+.crit-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; padding: 12px 14px; border-radius: 14px; background: var(--sky-50); border: 1px solid var(--sky-100); }
+.crit-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; align-items: center; }
+.crit-row .crit-val { font-weight: 700; white-space: nowrap; }
+.crit-row.over .crit-val { color: var(--danger-500); }
+.crit-row .crit-bar { grid-column: 1 / -1; display: block; height: 8px; border-radius: 99px; background: #E2E8F0; overflow: hidden; }
+.crit-row .crit-bar > i { display: block; height: 100%; border-radius: 99px; background: var(--success-500); }
+.crit-row.near .crit-bar > i, .crit-row.limit .crit-bar > i { background: #F59E0B; }
+.crit-row.over .crit-bar > i { background: var(--danger-500); }
+.ev-note { font-weight: 700; color: #B45309; }
+.ev-note.over { color: var(--danger-500); }
+
 /* ---------- ประกาศถึงบุคลากร ---------- */
 .announce-card { display: flex; align-items: flex-start; gap: 12px; padding: 12px 8px 12px 16px; border-radius: 18px; background: #EEF6FF; border: 1.5px solid var(--sky-200); color: var(--navy-900); }
 .announce-card > .ms { font-size: 28px; color: var(--sky-500); margin-top: 2px; }

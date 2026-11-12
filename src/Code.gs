@@ -27,7 +27,7 @@ var APP = {
   SCHOOL_FULL: 'โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่',
   NAME_EN: 'Wat Sao Hin School Attendance System',
   SLOGAN: 'ระบบลงเวลาอัจฉริยะ สะดวก โปร่งใส ตรวจสอบได้',
-  VERSION: '1.13.0',
+  VERSION: '1.14.0',
   TZ: 'Asia/Bangkok'
 };
 
@@ -383,6 +383,8 @@ function fiscalRange_(fy, round) {
   r.shortLabel = round === 0 ? 'ทั้งปี' : (round === 1 ? 'ต.ค. – มี.ค.' : 'เม.ย. – ก.ย.');
   return r;
 }
+/** รอบการประเมินของวันที่: 1 = 1 ต.ค. – 31 มี.ค., 2 = 1 เม.ย. – 30 ก.ย. */
+function roundOf_(ymd) { var m = parseYmd_(ymd).m; return m >= 4 && m <= 9 ? 2 : 1; }
 function pad2_(n) { return (n < 10 ? '0' : '') + n; }
 
 /** รายการวันที่จาก a ถึง b (รวมปลายทั้งสองด้าน) */
