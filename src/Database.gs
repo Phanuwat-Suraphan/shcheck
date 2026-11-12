@@ -751,6 +751,7 @@ function setupCore_() {
     }
     SpreadsheetApp.flush();
     props.setProperty('INSTALLED_VERSION', APP.VERSION);
+    if (!props.getProperty('INSTALLED_AT')) props.setProperty('INSTALLED_AT', nowStamp_());
     log.push('ติดตั้งระบบเสร็จสมบูรณ์ ✔ (เวอร์ชัน ' + APP.VERSION + ')');
   } finally {
     lock.releaseLock();
@@ -946,7 +947,63 @@ function DailyMaintenance(e) {
   var cache = CacheService.getScriptCache();
   if (cache.get('maint_lock')) return 'เพิ่งรันไปแล้ว';
   cache.put('maint_lock', '1', 3600);
-  return runMaintenance_(null);
+  try {
+    return runMaintenance_(null);
+  } catch (err) {
+    // บันทึกไว้ให้ผู้ดูแลเห็นในหน้า "สถานะระบบ" (Google จะส่งอีเมลแจ้ง Trigger ล้มเหลวถึงเจ้าของด้วย)
+    try { PropertiesService.getScriptProperties().setProperty('MAINT_ERROR', nowStamp_() + ' ' + String(err && err.message || err).substr(0, 300)); } catch (e2) { /* ignore */ }
+    throw err;
+  }
+}
+
+/** ติดตั้ง Trigger งานกลางคืนใหม่จากหน้าตั้งค่า (เว็บแอปทำงานในนามเจ้าของบัญชี จึงติดตั้งให้เจ้าของได้) */
+function installTriggerNow_(ctx) {
+  var log = ensureTriggers_();
+  PropertiesService.getScriptProperties().setProperty('TRIGGER_INSTALLED_AT', nowStamp_());
+  MEMO_.props = null;
+  writeAudit_(ctx, 'TRIGGER_INSTALL', 'SYSTEM', 'DailyMaintenance', { log: log });
+  return { status: systemStatus_(), message: 'ติดตั้งงานอัตโนมัติตอนกลางคืนแล้ว (ทุกวัน 02:00 น.)' };
+}
+
+/**
+ * งานกลางคืนไม่ได้ทำงานตามปกติ: ไม่มีการทำงานภายใน 2.5 วัน นับจากเหตุการณ์ล่าสุด
+ * (ทำงานครั้งล่าสุด / ติดตั้งระบบ / ผู้ดูแลกดติดตั้งงานอัตโนมัติใหม่) — คือพลาดอย่างน้อย 2 คืนติดกัน
+ */
+function maintenanceStale_() {
+  var p = scriptProps_();
+  var ref = Math.max(stampToMs_(p.MAINT_LAST) || 0, stampToMs_(p.TRIGGER_INSTALLED_AT) || 0, stampToMs_(p.INSTALLED_AT) || 0);
+  return !!ref && nowMs_() - ref > 2.5 * 86400000;
+}
+
+/**
+ * สถานะระบบสำหรับผู้ดูแล: งานกลางคืน, สำรองข้อมูล, พื้นที่ Drive, ขนาดฐานข้อมูล (เทียบขีดจำกัด 10 ล้านเซลล์ของ Google Sheets),
+ * ความครบถ้วนของปฏิทินวันหยุดปีนี้/ปีหน้า
+ */
+function systemStatus_() {
+  var p = scriptProps_();
+  var installed = null;
+  try { installed = ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'DailyMaintenance'; }); } catch (e) { installed = null; }
+  var cells = 0, tables = [];
+  getSpreadsheet_().getSheets().forEach(function (sh) {
+    cells += sh.getMaxRows() * sh.getMaxColumns();
+    if (SCHEMA_[sh.getName()]) tables.push({ name: sh.getName(), rows: Math.max(0, sh.getLastRow() - 1) });
+  });
+  var y = +todayStr_().substr(0, 4), cal = readAll_('WorkCalendar');
+  return {
+    version: APP.VERSION,
+    installedAt: p.INSTALLED_AT ? thaiStamp_(p.INSTALLED_AT) : '',
+    nightly: {
+      installed: installed, last: p.MAINT_LAST || '', lastLabel: p.MAINT_LAST ? thaiStamp_(p.MAINT_LAST) : '',
+      result: p.MAINT_RESULT || '', error: p.MAINT_ERROR || '', stale: maintenanceStale_()
+    },
+    backup: backupInfo_(),
+    storage: driveStorageInfo_(),
+    database: { cells: cells, limit: 10000000, percent: round_(cells / 100000, 1), tables: tables },
+    holidays: [y, y + 1].map(function (yy) {
+      var builtIn = !!THAI_HOLIDAY_DATA_[yy];
+      return { year: yy + 543, builtIn: builtIn, ok: builtIn || calendarHasBuddhistHolidays_(cal, yy) };
+    })
+  };
 }
 
 function runMaintenanceNow_(ctx) {
@@ -1040,6 +1097,11 @@ function runMaintenance_(ctx) {
     (holidaysAdded ? ', เพิ่มวันหยุดราชการไทย ' + holidaysAdded + ' วัน' : '') +
     (backup ? (backup.error ? ', สำรองข้อมูลไม่สำเร็จ: ' + backup.error : ', สำรองข้อมูลอัตโนมัติแล้ว') : '');
   if (purged || holidaysAdded || backup || ctx) writeAudit_(ctx, 'MAINTENANCE', 'SYSTEM', '', { gpsPurged: purged, cutoff: cutoff, tempFilesRemoved: cleaned, holidaysAdded: holidaysAdded, backup: backup });
+  try {
+    PropertiesService.getScriptProperties().setProperties({ MAINT_LAST: nowStamp_(), MAINT_RESULT: msg.substr(0, 500) });
+    PropertiesService.getScriptProperties().deleteProperty('MAINT_ERROR');
+    MEMO_.props = null;
+  } catch (ep) { console.error('maint status: ' + ep); }
   return msg;
 }
 

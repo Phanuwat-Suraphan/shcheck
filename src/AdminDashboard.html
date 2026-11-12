@@ -43,6 +43,13 @@
   tr.row-error td { background: var(--danger-bg) !important; }
   .mono { font-family: 'Courier New', monospace; font-weight: 700; letter-spacing: .5px; }
   .tasks-card { border: 1.5px solid var(--sky-200); margin-bottom: 14px; }
+  .status-row { display: flex; align-items: flex-start; gap: 10px; padding: 9px 0; border-top: 1px solid var(--border); }
+  .status-row:first-child { border-top: 0; }
+  .status-row > .ms { margin-top: 1px; }
+  .status-row.ok > .ms { color: var(--success-500); }
+  .status-row.warn > .ms { color: #D97706; }
+  .status-row.bad > .ms { color: var(--danger-500); }
+  .status-row .st-main { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.45; }
   .pick-list { max-height: 260px; overflow-y: auto; border: 1px solid var(--border); border-radius: 12px; background: #fff; }
   .pick-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--border); cursor: pointer; }
   .pick-item:last-child { border-bottom: 0; }
@@ -289,6 +296,11 @@
     <!-- ================= ตั้งค่า ================= -->
     <section data-panel-sec="settings" hidden>
       <div class="page-head"><h2><span class="ms">settings</span>ตั้งค่าระบบ</h2><span class="badge muted" id="setServerTime">-</span></div>
+      <div class="card" id="sysStatusCard" style="margin-bottom:16px">
+        <div class="row-between"><div class="card-title mb-0"><span class="ms">monitor_heart</span>สถานะระบบ</div>
+          <button type="button" class="btn ghost sm" id="sysStatusRefresh"><span class="ms">refresh</span>ตรวจอีกครั้ง</button></div>
+        <div id="sysStatus" style="margin-top:8px"><span class="small muted">กำลังตรวจสอบ...</span></div>
+      </div>
       <form id="setForm" class="card" novalidate>
         <div class="set-group">
           <h3><span class="ms">location_on</span>พื้นที่ลงเวลา (Geofencing)</h3>

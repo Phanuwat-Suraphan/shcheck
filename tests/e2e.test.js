@@ -42,8 +42,9 @@ async function newPage(o = {}) {
   await ctx.addInitScript(() => { window.print = () => { window.__printed = (window.__printed || 0) + 1; }; });
   // หน้าต้อนรับครั้งแรกแสดงครั้งเดียวต่อเครื่อง — ปิดไว้ในการทดสอบอื่น (ทดสอบแยกด้วย o.welcome)
   await ctx.addInitScript((skip) => { if (skip) { try { localStorage.setItem('wsh_welcome_v1', '1'); } catch (e) { /* ignore */ } } }, !o.welcome);
+  if (o.init) await ctx.addInitScript(o.init);
   const page = await ctx.newPage();
-  page.setDefaultTimeout(+(process.env.PW_TIMEOUT || 10000));
+  page.setDefaultTimeout(+(process.env.PW_TIMEOUT || 15000)); // เครื่องทดสอบช้าเป็นบางช่วง → เผื่อเวลา
   page.on('pageerror', e => pageErrors.push(e.message));
   page.on('dialog', d => d.dismiss());
   await page.goto(o.base || base);
@@ -54,6 +55,21 @@ async function login(page, u, p) {
   await page.fill('#loginUsername', u);
   await page.fill('#loginPassword', p);
   await page.click('#loginBtn');
+}
+/** เข้าสู่ระบบแล้วรอหน้าหลัก — ถ้าไม่สำเร็จ แจ้งสาเหตุ (ข้อความแจ้งเตือน/หน้าที่ค้างอยู่) แทนการรอจนหมดเวลาเฉย ๆ */
+async function loginOk(page, u, p) {
+  await login(page, u, p);
+  try {
+    await page.waitForSelector('#view-app:not([hidden]), #loginAlert:not([hidden])', { timeout: 15000 });
+  } catch (e) {
+    const views = await page.evaluate(() => Array.from(document.querySelectorAll('.view')).filter(v => !v.hidden).map(v => v.id).join(','));
+    throw new Error('login ' + u + ' ไม่ไปถึงหน้าหลักใน 15 วินาที (หน้าที่แสดง: ' + views + ', loading=' + await page.isVisible('#loadingOverlay') + ')');
+  }
+  if (await page.isVisible('#loginAlert')) {
+    const st = await page.evaluate(() => ({ u: document.querySelector('#loginUsername').value, pLen: document.querySelector('#loginPassword').value.length, focus: document.activeElement && document.activeElement.id }));
+    throw new Error('login ' + u + ' ไม่สำเร็จ: ' + (await page.textContent('#loginAlertText')) + ' [ช่องกรอกตอนนี้: ' + JSON.stringify(st) + ']');
+  }
+  await page.waitForSelector('#view-app:not([hidden])');
 }
 async function modalAction(page, label) {
   await page.locator('.modal-actions .btn', { hasText: label }).last().click();
@@ -173,8 +189,7 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
   });
 
   await step('E06', 'Admin เปิดหน้าผู้ดูแล (โหลดหลังตรวจสิทธิ์) → อนุมัติสมาชิกพร้อมเลือกประเภทผู้ใช้', async () => {
-    await login(admin, DEFAULTS.adminUser, ADMIN_NEW_PW);
-    await admin.waitForSelector('#view-app:not([hidden])');
+    await loginOk(admin, DEFAULTS.adminUser, ADMIN_NEW_PW);
     await admin.click('#toAdminBtn');
     await admin.waitForSelector('#view-admin:not([hidden]) #ovStats .stat-card');
     assert.strictEqual(await admin.locator('#ovStats .stat-card').count(), 8);
@@ -187,8 +202,7 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
   });
 
   await step('E07', 'ครูลงเวลาเข้างานด้วย GPS ในรัศมี → สำเร็จ แสดงเวลา Server/สถานะ/ระยะทาง/ลิงก์แผนที่', async () => {
-    await login(teacher, 'somsri.j', 'Somsri2026ok');
-    await teacher.waitForSelector('#view-app:not([hidden])');
+    await loginOk(teacher, 'somsri.j', 'Somsri2026ok');
     await teacher.waitForFunction(() => document.querySelector('#clockTime').textContent !== '--:--:--');
     assert.ok(/วันจันทร์ที่ 9 พฤศจิกายน พ.ศ. 2569/.test(await teacher.textContent('#clockDate')));
     assert.ok(/อนุญาต/.test(await teacher.textContent('#gpsStatusText')));
@@ -440,8 +454,7 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
 
   await step('E23', 'ภาพหน้าจอปฏิทินวันหยุด (เดสก์ท็อป)', async () => {
     const desk = await newPage({ desktop: true });
-    await login(desk, DEFAULTS.adminUser, ADMIN_NEW_PW);
-    await desk.waitForSelector('#view-app:not([hidden])');
+    await loginOk(desk, DEFAULTS.adminUser, ADMIN_NEW_PW);
     await desk.click('#toAdminBtn');
     await desk.waitForSelector('#ovStats .stat-card');
     await desk.click('#adminNav [data-sec="calendar"]');
@@ -451,8 +464,7 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
 
   await step('E19', 'ภาพหน้าจอ Dashboard ผู้ดูแลระบบ (เดสก์ท็อป) และรายงานรายเดือน', async () => {
     const desk = await newPage({ desktop: true });
-    await login(desk, DEFAULTS.adminUser, ADMIN_NEW_PW);
-    await desk.waitForSelector('#view-app:not([hidden])');
+    await loginOk(desk, DEFAULTS.adminUser, ADMIN_NEW_PW);
     await shot(desk, '06-home-desktop.png');
     await desk.click('#toAdminBtn');
     await desk.waitForSelector('#ovStats .stat-card');
@@ -545,8 +557,7 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
   await step('E25', 'จำการเข้าสู่ระบบบนโทรศัพท์: เปิดแอปครั้งต่อไปเข้าได้ทันที, เซสชันหมดอายุก็เข้าใหม่ให้เอง, กดออกจากระบบแล้วเลิกจำ', async () => {
     easy = await newPage();
     assert.ok(await easy.isChecked('#rememberMe'), 'โทรศัพท์: เลือก "จำการเข้าสู่ระบบ" ไว้ให้');
-    await login(easy, 'somsri.j', 'SomsriNew2026');
-    await easy.waitForSelector('#view-app:not([hidden])');
+    await loginOk(easy, 'somsri.j', 'SomsriNew2026');
     assert.ok(await easy.evaluate(() => /^[a-f0-9]{16}\.[a-f0-9]{64}$/.test(localStorage.getItem('wsh_device') || '')));
     // ปิดแอปแล้วเปิดใหม่ (sessionStorage หาย) → เข้าใช้งานได้เลย ไม่ต้องใส่รหัสผ่าน
     await easy.evaluate(() => sessionStorage.clear());
@@ -627,8 +638,7 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
   await step('E28', 'ผู้บริหาร: บัญชีสรุปวันลา/มาสาย/ขาดงาน รายรอบการประเมิน (Export ได้) + ตั้งชื่อผู้อำนวยการ; คอมพิวเตอร์ไม่จำการเข้าสู่ระบบโดยอัตโนมัติ', async () => {
     const d = await newPage({ desktop: true });
     assert.ok(!(await d.isChecked('#rememberMe')), 'คอมพิวเตอร์: ไม่เลือกจำการเข้าสู่ระบบไว้ก่อน');
-    await login(d, DEFAULTS.adminUser, ADMIN_NEW_PW);
-    await d.waitForSelector('#view-app:not([hidden])');
+    await loginOk(d, DEFAULTS.adminUser, ADMIN_NEW_PW);
     assert.strictEqual(await d.evaluate(() => localStorage.getItem('wsh_device')), null);
     await d.click('#toAdminBtn');
     await d.waitForSelector('#view-admin:not([hidden])');
@@ -660,8 +670,7 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
   await step('E29', 'แชร์ระบบ: QR Code เข้าใช้งาน (ถอดรหัสได้ลิงก์ระบบ), ข้อความสำหรับกลุ่ม LINE, พิมพ์ประกาศ QR ขนาด A4 หน้าเดียว', async () => {
     await setClock('2026-11-17 07:00:00');
     adm = await newPage({ desktop: true });
-    await login(adm, DEFAULTS.adminUser, ADMIN_NEW_PW);
-    await adm.waitForSelector('#view-app:not([hidden])');
+    await loginOk(adm, DEFAULTS.adminUser, ADMIN_NEW_PW);
     await adm.click('#toAdminBtn');
     await adm.waitForSelector('#view-admin:not([hidden])');
     await adm.click('#adminNav [data-sec="share"]');
@@ -767,8 +776,7 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
   await step('E32', 'ครูลืมลงเวลาเข้าตอนเช้า: กดลงเวลาหลังเวลาสาย → ถาม "ลืมกด?" → แจ้งเวลาที่มาถึงจริง → ตอนเย็นลงเวลาออกได้ตามปกติ', async () => {
     await setClock('2026-11-20 10:15:00');
     const tp = await newPage();
-    await login(tp, slips[0][1], 'Malee2026new');
-    await tp.waitForSelector('#view-app:not([hidden])');
+    await loginOk(tp, slips[0][1], 'Malee2026new');
     await tp.waitForFunction(() => document.querySelector('#clockTime').textContent !== '--:--:--');
     assert.ok(await tp.isDisabled('#checkOutBtn'));
     await tp.click('#checkInBtn');
@@ -796,8 +804,7 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
   await step('E33', 'ผู้บริหาร: ครูโทรแจ้งว่าลืมลงเวลา → กด "บันทึกเวลาแทน" จากตารางวันนี้ (เลือกคน/วัน/ประเภทให้แล้ว) → มีผลทันที', async () => {
     await setClock('2026-11-20 16:50:00');
     const d = await newPage({ desktop: true });
-    await login(d, DEFAULTS.adminUser, ADMIN_NEW_PW);
-    await d.waitForSelector('#view-app:not([hidden])');
+    await loginOk(d, DEFAULTS.adminUser, ADMIN_NEW_PW);
     await d.click('#toAdminBtn');
     await d.waitForSelector('#ovTable table');
     const row = d.locator('#ovTable tr', { hasText: 'นายสมปอง รักดี' });
@@ -821,8 +828,7 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
   await step('E34', 'ผู้บริหารเปิดแอป: หน้าแรกแจ้ง "งานรออนุมัติ" → แตะ "ไปอนุมัติ" เข้าหน้าใบลาทันที → "อนุมัติทั้งหมด" ในครั้งเดียว', async () => {
     await setClock('2026-11-23 07:20:00');
     const tp = await newPage();
-    await login(tp, 'somsri.j', 'SomsriNew2026');
-    await tp.waitForSelector('#view-app:not([hidden])');
+    await loginOk(tp, 'somsri.j', 'SomsriNew2026');
     for (const d of ['2026-11-25', '2026-11-26']) {
       await tp.click('#userTabs [data-tab="leave"]');
       await tp.click('#lvQuickDay [data-val="custom"]');
@@ -854,8 +860,7 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
   await step('E35', 'พิมพ์บัญชีลงเวลาปฏิบัติราชการประจำวัน (แบบสมุดลงเวลา + เส้นแดง + ช่องลงนาม ผอ.), ปุ่มลัดวันปิดภาคเรียน, เข้าสู่ระบบด้วยรหัสครู', async () => {
     await setClock('2026-11-20 17:00:00');
     const d = await newPage({ desktop: true });
-    await login(d, DEFAULTS.adminUser, ADMIN_NEW_PW);
-    await d.waitForSelector('#view-app:not([hidden])');
+    await loginOk(d, DEFAULTS.adminUser, ADMIN_NEW_PW);
     await d.click('#toAdminBtn');
     await d.waitForSelector('#view-admin:not([hidden])');
     await d.click('#adminNav [data-sec="reports"]');
@@ -885,16 +890,14 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
     const code = app.env.SpreadsheetApp.openById(app.env.state.props.SPREADSHEET_ID).getSheetByName('Employees')._records().find(x => x.Username === 'somsri.j').StaffCode;
     const p = await newPage();
     assert.ok(/รหัสครู/.test(await p.textContent('label[for="loginUsername"]')));
-    await login(p, code, 'SomsriNew2026');
-    await p.waitForSelector('#view-app:not([hidden])');
+    await loginOk(p, code, 'SomsriNew2026');
     assert.strictEqual(await p.textContent('#homeName'), 'นางสาวสมศรี ใจดี');
   });
 
   await step('E36', 'ประกาศถึงบุคลากร: ผอ. เขียนประกาศจากหน้าภาพรวม → ครูเห็นบนหน้าแรก (ข้อความอันตรายแสดงเป็นตัวอักษร) → ซ่อนได้; สำรองข้อมูลจากหน้าตั้งค่า', async () => {
     await setClock('2026-11-24 07:10:00');
     const d = await newPage({ desktop: true });
-    await login(d, DEFAULTS.adminUser, ADMIN_NEW_PW);
-    await d.waitForSelector('#view-app:not([hidden])');
+    await loginOk(d, DEFAULTS.adminUser, ADMIN_NEW_PW);
     await d.click('#toAdminBtn');
     await d.waitForSelector('#ovAnnounce');
     await d.click('#anWriteBtn');
@@ -965,8 +968,7 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
   await step('E38', 'ผู้บริหาร: บันทึกไปราชการ/อบรมให้หลายคนในครั้งเดียว (ค้นหา + ติ๊กเลือก)', async () => {
     await setClock('2026-11-24 16:50:00');
     const d = await newPage({ desktop: true });
-    await login(d, DEFAULTS.adminUser, ADMIN_NEW_PW);
-    await d.waitForSelector('#view-app:not([hidden])');
+    await loginOk(d, DEFAULTS.adminUser, ADMIN_NEW_PW);
     await d.click('#toAdminBtn');
     await d.waitForSelector('#view-admin:not([hidden])');
     await d.click('#adminNav [data-sec="leaves"]');
@@ -988,6 +990,91 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
     await d.click('#lvStatusSeg [data-val="APPROVED"]');
     await d.locator('#lvList .req-card', { hasText: 'นายสมปอง รักดี' }).filter({ hasText: 'ไปราชการ' }).waitFor();
     await d.locator('#lvList .req-card', { hasText: 'นางสาวมาลี ศรีสุข' }).filter({ hasText: 'ไปราชการ' }).waitFor();
+  });
+
+  await step('E39', 'สถานะระบบในหน้าตั้งค่า: งานกลางคืน/สำรองข้อมูล/พื้นที่/ขนาดฐานข้อมูล/ปฏิทิน; ถ้างานกลางคืนหาย กดติดตั้งใหม่ได้จากหน้าเว็บ', async () => {
+    const d = await newPage({ desktop: true });
+    await loginOk(d, DEFAULTS.adminUser, ADMIN_NEW_PW);
+    await d.click('#toAdminBtn');
+    await d.waitForSelector('#view-admin:not([hidden])');
+    await d.click('#adminNav [data-sec="settings"]');
+    await d.waitForSelector('#sysStatus .status-row');
+    const txt = await d.textContent('#sysStatus');
+    ['งานอัตโนมัติตอนกลางคืน', 'สำรองฐานข้อมูล', 'พื้นที่ Google Drive', 'ขนาดฐานข้อมูล', 'ปฏิทินวันหยุดปี พ.ศ. 2569', 'เวอร์ชันระบบ'].forEach(x => assert.ok(txt.includes(x), x));
+    app.env.state.triggers.length = 0;   // จำลอง Trigger หาย
+    await d.click('#sysStatusRefresh');
+    // รอผลตรวจรอบใหม่ (ก่อนหน้านี้อาจมีปุ่มติดตั้งอยู่แล้วจากคำเตือน "ไม่ได้ทำงานมาหลายวัน")
+    await d.waitForFunction(() => /ยังไม่ได้ติดตั้ง/.test(document.querySelector('#sysStatus').textContent));
+    assert.ok(await d.$('#sysInstallBtn'));
+    await d.locator('#sysStatusCard').scrollIntoViewIfNeeded();
+    await shot(d, '32-system-status-desktop.png');
+    await d.click('#sysInstallBtn');
+    await toast(d, /ติดตั้งงานอัตโนมัติ/);
+    await d.waitForSelector('#sysInstallBtn', { state: 'detached' });
+    assert.strictEqual(app.env.state.triggers.filter(x => x.fn === 'DailyMaintenance').length, 1);
+  });
+
+  await step('E40', 'ครูเห็น "ผลการพิจารณา" บนหน้าแรก: ผอ. ไม่อนุมัติใบลาพร้อมเหตุผล → ครูเปิดแอปเห็นผลและเหตุผลทันที → กด "รับทราบ" แล้วไม่แสดงซ้ำ', async () => {
+    await setClock('2026-11-25 07:05:00');
+    const tp = await newPage();
+    await loginOk(tp, 'somsri.j', 'SomsriNew2026');
+    await tp.click('#userTabs [data-tab="leave"]');
+    await tp.click('#lvQuickDay [data-val="custom"]');
+    await tp.fill('#leaveStart', '2026-12-03'); await tp.dispatchEvent('#leaveStart', 'change');
+    await tp.click('#leaveTypeGrid [data-type="PERSONAL"]');
+    await modalAction(tp, 'ยืนยันการลา');
+    await toast(tp, /ส่งใบลา/);
+    const boss = await newPage({ desktop: true });
+    await loginOk(boss, DEFAULTS.adminUser, ADMIN_NEW_PW);
+    await boss.click('#toAdminBtn');
+    await boss.waitForSelector('#view-admin:not([hidden])');
+    await boss.click('#adminNav [data-sec="leaves"]');
+    await boss.locator('#lvList .req-card', { hasText: 'นางสาวสมศรี ใจดี' }).locator('[data-lv="REJECT"]').click();
+    await boss.waitForSelector('#promptInput');
+    await boss.fill('#promptInput', 'ตรงกับวันประเมินโรงเรียน ขอให้เลื่อนไปสัปดาห์ถัดไป');
+    await modalAction(boss, 'ไม่อนุมัติ');
+    await toast(boss, /ไม่อนุมัติใบลาแล้ว/);
+    // ครูเปิดแอป → เห็นผลการพิจารณาพร้อมเหตุผล
+    await tp.reload();
+    await tp.waitForSelector('#decisionsCard:not([hidden])');
+    const txt = await tp.textContent('#decList');
+    assert.ok(/ลากิจ 3 ธ\.ค\. 69/.test(txt) && /ไม่อนุมัติ/.test(txt) && /ตรงกับวันประเมินโรงเรียน/.test(txt), txt);
+    await tp.locator('#decisionsCard').scrollIntoViewIfNeeded();
+    await shot(tp, '33-decisions-mobile.png');
+    await tp.click('#decAckBtn');
+    await tp.waitForSelector('#decisionsCard', { state: 'hidden' });
+    await tp.reload();
+    await tp.waitForSelector('#view-app:not([hidden])');
+    await tp.waitForFunction(() => document.querySelector('#homeName').textContent.length > 1);
+    assert.ok(await tp.isHidden('#decisionsCard'), 'รับทราบแล้วไม่แสดงซ้ำบนเครื่องนี้');
+  });
+
+  await step('E41', 'พิมพ์เร็ว/กรอกอัตโนมัติ: ระบบไม่ดึงเคอร์เซอร์กลับไปช่องแรก (รหัสผ่านไม่ไปต่อท้ายชื่อผู้ใช้) ทั้งหน้าเข้าสู่ระบบและกล่องข้อความ', async () => {
+    // แตะช่องรหัสผ่านทันทีที่หน้าเข้าสู่ระบบแสดง (ก่อนระบบวางเคอร์เซอร์ให้) แล้วพิมพ์ — โค้ดเดิมดึงเคอร์เซอร์กลับไปช่องชื่อผู้ใช้
+    const tapPasswordAtOnce = () => document.addEventListener('DOMContentLoaded', () => {
+      const v = document.querySelector('#view-login');
+      new MutationObserver(() => { if (!v.hidden && !window.__tapped) { window.__tapped = 1; document.querySelector('#loginPassword').focus(); } })
+        .observe(v, { attributes: true, attributeFilter: ['hidden'] });
+    });
+    for (let i = 0; i < 3; i++) {
+      const p = await newPage({ init: tapPasswordAtOnce });
+      await p.keyboard.type('Secret123');
+      await p.waitForTimeout(150);
+      assert.deepStrictEqual(await p.evaluate(() => [document.querySelector('#loginUsername').value, document.querySelector('#loginPassword').value, document.activeElement.id]),
+        ['', 'Secret123', 'loginPassword']);
+      if (i === 0) {
+        // กล่องข้อความ: แตะช่องที่ 2 ทันทีที่เปิด → เคอร์เซอร์ต้องอยู่ช่องที่ 2 ต่อไป
+        await p.evaluate(() => {
+          App.modal({ title: 'ทดสอบ', body: '<input id="mA"><input id="mB">', actions: [{ label: 'ปิด' }] });
+          document.querySelector('#mB').focus();
+        });
+        await p.keyboard.type('xyz');
+        await p.waitForTimeout(150);
+        assert.deepStrictEqual(await p.evaluate(() => [document.querySelector('#mA').value, document.querySelector('#mB').value, document.activeElement.id]), ['', 'xyz', 'mB']);
+        await modalAction(p, 'ปิด');
+      }
+      await p.context().close();
+    }
   });
 
   await step('E20', 'ไม่มี JavaScript error ในทุกหน้าที่ทดสอบ', async () => {

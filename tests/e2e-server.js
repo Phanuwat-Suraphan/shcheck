@@ -83,13 +83,24 @@ function attachServer(env, o) {
         return;
       }
       if (req.method === 'POST' && req.url === '/rpc') {
-        let body = '';
-        req.on('data', c => { body += c; });
+        const chunks = [];
+        req.on('data', c => { chunks.push(c); });
         req.on('end', () => {
+          const body = Buffer.concat(chunks).toString('utf8'); // รวมก่อนแปลง — อักษรไทยไม่ขาดกลางตัวเมื่อคำขอมาหลายก้อน
           let payload;
           try { payload = JSON.parse(body); } catch (e) { res.writeHead(400); res.end('{}'); return; }
           let out;
+          const t0 = Date.now();
+          if (process.env.RPC_LOG_LOGIN && payload.fn === 'login') {
+            const a = payload.args || [];
+            console.log('  [rpc login] user=' + JSON.stringify(a[0]) + ' pwLen=' + (typeof a[1] === 'string' ? a[1].length : typeof a[1]) + ' bodyBytes=' + Buffer.byteLength(body));
+          }
           try { out = { ok: true, result: env.call(payload.fn, ...(payload.args || [])) }; } catch (e) { out = { ok: false, error: String(e.message || e) }; }
+          // RPC_TRACE_MS=300 → แสดงคำขอที่ช้ากว่า 300 ms (ใช้หาสาเหตุเมื่อการทดสอบหมดเวลา)
+          const ms = Date.now() - t0;
+          if (process.env.RPC_TRACE_MS && ms >= +process.env.RPC_TRACE_MS) {
+            console.log('  [rpc ' + ms + ' ms] ' + payload.fn + (payload.fn === 'api' ? ' ' + (payload.args || [])[1] : ''));
+          }
           res.writeHead(200, { 'content-type': 'application/json' });
           res.end(JSON.stringify(out === undefined ? null : out));
         });

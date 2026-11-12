@@ -484,6 +484,16 @@ table.table { width: 100%; border-collapse: collapse; font-size: .9rem; }
 .wel-num { width: 30px; height: 30px; border-radius: 50%; background: var(--navy-800); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0; }
 .wel-text { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.4; }
 
+/* ---------- ผลการพิจารณา ---------- */
+.decisions-card { border: 1.5px solid var(--sky-200); }
+.dec-item { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--border); }
+.dec-item:first-child { border-top: 0; }
+.dec-item > .ms { margin-top: 2px; }
+.dec-item.ok > .ms { color: var(--success-500); }
+.dec-item.bad > .ms { color: var(--danger-500); }
+.dec-item.warn > .ms { color: #D97706; }
+.dec-item .dec-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.45; }
+
 /* ---------- ประกาศถึงบุคลากร ---------- */
 .announce-card { display: flex; align-items: flex-start; gap: 12px; padding: 12px 8px 12px 16px; border-radius: 18px; background: #EEF6FF; border: 1.5px solid var(--sky-200); color: var(--navy-900); }
 .announce-card > .ms { font-size: 28px; color: var(--sky-500); margin-top: 2px; }

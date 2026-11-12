@@ -1,5 +1,5 @@
 /*
- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.11.0
+ * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.13.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Code.gs (โค้ดฝั่ง Server ทั้งหมด)
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่
  */
@@ -35,7 +35,7 @@ var APP = {
   SCHOOL_FULL: 'โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่',
   NAME_EN: 'Wat Sao Hin School Attendance System',
   SLOGAN: 'ระบบลงเวลาอัจฉริยะ สะดวก โปร่งใส ตรวจสอบได้',
-  VERSION: '1.11.0',
+  VERSION: '1.13.0',
   TZ: 'Asia/Bangkok'
 };
 
@@ -248,7 +248,9 @@ function getRoutes_() {
     'audit.list': { fn: listAuditLogs_, roles: A },
     'sys.rebuildSummary': { fn: rebuildDailySummary_, roles: A },
     'sys.runMaintenance': { fn: runMaintenanceNow_, roles: A },
-    'sys.backup': { fn: backupNow_, roles: A }
+    'sys.backup': { fn: backupNow_, roles: A },
+    'sys.status': { fn: function () { return systemStatus_(); }, roles: A },
+    'sys.installTrigger': { fn: installTriggerNow_, roles: A }
   };
 }
 
@@ -1255,6 +1257,7 @@ function setupCore_() {
     }
     SpreadsheetApp.flush();
     props.setProperty('INSTALLED_VERSION', APP.VERSION);
+    if (!props.getProperty('INSTALLED_AT')) props.setProperty('INSTALLED_AT', nowStamp_());
     log.push('ติดตั้งระบบเสร็จสมบูรณ์ ✔ (เวอร์ชัน ' + APP.VERSION + ')');
   } finally {
     lock.releaseLock();
@@ -1450,7 +1453,63 @@ function DailyMaintenance(e) {
   var cache = CacheService.getScriptCache();
   if (cache.get('maint_lock')) return 'เพิ่งรันไปแล้ว';
   cache.put('maint_lock', '1', 3600);
-  return runMaintenance_(null);
+  try {
+    return runMaintenance_(null);
+  } catch (err) {
+    // บันทึกไว้ให้ผู้ดูแลเห็นในหน้า "สถานะระบบ" (Google จะส่งอีเมลแจ้ง Trigger ล้มเหลวถึงเจ้าของด้วย)
+    try { PropertiesService.getScriptProperties().setProperty('MAINT_ERROR', nowStamp_() + ' ' + String(err && err.message || err).substr(0, 300)); } catch (e2) { /* ignore */ }
+    throw err;
+  }
+}
+
+/** ติดตั้ง Trigger งานกลางคืนใหม่จากหน้าตั้งค่า (เว็บแอปทำงานในนามเจ้าของบัญชี จึงติดตั้งให้เจ้าของได้) */
+function installTriggerNow_(ctx) {
+  var log = ensureTriggers_();
+  PropertiesService.getScriptProperties().setProperty('TRIGGER_INSTALLED_AT', nowStamp_());
+  MEMO_.props = null;
+  writeAudit_(ctx, 'TRIGGER_INSTALL', 'SYSTEM', 'DailyMaintenance', { log: log });
+  return { status: systemStatus_(), message: 'ติดตั้งงานอัตโนมัติตอนกลางคืนแล้ว (ทุกวัน 02:00 น.)' };
+}
+
+/**
+ * งานกลางคืนไม่ได้ทำงานตามปกติ: ไม่มีการทำงานภายใน 2.5 วัน นับจากเหตุการณ์ล่าสุด
+ * (ทำงานครั้งล่าสุด / ติดตั้งระบบ / ผู้ดูแลกดติดตั้งงานอัตโนมัติใหม่) — คือพลาดอย่างน้อย 2 คืนติดกัน
+ */
+function maintenanceStale_() {
+  var p = scriptProps_();
+  var ref = Math.max(stampToMs_(p.MAINT_LAST) || 0, stampToMs_(p.TRIGGER_INSTALLED_AT) || 0, stampToMs_(p.INSTALLED_AT) || 0);
+  return !!ref && nowMs_() - ref > 2.5 * 86400000;
+}
+
+/**
+ * สถานะระบบสำหรับผู้ดูแล: งานกลางคืน, สำรองข้อมูล, พื้นที่ Drive, ขนาดฐานข้อมูล (เทียบขีดจำกัด 10 ล้านเซลล์ของ Google Sheets),
+ * ความครบถ้วนของปฏิทินวันหยุดปีนี้/ปีหน้า
+ */
+function systemStatus_() {
+  var p = scriptProps_();
+  var installed = null;
+  try { installed = ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'DailyMaintenance'; }); } catch (e) { installed = null; }
+  var cells = 0, tables = [];
+  getSpreadsheet_().getSheets().forEach(function (sh) {
+    cells += sh.getMaxRows() * sh.getMaxColumns();
+    if (SCHEMA_[sh.getName()]) tables.push({ name: sh.getName(), rows: Math.max(0, sh.getLastRow() - 1) });
+  });
+  var y = +todayStr_().substr(0, 4), cal = readAll_('WorkCalendar');
+  return {
+    version: APP.VERSION,
+    installedAt: p.INSTALLED_AT ? thaiStamp_(p.INSTALLED_AT) : '',
+    nightly: {
+      installed: installed, last: p.MAINT_LAST || '', lastLabel: p.MAINT_LAST ? thaiStamp_(p.MAINT_LAST) : '',
+      result: p.MAINT_RESULT || '', error: p.MAINT_ERROR || '', stale: maintenanceStale_()
+    },
+    backup: backupInfo_(),
+    storage: driveStorageInfo_(),
+    database: { cells: cells, limit: 10000000, percent: round_(cells / 100000, 1), tables: tables },
+    holidays: [y, y + 1].map(function (yy) {
+      var builtIn = !!THAI_HOLIDAY_DATA_[yy];
+      return { year: yy + 543, builtIn: builtIn, ok: builtIn || calendarHasBuddhistHolidays_(cal, yy) };
+    })
+  };
 }
 
 function runMaintenanceNow_(ctx) {
@@ -1544,6 +1603,11 @@ function runMaintenance_(ctx) {
     (holidaysAdded ? ', เพิ่มวันหยุดราชการไทย ' + holidaysAdded + ' วัน' : '') +
     (backup ? (backup.error ? ', สำรองข้อมูลไม่สำเร็จ: ' + backup.error : ', สำรองข้อมูลอัตโนมัติแล้ว') : '');
   if (purged || holidaysAdded || backup || ctx) writeAudit_(ctx, 'MAINTENANCE', 'SYSTEM', '', { gpsPurged: purged, cutoff: cutoff, tempFilesRemoved: cleaned, holidaysAdded: holidaysAdded, backup: backup });
+  try {
+    PropertiesService.getScriptProperties().setProperties({ MAINT_LAST: nowStamp_(), MAINT_RESULT: msg.substr(0, 500) });
+    PropertiesService.getScriptProperties().deleteProperty('MAINT_ERROR');
+    MEMO_.props = null;
+  } catch (ep) { console.error('maint status: ' + ep); }
   return msg;
 }
 
@@ -2856,6 +2920,7 @@ function getMyDashboard_(ctx) {
     recent: recent,
     pending: { leaves: myLeaves, corrections: myCorr, todayIn: hasPendingInCorrection_(emp.EmployeeID, today) },
     approvals: approvalCounts_(emp),
+    decisions: myRecentDecisions_(emp),
     announcement: getAnnouncement_(),
     issues: myAttendanceIssues_(emp, s, today)
   };
@@ -2880,6 +2945,37 @@ function approvalCounts_(emp) {
   }
   out.total = out.leaves + out.corrections + out.registrations + out.passwordResets;
   return out;
+}
+
+/**
+ * ผลการพิจารณาล่าสุด (14 วัน) ของใบลา/คำร้องของตนเองที่ผู้อื่นเป็นผู้ตัดสิน — แจ้งบนหน้าแรกจนกว่าจะกด "รับทราบ"
+ * ไม่รวมการยกเลิกเองและการอนุมัติอัตโนมัติ (ผู้ใช้รู้อยู่แล้ว)
+ */
+function myRecentDecisions_(emp) {
+  var since = msToStamp_(nowMs_() - 14 * 86400000), out = [];
+  var decided = function (r) {
+    return r.EmployeeID === emp.EmployeeID && r.ReviewedAt && r.ReviewedAt >= since && r.ReviewedBy && r.ReviewedBy !== 'AUTO' &&
+      r.ReviewedBy !== emp.EmployeeID && (r.Status === 'APPROVED' || r.Status === 'REJECTED' || r.Status === 'CANCELLED');
+  };
+  var byAdmin = function (r) { return r.RecordedBy && r.RecordedBy !== 'SELF'; };
+  readAll_('LeaveRequests').filter(decided).forEach(function (l) {
+    var range = thaiDate_(l.StartDate, 'short') + (l.EndDate !== l.StartDate ? ' – ' + thaiDate_(l.EndDate, 'short') : '');
+    out.push({
+      kind: 'leave', id: l.LeaveID, at: l.ReviewedAt, atLabel: thaiStamp_(l.ReviewedAt), status: l.Status, by: l.ReviewedByName || '',
+      title: leaveTypeLabel_(l) + ' ' + range,
+      outcome: l.Status === 'APPROVED' ? (byAdmin(l) ? 'บันทึกการลาให้ท่านแล้ว' : 'อนุมัติแล้ว') : (l.Status === 'REJECTED' ? 'ไม่อนุมัติ' : 'ยกเลิกการอนุมัติ'),
+      note: byAdmin(l) ? '' : (l.ReviewNote || '')
+    });
+  });
+  readAll_('CorrectionRequests').filter(decided).forEach(function (c) {
+    out.push({
+      kind: 'correction', id: c.RequestID, at: c.ReviewedAt, atLabel: thaiStamp_(c.ReviewedAt), status: c.Status, by: c.ReviewedByName || '',
+      title: 'แก้ไข' + (ATT_TYPES[c.Type] ? 'เวลา' + ATT_TYPES[c.Type] : 'เวลา') + ' ' + thaiDate_(c.Date, 'short') + ' เป็น ' + String(c.RequestedTime || '').substr(0, 5) + ' น.',
+      outcome: c.Status === 'APPROVED' ? (byAdmin(c) ? 'บันทึกเวลาให้ท่านแล้ว' : 'อนุมัติและปรับเวลาแล้ว') : 'ไม่อนุมัติ',
+      note: byAdmin(c) ? '' : (c.ReviewNote || '')
+    });
+  });
+  return out.sort(function (a, b) { return a.at < b.at ? 1 : -1; }).slice(0, 6);
 }
 
 /** มีคำร้องแก้ไข "เวลาเข้า" ของวันที่ระบุรอพิจารณาอยู่หรือไม่ */
@@ -3782,6 +3878,9 @@ function getAdminOverview_(ctx) {
   // ผู้ดูแลระบบเห็นรายการนี้ในการ์ด "ตั้งค่าเริ่มต้นให้ครบ" แล้ว
   if (!s.settingsConfirmed && ctx.user.Role !== ROLES.ADMIN) warnings.push('การตั้งค่าเวลาทำงาน/รัศมี GPS ยังเป็นค่าตัวอย่าง กรุณาตรวจสอบให้ตรงกับระเบียบของโรงเรียนแล้วกดยืนยันในหน้าตั้งค่า');
   holidayDataWarnings_(today).forEach(function (w) { warnings.push(w); });
+  if (ctx.user.Role === ROLES.ADMIN && maintenanceStale_()) {
+    warnings.push('งานอัตโนมัติตอนกลางคืน (สำรองข้อมูล, ลบพิกัด GPS ที่ครบกำหนด, เพิ่มวันหยุดปีถัดไป) ไม่ได้ทำงานมาหลายวัน — กรุณาเปิดหน้าตั้งค่า → สถานะระบบ แล้วกด “ติดตั้งงานอัตโนมัติ”');
+  }
   var storage = driveStorageInfo_();
   if (storage && storage.percent >= 85) {
     warnings.push('พื้นที่ Google Drive ของบัญชีระบบใช้ไปแล้ว ' + storage.percent + '% (' + storage.usedLabel + ' จาก ' + storage.limitLabel +
@@ -4410,6 +4509,10 @@ var THAI_HOLIDAY_DATA_ = {
  * เตือนเมื่อปีปัจจุบัน (หรือปีหน้า ตั้งแต่เดือนตุลาคม) ไม่มีข้อมูลวันหยุดทางพุทธศาสนาในตัวระบบ
  * และผู้ดูแลยังไม่ได้เพิ่มเองในปฏิทิน — ถ้าไม่เพิ่ม วันดังกล่าวจะถูกนับเป็นวันทำงาน (ครูถูกนับว่าขาดงาน)
  */
+function calendarHasBuddhistHolidays_(cal, yy) {
+  return cal.some(function (c) { return +String(c.Date).substr(0, 4) === yy && /มาฆบูชา|วิสาขบูชา|อาสาฬหบูชา|เข้าพรรษา/.test(String(c.Title)); });
+}
+
 function holidayDataWarnings_(today) {
   var y = +today.substr(0, 4), m = +today.substr(5, 2);
   var years = m >= 10 ? [y, y + 1] : [y];
@@ -4417,8 +4520,7 @@ function holidayDataWarnings_(today) {
   years.forEach(function (yy) {
     if (THAI_HOLIDAY_DATA_[yy]) return;
     cal = cal || readAll_('WorkCalendar');
-    var has = cal.some(function (c) { return +String(c.Date).substr(0, 4) === yy && /มาฆบูชา|วิสาขบูชา|อาสาฬหบูชา|เข้าพรรษา/.test(String(c.Title)); });
-    if (!has) {
+    if (!calendarHasBuddhistHolidays_(cal, yy)) {
       out.push('ปฏิทินวันหยุดปี พ.ศ. ' + (yy + 543) + ' ยังไม่มีวันหยุดทางพุทธศาสนา (มาฆบูชา วิสาขบูชา อาสาฬหบูชา เข้าพรรษา) ซึ่งเปลี่ยนวันทุกปี — ' +
         'กรุณาเพิ่มในเมนูปฏิทินวันหยุดตามประกาศวันหยุดราชการ มิฉะนั้นวันดังกล่าวครูจะถูกนับว่าขาดงาน');
     }

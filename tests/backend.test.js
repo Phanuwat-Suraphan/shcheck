@@ -360,6 +360,55 @@ test('H03', 'ประวัติรายเดือนของฉันม�
   assert.strictEqual(h.days[0].checkIn.substr(0, 5), '07:50');
 });
 
+test('H04', 'หน้าแรกแจ้ง "ผลการพิจารณา" ใบลา/คำร้องของตนเอง: อนุมัติ/ไม่อนุมัติ/ยกเลิกการอนุมัติพร้อมเหตุผล, ผู้บริหารบันทึกให้; ไม่รวมที่ยกเลิกเอง/อนุมัติอัตโนมัติ/ของคนอื่น; แสดงย้อนหลัง 14 วัน', () => {
+  const sys = newSystem({ now: '2026-11-09 07:00:00' });
+  const t = addTeacher(sys, 1);
+  const t2 = addTeacher(sys, 2);
+  const ex = addTeacher(sys, 3, 'EXECUTIVE');
+  const decisions = (tk) => ok(sys.api(tk, 'me.dashboard', {})).decisions;
+  assert.deepStrictEqual(decisions(t.token), []);
+  sys.at('2026-11-10 07:30:00');
+  const a = ok(sys.api(t.token, 'leave.submit', { type: 'SICK', startDate: '2026-11-10', endDate: '2026-11-10', reason: 'มีไข้' })).leave;
+  const b = ok(sys.api(t.token, 'leave.submit', { type: 'PERSONAL', startDate: '2026-11-16', endDate: '2026-11-17', reason: 'ธุระที่บ้าน' })).leave;
+  const c = ok(sys.api(t.token, 'leave.submit', { type: 'PERSONAL', startDate: '2026-11-19', endDate: '2026-11-19', reason: 'ไปธนาคาร' })).leave;
+  ok(sys.api(t.token, 'leave.cancel', { leaveId: c.leaveId }));                  // ยกเลิกเอง → ไม่ต้องแจ้ง
+  const o = ok(sys.api(t2.token, 'leave.submit', { type: 'SICK', startDate: '2026-11-10', endDate: '2026-11-10', reason: 'ปวดศีรษะ' })).leave;
+  assert.deepStrictEqual(decisions(t.token), []);                                 // ยังรอพิจารณา
+  sys.at('2026-11-10 09:00:00');
+  ok(sys.api(ex.token, 'leave.review', { leaveId: a.leaveId, decision: 'APPROVE', note: 'หายไว ๆ นะครับ' }));
+  ok(sys.api(ex.token, 'leave.review', { leaveId: o.leaveId, decision: 'APPROVE' }));
+  sys.at('2026-11-10 10:00:00');
+  ok(sys.api(ex.token, 'leave.review', { leaveId: b.leaveId, decision: 'REJECT', note: 'ตรงกับวันสอบปลายภาค' }));
+  sys.at('2026-11-11 08:00:00');
+  ok(sys.api(ex.token, 'corr.adminCreate', { employeeId: t.id, date: '2026-11-10', type: 'IN', time: '07:40', reason: 'ครูแจ้งว่ามาถึงแล้วลืมกด' }));
+  let d = decisions(t.token);
+  assert.deepStrictEqual(d.map(x => [x.kind, x.status, x.outcome]), [
+    ['correction', 'APPROVED', 'บันทึกเวลาให้ท่านแล้ว'], ['leave', 'REJECTED', 'ไม่อนุมัติ'], ['leave', 'APPROVED', 'อนุมัติแล้ว']]);
+  assert.strictEqual(d[0].title, 'แก้ไขเวลาเข้างาน 10 พ.ย. 69 เป็น 07:40 น.');
+  assert.strictEqual(d[0].note, '');                                              // บันทึกแทน: ไม่แสดงหมายเหตุของระบบ
+  assert.strictEqual(d[1].title, 'ลากิจ 16 พ.ย. 69 – 17 พ.ย. 69');
+  assert.strictEqual(d[1].note, 'ตรงกับวันสอบปลายภาค');
+  assert.strictEqual(d[2].title, 'ลาป่วย 10 พ.ย. 69');
+  assert.strictEqual(d[2].note, 'หายไว ๆ นะครับ');
+  assert.ok(d.every(x => x.by === 'นางสาวครู ทดสอบที่สาม' && /พ\.ย\. 69/.test(x.atLabel) && x.at && x.id));
+  assert.deepStrictEqual(decisions(t2.token).map(x => x.id), [o.leaveId]);         // เห็นเฉพาะของตนเอง
+  assert.deepStrictEqual(decisions(ex.token), []);
+  // ยกเลิกการอนุมัติ → แจ้งพร้อมเหตุผล (รายการเดิมแสดงสถานะล่าสุดเพียงรายการเดียว)
+  sys.at('2026-11-12 08:00:00');
+  ok(sys.api(sys.admin, 'leave.review', { leaveId: a.leaveId, decision: 'REVOKE', note: 'บันทึกผิดวัน' }));
+  d = decisions(t.token);
+  assert.deepStrictEqual([d.length, d[0].id, d[0].status, d[0].outcome, d[0].note], [3, a.leaveId, 'CANCELLED', 'ยกเลิกการอนุมัติ', 'บันทึกผิดวัน']);
+  // โรงเรียนตั้งให้การลามีผลทันที (อนุมัติอัตโนมัติ) → ไม่ต้องแจ้ง
+  ok(sys.api(sys.admin, 'settings.save', { values: { LEAVE_REQUIRES_APPROVAL: false } }));
+  ok(sys.api(t.token, 'leave.submit', { type: 'SICK', startDate: '2026-11-12', endDate: '2026-11-12', reason: 'ไข้หวัด' }));
+  assert.strictEqual(decisions(t.token).length, 3);
+  // เกิน 14 วัน → ไม่แสดงอีก
+  sys.at('2026-11-25 09:00:00');
+  assert.deepStrictEqual(decisions(t.token).map(x => x.id), [a.leaveId]);
+  sys.at('2026-11-27 09:00:00');
+  assert.deepStrictEqual(decisions(t.token), []);
+});
+
 test('L01', 'รหัสผ่านผิด/ไม่มีผู้ใช้ ได้ข้อความเดียวกัน (ไม่เปิดเผยว่ามีบัญชีหรือไม่)', () => {
   const sys = newSystem();
   const a = expectErr(sys.login('admin.saohin', 'WrongPass123'), 'INVALID_LOGIN');
@@ -1580,7 +1629,7 @@ test('N01', 'ประกาศถึงบุคลากร: ผู้บร�
   assert.strictEqual(acts.filter(x => x === 'ANNOUNCEMENT_SAVE').length, 3); assert.ok(acts.includes('ANNOUNCEMENT_CLEAR'));
 });
 
-test('B02', 'สำรองฐานข้อมูล: กดสำรองทันทีได้ (ผู้ดูแลระบบ), เก็บ 8 ชุดล่าสุด, สำรองอัตโนมัติทุก 7 วันในงานบำรุงรักษา, ไม่สำรองเมื่อ Drive ใกล้เต็ม', () => {
+test('B04', 'สำรองฐานข้อมูล: กดสำรองทันทีได้ (ผู้ดูแลระบบ), เก็บ 8 ชุดล่าสุด, สำรองอัตโนมัติทุก 7 วันในงานบำรุงรักษา, ไม่สำรองเมื่อ Drive ใกล้เต็ม', () => {
   const sys = newSystem({ now: '2026-11-09 07:00:00' });
   const ex = addTeacher(sys, 1, 'EXECUTIVE');
   const backups = () => [...sys.env.state.driveFiles.values()].filter(f => f.copyOf === sys.env.state.props.SPREADSHEET_ID);
@@ -1607,6 +1656,45 @@ test('B02', 'สำรองฐานข้อมูล: กดสำรอง�
   sys.env.state.storageUsed = 14.5 * 1024 ** 3;
   expectErr(sys.api(sys.admin, 'sys.backup', {}), 'STORAGE_FULL');
   assert.ok(records(sys, 'AuditLogs').some(x => x.Action === 'BACKUP'));
+});
+
+test('Y01', 'สถานะระบบ: งานกลางคืนติดตั้งแล้ว/ไม่ได้ติดตั้ง/ไม่ได้ทำงานหลายวัน (เตือนในภาพรวม), ติดตั้งใหม่จากหน้าเว็บ, ขนาดฐานข้อมูล, ปฏิทินวันหยุด; เฉพาะผู้ดูแลระบบ', () => {
+  const sys = newSystem({ now: '2026-11-09 07:00:00' });
+  const ex = addTeacher(sys, 1, 'EXECUTIVE');
+  let st = ok(sys.api(sys.admin, 'sys.status', {}));
+  assert.strictEqual(st.nightly.installed, true); assert.strictEqual(st.nightly.stale, false); assert.strictEqual(st.nightly.last, '');
+  assert.ok(st.version && st.installedAt);
+  assert.ok(st.database.cells > 0 && st.database.limit === 10000000 && st.database.percent >= 0);
+  assert.ok(st.database.tables.find(t => t.name === 'Employees').rows >= 2);
+  assert.deepStrictEqual(st.holidays.map(h => [h.year, h.ok]), [[2569, true], [2570, true]]);
+  expectErr(sys.api(ex.token, 'sys.status', {}), 'FORBIDDEN');
+  // ไม่ได้ทำงานเกิน 2 วันหลังติดตั้ง → เตือน (เฉพาะผู้ดูแลระบบ)
+  sys.at('2026-11-12 08:00:00');
+  assert.ok(ok(sys.api(sys.admin, 'admin.overview', {})).warnings.some(w => /งานอัตโนมัติตอนกลางคืน/.test(w)));
+  assert.ok(!ok(sys.api(ex.token, 'admin.overview', {})).warnings.some(w => /งานอัตโนมัติตอนกลางคืน/.test(w)));
+  ok(sys.api(sys.admin, 'sys.runMaintenance', {}));
+  st = ok(sys.api(sys.admin, 'sys.status', {}));
+  assert.ok(st.nightly.last && !st.nightly.stale && /ลบพิกัด GPS/.test(st.nightly.result), JSON.stringify(st.nightly));
+  assert.ok(!ok(sys.api(sys.admin, 'admin.overview', {})).warnings.some(w => /งานอัตโนมัติตอนกลางคืน/.test(w)));
+  // Trigger หาย → แสดงว่ายังไม่ได้ติดตั้ง → กดติดตั้งได้ (ไม่ซ้ำ)
+  sys.env.state.triggers.length = 0;
+  assert.strictEqual(ok(sys.api(sys.admin, 'sys.status', {})).nightly.installed, false);
+  sys.at('2026-11-20 09:00:00'); // ไม่ได้ทำงาน 8 วัน → stale
+  assert.strictEqual(ok(sys.api(sys.admin, 'sys.status', {})).nightly.stale, true);
+  const r = ok(sys.api(sys.admin, 'sys.installTrigger', {}));
+  assert.strictEqual(r.status.nightly.installed, true);
+  assert.strictEqual(r.status.nightly.stale, false, 'ติดตั้งใหม่แล้ว เริ่มนับใหม่ — ไม่เตือนจนกว่าจะพลาด 2 คืน');
+  ok(sys.api(sys.admin, 'sys.installTrigger', {}));
+  assert.strictEqual(sys.env.state.triggers.filter(t => t.fn === 'DailyMaintenance').length, 1);
+  assert.ok(records(sys, 'AuditLogs').some(a => a.Action === 'TRIGGER_INSTALL'));
+  expectErr(sys.api(ex.token, 'sys.installTrigger', {}), 'FORBIDDEN');
+  // งานกลางคืนล้มเหลว → บันทึกข้อผิดพลาดให้เห็นในสถานะระบบ
+  sys.at('2026-11-21 02:00:00');
+  const orig = sys.env.context.runMaintenance_;
+  sys.env.context.runMaintenance_ = () => { throw new Error('ทดสอบล้มเหลว'); };
+  assert.throws(() => sys.env.call('DailyMaintenance'), /ทดสอบล้มเหลว/);
+  sys.env.context.runMaintenance_ = orig;
+  assert.ok(/ทดสอบล้มเหลว/.test(ok(sys.api(sys.admin, 'sys.status', {})).nightly.error));
 });
 
 test('D01', 'ลบพิกัด GPS อัตโนมัติเมื่อเกินระยะเวลาเก็บรักษา (คงระยะทาง/เวลาไว้)', () => {

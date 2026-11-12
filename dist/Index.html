@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.11.0
+<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.13.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Index.html
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่ -->
 <html lang="th">
@@ -499,6 +499,16 @@ table.table { width: 100%; border-collapse: collapse; font-size: .9rem; }
 .wel-step:first-of-type { margin-top: 10px; }
 .wel-num { width: 30px; height: 30px; border-radius: 50%; background: var(--navy-800); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0; }
 .wel-text { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.4; }
+
+/* ---------- ผลการพิจารณา ---------- */
+.decisions-card { border: 1.5px solid var(--sky-200); }
+.dec-item { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--border); }
+.dec-item:first-child { border-top: 0; }
+.dec-item > .ms { margin-top: 2px; }
+.dec-item.ok > .ms { color: var(--success-500); }
+.dec-item.bad > .ms { color: var(--danger-500); }
+.dec-item.warn > .ms { color: #D97706; }
+.dec-item .dec-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.45; }
 
 /* ---------- ประกาศถึงบุคลากร ---------- */
 .announce-card { display: flex; align-items: flex-start; gap: 12px; padding: 12px 8px 12px 16px; border-radius: 18px; background: #EEF6FF; border: 1.5px solid var(--sky-200); color: var(--navy-900); }
@@ -1034,6 +1044,11 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
               <p class="small muted" style="margin:-6px 0 8px">แตะปุ่มเพื่อแก้ไข ระบบกรอกวันที่ให้แล้ว</p>
               <div id="issuesList"></div>
             </div>
+            <div class="card decisions-card o-quick" id="decisionsCard" hidden>
+              <div class="row-between"><div class="card-title mb-0"><span class="ms">notifications</span>ผลการพิจารณา</div>
+                <button type="button" class="btn sm" id="decAckBtn"><span class="ms">done</span>รับทราบ</button></div>
+              <div id="decList"></div>
+            </div>
             <div id="geoNotSetAlert" class="alert warning o-geo" hidden><span class="ms">warning</span><div>ผู้ดูแลระบบยังไม่ได้ตั้งค่าพิกัดโรงเรียน จึงยังลงเวลาไม่ได้</div></div>
             <div class="home-tip o-tip" id="homeTip" hidden>
               <span class="ms">add_to_home_screen</span>
@@ -1398,6 +1413,18 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
       r[fn].apply(r, args || []);
     });
   }
+  /**
+   * วางเคอร์เซอร์ที่ช่องแรกให้หลังแสดงหน้าจอ/กล่องข้อความ — แต่ไม่แย่งโฟกัสถ้าผู้ใช้แตะหรือพิมพ์ช่องอื่นในส่วนนั้นไปแล้ว
+   * (เดิมรหัสผ่านที่พิมพ์เร็ว ๆ หรือกรอกอัตโนมัติอาจไปต่อท้ายช่องชื่อผู้ใช้)
+   */
+  function focusSoon(el, scope) {
+    if (!el) return;
+    setTimeout(function () {
+      var a = document.activeElement;
+      if (a && scope && a !== scope && scope.contains(a)) return;
+      try { el.focus(); } catch (e) { /* ignore */ }
+    }, 60);
+  }
   function appErr(message, code, data, cause) {
     var e = new Error(message); e.code = code || 'ERROR'; e.data = data || null; e.cause = cause; return e;
   }
@@ -1543,8 +1570,7 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
       });
     }
     host.appendChild(back);
-    var focusEl = $('input, select, textarea', back) || $('.modal-actions .btn', back);
-    if (focusEl) setTimeout(function () { try { focusEl.focus(); } catch (e) { /* ignore */ } }, 50);
+    focusSoon($('input, select, textarea', back) || $('.modal-actions .btn', back), back);
     if (o.onOpen) o.onOpen(back, close);
     return { close: close, root: back };
   }
@@ -1791,7 +1817,7 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
     $('#rememberHint').hidden = S.cfg && S.cfg.rememberDays === 0;
     $('#rememberMe').closest('label').hidden = S.cfg && S.cfg.rememberDays === 0;
     showView('login');
-    setTimeout(function () { (remembered ? $('#loginPassword') : $('#loginUsername')).focus(); }, 60);
+    focusSoon(remembered ? $('#loginPassword') : $('#loginUsername'), $('#view-login'));
   }
   function showLoginAlert(msg) { $('#loginAlertText').textContent = msg; $('#loginAlert').hidden = !msg; }
 
@@ -1834,6 +1860,7 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
     $('#homeTipClose').addEventListener('click', function () { local.set('wsh_tip_home', '1'); renderHomeTip(); });
     $('#toAdminBtn').addEventListener('click', function () { openAdmin(); });
     $('#apGoBtn').addEventListener('click', function () { openAdmin($('#apGoBtn').getAttribute('data-sec')); });
+    $('#decAckBtn').addEventListener('click', function () { if (S.decLatest) local.set(decSeenKey(), S.decLatest); $('#decisionsCard').hidden = true; });
     $('#anClose').addEventListener('click', function () { local.set('wsh_an_hide', $('#anClose').getAttribute('data-id') || ''); $('#announceCard').hidden = true; });
     $$('#userTabs [data-tab]').forEach(function (b) { b.addEventListener('click', function () { switchTab(b.getAttribute('data-tab')); }); });
     $('#checkInBtn').addEventListener('click', function () { doAttendance('IN'); });
@@ -2203,7 +2230,21 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
     if (tab === 'correction') { initCorrectionForm(); loadMyCorrections(); }
   }
 
-  /* ---------- ประกาศถึงบุคลากร (ซ่อนได้เฉพาะประกาศนั้นบนเครื่องนี้) ---------- */
+  /* ---------- ผลการพิจารณาใบลา/คำร้องของตนเอง (แสดงจนกว่าจะกดรับทราบ) ---------- */
+  function decSeenKey() { return 'wsh_dec_seen_' + (S.user ? S.user.employeeId : ''); }
+  function renderDecisions(list) {
+    var seen = local.get(decSeenKey()) || '';
+    var fresh = (list || []).filter(function (x) { return x.at > seen; });
+    $('#decisionsCard').hidden = !fresh.length;
+    if (!fresh.length) return;
+    S.decLatest = fresh[0].at;
+    $('#decList').innerHTML = fresh.map(function (x) {
+      var tone = x.status === 'APPROVED' ? 'ok' : (x.status === 'REJECTED' ? 'bad' : 'warn');
+      return '<div class="dec-item ' + tone + '">' + icon({ ok: 'check_circle', bad: 'cancel', warn: 'undo' }[tone]) +
+        '<div class="dec-text"><b>' + esc(x.title) + '</b><span class="small"><b>' + esc(x.outcome) + '</b>' + (x.by ? ' · ' + esc(x.by) : '') + ' · ' + esc(x.atLabel) + '</span>' +
+        (x.note ? '<span class="small muted">เหตุผล/ความเห็น: ' + esc(x.note) + '</span>' : '') + '</div></div>';
+    }).join('');
+  }
   function renderAnnouncement(a) {
     var show = !!(a && a.text) && local.get('wsh_an_hide') !== a.id;
     $('#announceCard').hidden = !show;
@@ -2221,6 +2262,7 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
     ['location_off', 'ลงเวลาไม่สำเร็จ (นอกพื้นที่ / GPS ไม่แม่น)', 'เปิด GPS (ตำแหน่ง) ในโทรศัพท์ ออกไปที่โล่งแล้วรอ 10–20 วินาที กดใหม่ · ถ้าเปิดลิงก์จากแอป LINE ให้เปิดด้วย Chrome/Safari แทน · ดูวิธีเปิด GPS ได้ที่ปุ่ม <b>วิธีเปิด GPS</b> หน้าแรก · ถ้ายังไม่ได้ ใช้ <b>ลืมลงเวลา / ขอแก้ไขเวลา</b>'],
     ['edit_calendar', 'ลืมลงเวลา', 'ลืมกดตอนเช้า: กดลงเวลาเข้า แล้วเลือก <b>ลืมกด — แจ้งเวลาที่มาถึงจริง</b> (ตอนเย็นยังลงเวลาออกได้) · ลืมวันก่อน ๆ: แตะ <b>ขอแก้ไขเวลา</b> ในกล่อง “ลงเวลาไม่ครบ” บนหน้าแรก · หรือแจ้งผู้บริหารให้บันทึกเวลาแทน'],
     ['event_busy', 'แจ้งลา / พิมพ์ใบลา', 'เมนู <b>การลา</b> → เลือกวัน → แตะประเภทการลา → ยืนยัน · ใบลาป่วย/กิจ/คลอด/พักผ่อน กด <b>พิมพ์ใบลา</b> ได้ใบลาแบบราชการพร้อมสถิติการลา · ดูสถิติการลาของตัวเองแยกรอบการประเมินได้ในเมนูเดียวกัน'],
+    ['notifications', 'รู้ได้อย่างไรว่าใบลา/คำร้องอนุมัติแล้ว', 'เมื่อผู้บริหารพิจารณาแล้ว หน้าแรกจะขึ้นกล่อง <b>ผลการพิจารณา</b> ใต้ปุ่มลงเวลา บอกว่าอนุมัติหรือไม่อนุมัติ พร้อม <b>เหตุผล</b> · อ่านแล้วกด <b>รับทราบ</b> · ดูย้อนหลังได้ในเมนู <b>การลา</b> / <b>แก้ไขเวลา</b>'],
     ['print', 'พิมพ์สรุปการลงเวลาของฉัน', 'เมนู <b>ประวัติ</b> → เลือกเดือน → <b>พิมพ์สรุปเดือนนี้</b> (ใช้เป็นหลักฐานประกอบ PA ได้)'],
     ['bookmark_added', 'ไม่อยากใส่รหัสผ่านทุกวัน', 'ตอนเข้าสู่ระบบติ๊ก <b>จำการเข้าสู่ระบบบนเครื่องนี้</b> (เฉพาะโทรศัพท์ส่วนตัว) · เพิ่มไอคอนไว้บนหน้าจอ: เมนู <b>บัญชี → เพิ่มไอคอนบนหน้าจอ</b>'],
     ['text_increase', 'ตัวหนังสือเล็กอ่านยาก', 'เมนู <b>บัญชี → ขนาดตัวอักษร</b> เลือก <b>ใหญ่</b> หรือ <b>ใหญ่มาก</b>'],
@@ -2375,6 +2417,7 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
     renderIssues(d.issues);
     renderApprovals(d.approvals);
     renderAnnouncement(d.announcement);
+    renderDecisions(d.decisions);
     setTimeout(maybeShowWelcome, 300);
     var hh = bkkParts(serverNow()).hh;
     $('#greeting').textContent = hh < 12 ? 'สวัสดีตอนเช้า' : (hh < 17 ? 'สวัสดีตอนบ่าย' : 'สวัสดีตอนเย็น');

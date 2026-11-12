@@ -249,6 +249,7 @@ function getMyDashboard_(ctx) {
     recent: recent,
     pending: { leaves: myLeaves, corrections: myCorr, todayIn: hasPendingInCorrection_(emp.EmployeeID, today) },
     approvals: approvalCounts_(emp),
+    decisions: myRecentDecisions_(emp),
     announcement: getAnnouncement_(),
     issues: myAttendanceIssues_(emp, s, today)
   };
@@ -273,6 +274,37 @@ function approvalCounts_(emp) {
   }
   out.total = out.leaves + out.corrections + out.registrations + out.passwordResets;
   return out;
+}
+
+/**
+ * ผลการพิจารณาล่าสุด (14 วัน) ของใบลา/คำร้องของตนเองที่ผู้อื่นเป็นผู้ตัดสิน — แจ้งบนหน้าแรกจนกว่าจะกด "รับทราบ"
+ * ไม่รวมการยกเลิกเองและการอนุมัติอัตโนมัติ (ผู้ใช้รู้อยู่แล้ว)
+ */
+function myRecentDecisions_(emp) {
+  var since = msToStamp_(nowMs_() - 14 * 86400000), out = [];
+  var decided = function (r) {
+    return r.EmployeeID === emp.EmployeeID && r.ReviewedAt && r.ReviewedAt >= since && r.ReviewedBy && r.ReviewedBy !== 'AUTO' &&
+      r.ReviewedBy !== emp.EmployeeID && (r.Status === 'APPROVED' || r.Status === 'REJECTED' || r.Status === 'CANCELLED');
+  };
+  var byAdmin = function (r) { return r.RecordedBy && r.RecordedBy !== 'SELF'; };
+  readAll_('LeaveRequests').filter(decided).forEach(function (l) {
+    var range = thaiDate_(l.StartDate, 'short') + (l.EndDate !== l.StartDate ? ' – ' + thaiDate_(l.EndDate, 'short') : '');
+    out.push({
+      kind: 'leave', id: l.LeaveID, at: l.ReviewedAt, atLabel: thaiStamp_(l.ReviewedAt), status: l.Status, by: l.ReviewedByName || '',
+      title: leaveTypeLabel_(l) + ' ' + range,
+      outcome: l.Status === 'APPROVED' ? (byAdmin(l) ? 'บันทึกการลาให้ท่านแล้ว' : 'อนุมัติแล้ว') : (l.Status === 'REJECTED' ? 'ไม่อนุมัติ' : 'ยกเลิกการอนุมัติ'),
+      note: byAdmin(l) ? '' : (l.ReviewNote || '')
+    });
+  });
+  readAll_('CorrectionRequests').filter(decided).forEach(function (c) {
+    out.push({
+      kind: 'correction', id: c.RequestID, at: c.ReviewedAt, atLabel: thaiStamp_(c.ReviewedAt), status: c.Status, by: c.ReviewedByName || '',
+      title: 'แก้ไข' + (ATT_TYPES[c.Type] ? 'เวลา' + ATT_TYPES[c.Type] : 'เวลา') + ' ' + thaiDate_(c.Date, 'short') + ' เป็น ' + String(c.RequestedTime || '').substr(0, 5) + ' น.',
+      outcome: c.Status === 'APPROVED' ? (byAdmin(c) ? 'บันทึกเวลาให้ท่านแล้ว' : 'อนุมัติและปรับเวลาแล้ว') : 'ไม่อนุมัติ',
+      note: byAdmin(c) ? '' : (c.ReviewNote || '')
+    });
+  });
+  return out.sort(function (a, b) { return a.at < b.at ? 1 : -1; }).slice(0, 6);
 }
 
 /** มีคำร้องแก้ไข "เวลาเข้า" ของวันที่ระบุรอพิจารณาอยู่หรือไม่ */

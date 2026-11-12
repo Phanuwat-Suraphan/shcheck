@@ -229,7 +229,7 @@ window.Admin = (function () {
     CORRECTION_SUBMIT: 'ยื่นคำร้องแก้ไขเวลา', CORRECTION_CANCEL: 'ยกเลิกคำร้อง', CORRECTION_APPROVE: 'อนุมัติคำร้องแก้ไขเวลา', CORRECTION_REJECT: 'ไม่อนุมัติคำร้อง',
     SETTINGS_UPDATE: 'แก้ไขการตั้งค่า', CALENDAR_ADD: 'เพิ่มวันในปฏิทิน', CALENDAR_REMOVE: 'ลบวันในปฏิทิน', CALENDAR_ADD_FIXED: 'เพิ่มวันหยุดราชการคงที่',
     REPORT_EXPORT: 'ส่งออกรายงาน', SUMMARY_REBUILD: 'คำนวณสรุปรายวันใหม่', MAINTENANCE: 'งานบำรุงรักษาข้อมูล',
-    LOGIN_REMEMBERED: 'เข้าสู่ระบบอัตโนมัติ (เครื่องที่จำไว้)', ANNOUNCEMENT_SAVE: 'ประกาศถึงบุคลากร', ANNOUNCEMENT_CLEAR: 'ลบประกาศ', BACKUP: 'สำรองฐานข้อมูล', CORRECTION_RECORD_BY_ADMIN: 'บันทึกเวลาแทนบุคลากร', EMPLOYEE_BULK_CREATE: 'เพิ่มบุคลากรหลายคน', LOGOUT_ALL: 'ออกจากระบบทุกเครื่อง',
+    LOGIN_REMEMBERED: 'เข้าสู่ระบบอัตโนมัติ (เครื่องที่จำไว้)', TRIGGER_INSTALL: 'ติดตั้งงานอัตโนมัติตอนกลางคืน', ANNOUNCEMENT_SAVE: 'ประกาศถึงบุคลากร', ANNOUNCEMENT_CLEAR: 'ลบประกาศ', BACKUP: 'สำรองฐานข้อมูล', CORRECTION_RECORD_BY_ADMIN: 'บันทึกเวลาแทนบุคลากร', EMPLOYEE_BULK_CREATE: 'เพิ่มบุคลากรหลายคน', LOGOUT_ALL: 'ออกจากระบบทุกเครื่อง',
     BOOTSTRAP_ADMIN_CREATED: 'สร้างผู้ดูแลระบบคนแรก', FIRST_RUN_SETUP: 'ติดตั้งครั้งแรกผ่านหน้าเว็บ', EMERGENCY_ADMIN_RESET: 'กู้คืนสิทธิ์ผู้ดูแลระบบ'
   };
 
@@ -1201,6 +1201,7 @@ window.Admin = (function () {
     if (!isAdmin()) return;
     A.fillMonthYear($('#mtMonth'), $('#mtYear'), 3);
     $('#setForm').addEventListener('submit', saveSettings);
+    $('#sysStatusRefresh').addEventListener('click', loadSystemStatus);
     $('#mtBackupBtn').addEventListener('click', function () {
       var b = $('#mtBackupBtn');
       A.setBtnLoading(b, true);
@@ -1243,6 +1244,7 @@ window.Admin = (function () {
       TEXT_SETTINGS.forEach(function (k) { if (f[k]) f[k].value = v[k] || ''; });
       ['ALLOW_HOLIDAY_CHECKIN', 'ALLOW_REGISTRATION', 'SETTINGS_CONFIRMED', 'LEAVE_REQUIRES_APPROVAL', 'CHECKOUT_REQUIRES_GPS'].forEach(function (k) { f[k].checked = String(v[k]).toUpperCase() === 'TRUE'; });
       renderBackupInfo(s.backup);
+      loadSystemStatus();
       if (s.storage) {
         $('#mtStorage').hidden = false;
         $('#mtStorage').className = 'alert ' + (s.storage.percent >= 85 ? 'warning' : 'info');
@@ -1252,6 +1254,45 @@ window.Admin = (function () {
       $$('#sWorkDays input').forEach(function (c) { c.checked = days.indexOf(c.value) >= 0; });
       updateMapLink();
     }).catch(err);
+  }
+  /* ---------- สถานะระบบ ---------- */
+  function loadSystemStatus() {
+    A.api('sys.status', {}, { silent: true }).then(renderSystemStatus).catch(function (e) {
+      if (e.code !== 'AUTH') $('#sysStatus').innerHTML = '<span class="small muted">ตรวจสอบสถานะไม่สำเร็จ: ' + esc(e.message) + '</span>';
+    });
+  }
+  function renderSystemStatus(s) {
+    var row = function (level, title, detail, action) {
+      var ic = { ok: 'check_circle', warn: 'warning', bad: 'error' }[level];
+      return '<div class="status-row ' + level + '">' + icon(ic) + '<div class="st-main"><b>' + esc(title) + '</b><span class="small muted">' + detail + '</span></div>' + (action || '') + '</div>';
+    };
+    var n = s.nightly, html = '';
+    var installBtn = '<button type="button" class="btn sm" id="sysInstallBtn">' + icon('build') + 'ติดตั้งงานอัตโนมัติ</button>';
+    if (n.installed === false) {
+      html += row('bad', 'งานอัตโนมัติตอนกลางคืน: ยังไม่ได้ติดตั้ง', 'ระบบจะไม่สำรองข้อมูล ไม่ลบพิกัด GPS ที่ครบกำหนด และไม่เพิ่มวันหยุดปีถัดไปให้ จนกว่าจะติดตั้ง', installBtn);
+    } else if (n.stale) {
+      html += row('warn', 'งานอัตโนมัติตอนกลางคืน: ไม่ได้ทำงานมาหลายวัน', (n.lastLabel ? 'ทำงานล่าสุด ' + esc(n.lastLabel) : 'ยังไม่เคยทำงาน') + (n.error ? ' · ข้อผิดพลาดล่าสุด: ' + esc(n.error) : '') + ' — กดติดตั้งใหม่', installBtn);
+    } else {
+      html += row(n.error ? 'warn' : 'ok', 'งานอัตโนมัติตอนกลางคืน (ทุกวัน 02:00 น.)', (n.lastLabel ? 'ทำงานล่าสุด ' + esc(n.lastLabel) : 'ติดตั้งแล้ว รอทำงานครั้งแรกคืนนี้') + (n.error ? ' · ข้อผิดพลาดล่าสุด: ' + esc(n.error) : ''));
+    }
+    var b = s.backup || {};
+    html += row(b.last ? 'ok' : 'warn', 'สำรองฐานข้อมูล', b.last ? 'ล่าสุด ' + esc(b.lastLabel) + ' · อัตโนมัติทุก ' + b.everyDays + ' วัน เก็บ ' + b.keep + ' ชุด' : 'ยังไม่เคยสำรอง — กด “สำรองข้อมูลตอนนี้” ด้านล่าง');
+    if (s.storage) html += row(s.storage.percent >= 95 ? 'bad' : (s.storage.percent >= 85 ? 'warn' : 'ok'), 'พื้นที่ Google Drive ของบัญชีระบบ', 'ใช้ไป ' + esc(s.storage.usedLabel) + ' จาก ' + esc(s.storage.limitLabel) + ' (' + s.storage.percent + '%)');
+    var d = s.database;
+    var top = d.tables.slice().sort(function (x, y) { return y.rows - x.rows; }).slice(0, 3).map(function (t) { return esc(t.name) + ' ' + t.rows.toLocaleString('th-TH') + ' แถว'; }).join(' · ');
+    html += row(d.percent >= 80 ? 'bad' : (d.percent >= 60 ? 'warn' : 'ok'), 'ขนาดฐานข้อมูล', d.percent + '% ของขีดจำกัด Google Sheets (10 ล้านเซลล์) · ' + top + (d.percent >= 60 ? ' — ควรปรึกษาผู้พัฒนาเพื่อแยกข้อมูลปีเก่า' : ''));
+    s.holidays.forEach(function (h) {
+      html += row(h.ok ? 'ok' : 'warn', 'ปฏิทินวันหยุดปี พ.ศ. ' + h.year, h.builtIn ? 'มีวันหยุดราชการครบในระบบ' : (h.ok ? 'เพิ่มวันหยุดทางพุทธศาสนาแล้ว' : 'ยังไม่มีวันหยุดทางพุทธศาสนา — เพิ่มในเมนูปฏิทินวันหยุดตามประกาศ'),
+        h.ok ? '' : '<button type="button" class="btn outline sm" data-go-sec="calendar">' + icon('calendar_month') + 'ไปปฏิทิน</button>');
+    });
+    html += row('ok', 'เวอร์ชันระบบ ' + esc(s.version), s.installedAt ? 'ติดตั้งเมื่อ ' + esc(s.installedAt) : '');
+    $('#sysStatus').innerHTML = html;
+    var ib = $('#sysInstallBtn');
+    if (ib) ib.addEventListener('click', function () {
+      A.setBtnLoading(ib, true);
+      A.api('sys.installTrigger', {}, { loadingText: 'กำลังติดตั้ง...' }).then(function (r) { A.toast(r.message, 'success'); renderSystemStatus(r.status); })
+        .catch(function (x) { A.setBtnLoading(ib, false); err(x); });
+    });
   }
   function renderBackupInfo(b) {
     if (!b) return;

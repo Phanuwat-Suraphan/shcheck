@@ -109,6 +109,9 @@ function getAdminOverview_(ctx) {
   // ผู้ดูแลระบบเห็นรายการนี้ในการ์ด "ตั้งค่าเริ่มต้นให้ครบ" แล้ว
   if (!s.settingsConfirmed && ctx.user.Role !== ROLES.ADMIN) warnings.push('การตั้งค่าเวลาทำงาน/รัศมี GPS ยังเป็นค่าตัวอย่าง กรุณาตรวจสอบให้ตรงกับระเบียบของโรงเรียนแล้วกดยืนยันในหน้าตั้งค่า');
   holidayDataWarnings_(today).forEach(function (w) { warnings.push(w); });
+  if (ctx.user.Role === ROLES.ADMIN && maintenanceStale_()) {
+    warnings.push('งานอัตโนมัติตอนกลางคืน (สำรองข้อมูล, ลบพิกัด GPS ที่ครบกำหนด, เพิ่มวันหยุดปีถัดไป) ไม่ได้ทำงานมาหลายวัน — กรุณาเปิดหน้าตั้งค่า → สถานะระบบ แล้วกด “ติดตั้งงานอัตโนมัติ”');
+  }
   var storage = driveStorageInfo_();
   if (storage && storage.percent >= 85) {
     warnings.push('พื้นที่ Google Drive ของบัญชีระบบใช้ไปแล้ว ' + storage.percent + '% (' + storage.usedLabel + ' จาก ' + storage.limitLabel +
@@ -737,6 +740,10 @@ var THAI_HOLIDAY_DATA_ = {
  * เตือนเมื่อปีปัจจุบัน (หรือปีหน้า ตั้งแต่เดือนตุลาคม) ไม่มีข้อมูลวันหยุดทางพุทธศาสนาในตัวระบบ
  * และผู้ดูแลยังไม่ได้เพิ่มเองในปฏิทิน — ถ้าไม่เพิ่ม วันดังกล่าวจะถูกนับเป็นวันทำงาน (ครูถูกนับว่าขาดงาน)
  */
+function calendarHasBuddhistHolidays_(cal, yy) {
+  return cal.some(function (c) { return +String(c.Date).substr(0, 4) === yy && /มาฆบูชา|วิสาขบูชา|อาสาฬหบูชา|เข้าพรรษา/.test(String(c.Title)); });
+}
+
 function holidayDataWarnings_(today) {
   var y = +today.substr(0, 4), m = +today.substr(5, 2);
   var years = m >= 10 ? [y, y + 1] : [y];
@@ -744,8 +751,7 @@ function holidayDataWarnings_(today) {
   years.forEach(function (yy) {
     if (THAI_HOLIDAY_DATA_[yy]) return;
     cal = cal || readAll_('WorkCalendar');
-    var has = cal.some(function (c) { return +String(c.Date).substr(0, 4) === yy && /มาฆบูชา|วิสาขบูชา|อาสาฬหบูชา|เข้าพรรษา/.test(String(c.Title)); });
-    if (!has) {
+    if (!calendarHasBuddhistHolidays_(cal, yy)) {
       out.push('ปฏิทินวันหยุดปี พ.ศ. ' + (yy + 543) + ' ยังไม่มีวันหยุดทางพุทธศาสนา (มาฆบูชา วิสาขบูชา อาสาฬหบูชา เข้าพรรษา) ซึ่งเปลี่ยนวันทุกปี — ' +
         'กรุณาเพิ่มในเมนูปฏิทินวันหยุดตามประกาศวันหยุดราชการ มิฉะนั้นวันดังกล่าวครูจะถูกนับว่าขาดงาน');
     }
