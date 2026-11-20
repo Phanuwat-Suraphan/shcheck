@@ -620,7 +620,10 @@ function adminListCorrections_(ctx, p) {
     return true;
   }).sort(function (a, b) { return a.RequestedAt < b.RequestedAt ? 1 : -1; }).slice(0, 300);
   var sums = {};
-  readAll_('DailySummary').forEach(function (s) { sums[s.Key] = s; });
+  if (rows.length) {
+    var dates = rows.map(function (r) { return r.Date; }).filter(isValidYmd_).sort();
+    if (dates.length) summariesBetween_(dates[0], dates[dates.length - 1]).forEach(function (s) { sums[s.Key] = s; });
+  }
   return rows.map(function (r) {
     var v = correctionView_(r);
     var cur = sums[r.Date + '|' + r.EmployeeID];

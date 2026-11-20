@@ -1,5 +1,5 @@
 /*
- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.16.0
+ * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.17.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Code.gs (โค้ดฝั่ง Server ทั้งหมด)
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่
  */
@@ -18,7 +18,7 @@
  *   - ฟังก์ชันระดับบนสุดที่ "ไม่" ลงท้ายด้วย "_" สามารถถูกเรียกจาก Browser ผ่าน
  *     google.script.run ได้ทั้งหมด
  *   - ระบบนี้จึงเปิดเฉพาะฟังก์ชันสาธารณะที่จำเป็น ได้แก่
- *       doGet, include, getPublicConfig, login, resumeSession, register, firstRunSetup,
+ *       doGet, include, getPublicConfig, bootstrap, login, resumeSession, register, firstRunSetup,
  *       requestPasswordReset, api
  *       และฟังก์ชันสำหรับผู้พัฒนา (SetupSystem, CreateFirstAdmin, EmergencyResetAdmin,
  *       BenchmarkPasswordHashing, DailyMaintenance) ซึ่งตรวจสอบว่าเรียกจาก
@@ -35,7 +35,7 @@ var APP = {
   SCHOOL_FULL: 'โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่',
   NAME_EN: 'Wat Sao Hin School Attendance System',
   SLOGAN: 'ระบบลงเวลาอัจฉริยะ สะดวก โปร่งใส ตรวจสอบได้',
-  VERSION: '1.16.0',
+  VERSION: '1.17.0',
   TZ: 'Asia/Bangkok'
 };
 
@@ -177,6 +177,42 @@ function api(token, action, params) {
   } catch (err) {
     return toErrorResponse_(err, action);
   }
+}
+
+/**
+ * เปิดแอปในคำขอเดียว: ค่าระบบ + ตรวจ Session หรือเข้าสู่ระบบอัตโนมัติ (เครื่องที่จำไว้) + ข้อมูลหน้าแรก
+ * แทนการเรียก getPublicConfig → auth.session/resumeSession → me.dashboard ทีละรอบ (ลดการรอเมื่อเปิดแอป)
+ * ทุกขั้นใช้ฟังก์ชันเดิม (ตรวจสิทธิ์/บันทึก Audit เหมือนเรียกแยก)
+ */
+function bootstrap(sessionToken, deviceToken, clientInfo) {
+  resetMemo_();
+  var cfg = getPublicConfig();
+  if (!cfg.ok) return cfg;
+  var out = { config: cfg.data, session: null, dashboard: null, resume: null };
+  if (!cfg.data.setupComplete || cfg.data.needsFirstAdmin) return { ok: true, data: out };
+  MEMO_KEEP_++;
+  try {
+    var auth = null, token = '';
+    if (sessionToken) {
+      var a = api(String(sessionToken), 'auth.session', {});
+      if (a.ok) { auth = a.data; token = String(sessionToken); }
+    }
+    if (!auth && deviceToken) {
+      var rs = resumeSession(deviceToken, clientInfo);
+      out.resume = { ok: !!rs.ok, code: rs.code || '' };
+      if (rs.ok) { auth = rs.data; token = rs.data.token; }
+    }
+    if (auth) {
+      out.session = auth;
+      if (!(auth.mustChangePassword || (auth.user && auth.user.mustChangePassword))) {
+        var dash = api(token, 'me.dashboard', {});
+        if (dash.ok) out.dashboard = dash.data;
+      }
+    }
+  } finally {
+    MEMO_KEEP_--;
+  }
+  return { ok: true, data: out };
 }
 
 /** ตารางคำสั่ง → ฟังก์ชันภายใน + สิทธิ์ที่ต้องมี (null = ทุกบทบาทที่เข้าสู่ระบบแล้ว) */
@@ -741,9 +777,11 @@ var DEFAULT_SETTINGS_ = [
 /* ========================================================================== */
 
 var MEMO_ = {};
+/** > 0 ระหว่าง bootstrap(): ขั้นตอนย่อยใช้ข้อมูลที่อ่านแล้วร่วมกัน (ไม่ต้องเปิดไฟล์/อ่านหัวตารางซ้ำ) */
+var MEMO_KEEP_ = 0;
 
 /** ล้างข้อมูลชั่วคราวของการทำงานรอบนี้ (เรียกที่จุดเริ่มของทุก entry point) */
-function resetMemo_() { MEMO_ = {}; }
+function resetMemo_() { if (MEMO_KEEP_ > 0) return; MEMO_ = {}; }
 
 function scriptProps_() {
   if (!MEMO_.props) MEMO_.props = PropertiesService.getScriptProperties().getProperties();
@@ -790,12 +828,22 @@ function ensureReady_() {
 function getTable_(name) {
   MEMO_.tables = MEMO_.tables || {};
   if (MEMO_.tables[name]) return MEMO_.tables[name];
-  var schema = SCHEMA_[name];
-  if (!schema) throw new Error('Unknown table: ' + name);
+  var sh = tableSheet_(name);
+  return buildTable_(name, sh, sh.getRange('1:1').getValues()[0]);
+}
+
+function tableSheet_(name) {
+  if (!SCHEMA_[name]) throw new Error('Unknown table: ' + name);
   var sh = getSpreadsheet_().getSheetByName(name);
   if (!sh) throw appError_('ไม่พบชีต "' + name + '" กรุณารัน SetupSystem()', 'NOT_SETUP');
-  var lastCol = sh.getLastColumn();
-  var headers = lastCol > 0 ? sh.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) { return String(h).trim(); }) : [];
+  return sh;
+}
+
+/** สร้างข้อมูลโครงสร้างจากแถวหัวตาราง (ตัดช่องว่างท้ายแถว) */
+function buildTable_(name, sh, headerRow) {
+  var schema = SCHEMA_[name];
+  var headers = (headerRow || []).map(function (h) { return String(h).trim(); });
+  while (headers.length && headers[headers.length - 1] === '') headers.pop();
   var idx = {};
   headers.forEach(function (h, i) { if (h && !(h in idx)) idx[h] = i; });
   var types = {};
@@ -806,6 +854,7 @@ function getTable_(name) {
     }
   });
   var t = { name: name, sheet: sh, headers: headers, idx: idx, types: types, width: headers.length };
+  MEMO_.tables = MEMO_.tables || {};
   MEMO_.tables[name] = t;
   return t;
 }
@@ -872,17 +921,57 @@ function isEmptyRow_(row) {
 function readAll_(name) {
   MEMO_.rows = MEMO_.rows || {};
   if (MEMO_.rows[name]) return MEMO_.rows[name];
-  var t = getTable_(name);
-  var last = t.sheet.getLastRow();
+  var t, values;
+  if (MEMO_.tables && MEMO_.tables[name]) {
+    t = MEMO_.tables[name];
+    var last = t.sheet.getLastRow();
+    values = last >= 2 ? t.sheet.getRange(2, 1, last - 1, t.width).getValues() : [];
+  } else {
+    // ยังไม่เคยอ่านหัวตารางในรอบนี้: อ่านหัวตาราง + ข้อมูลในคำสั่งเดียว
+    var sh = tableSheet_(name);
+    var all = sh.getDataRange().getValues();
+    t = buildTable_(name, sh, all[0]);
+    values = all.slice(1);
+  }
   var out = [];
-  if (last >= 2) {
-    var values = t.sheet.getRange(2, 1, last - 1, t.width).getValues();
-    for (var i = 0; i < values.length; i++) {
-      if (isEmptyRow_(values[i])) continue;
-      out.push(rowToRecord_(t, values[i], i + 2));
-    }
+  for (var i = 0; i < values.length; i++) {
+    if (isEmptyRow_(values[i])) continue;
+    out.push(rowToRecord_(t, values[i], i + 2));
   }
   MEMO_.rows[name] = out;
+  return out;
+}
+
+/**
+ * สรุปรายวัน (DailySummary) ในช่วงวันที่ — อ่านเฉพาะคอลัมน์วันที่ทั้งชีต แล้วอ่านเฉพาะแถวที่อยู่ในช่วง
+ * หน้าแรก/ภาพรวมจึงไม่ต้องอ่านทั้งตารางเมื่อข้อมูลสะสมหลายปี (ถ้าอ่านทั้งตารางแล้วในรอบนี้ ใช้ข้อมูลนั้น)
+ */
+function summariesBetween_(from, to) {
+  var inRange = function (r) { return r.Date >= from && r.Date <= to; };
+  if (MEMO_.rows && MEMO_.rows.DailySummary) return MEMO_.rows.DailySummary.filter(inRange);
+  var t = getTable_('DailySummary');
+  var s = MEMO_.sum;
+  if (!s) {
+    var last = t.sheet.getLastRow();
+    var dates = last >= 2 ? t.sheet.getRange(2, t.idx.Date + 1, last - 1, 1).getValues().map(function (r) { return valueFromCell_(r[0], 'date'); }) : [];
+    s = MEMO_.sum = { dates: dates, recs: {} };
+  }
+  var blocks = [];
+  for (var i = 0; i < s.dates.length; i++) {
+    if (!(s.dates[i] >= from && s.dates[i] <= to) || (i in s.recs)) continue;
+    var b = blocks[blocks.length - 1];
+    if (b && i === b.end + 1) b.end = i; else blocks.push({ start: i, end: i });
+  }
+  // แถวที่ต้องการกระจายมาก (เช่น สร้างสรุปใหม่หลายเดือน) → อ่านทั้งตารางครั้งเดียวคุ้มกว่า
+  if (blocks.length > 25) return readAll_('DailySummary').filter(inRange);
+  blocks.forEach(function (bk) {
+    var vals = t.sheet.getRange(bk.start + 2, 1, bk.end - bk.start + 1, t.width).getValues();
+    vals.forEach(function (row, k) { s.recs[bk.start + k] = isEmptyRow_(row) ? null : rowToRecord_(t, row, bk.start + k + 2); });
+  });
+  var out = [];
+  for (var j = 0; j < s.dates.length; j++) {
+    if (s.dates[j] >= from && s.dates[j] <= to && s.recs[j]) out.push(s.recs[j]);
+  }
   return out;
 }
 
@@ -998,6 +1087,7 @@ var CACHED_TABLES_ = { Employees: true, Settings: true, WorkCalendar: true };
 
 function markDirty_(name) {
   if (MEMO_.rows) delete MEMO_.rows[name];
+  if (name === 'DailySummary') delete MEMO_.sum;
   if (name === 'Employees') delete MEMO_.emps;
   if (name === 'Settings') delete MEMO_.settings;
   if (name === 'WorkCalendar') delete MEMO_.calendar;
@@ -1280,7 +1370,11 @@ var DB_FILE_NAME_ = 'ฐานข้อมูลระบบลงเวลา �
 var SETUP_SHEET_ = 'เริ่มต้นใช้งาน';
 
 function hasActiveAdmin_() {
-  return getEmployees_().some(function (e) { return e.Role === ROLES.ADMIN && e.Status === EMP_STATUS.ACTIVE; });
+  var cache = CacheService.getScriptCache();
+  try { if (cache.get('has_admin_v1') === '1') return true; } catch (e) { /* ignore */ }
+  var yes = getEmployees_().some(function (e) { return e.Role === ROLES.ADMIN && e.Status === EMP_STATUS.ACTIVE; });
+  if (yes) { try { cache.put('has_admin_v1', '1', 21600); } catch (e2) { /* ignore */ } }
+  return yes;
 }
 
 /**
@@ -1514,7 +1608,7 @@ function systemStatus_() {
       result: p.MAINT_RESULT || '', error: p.MAINT_ERROR || '', stale: maintenanceStale_()
     },
     backup: backupInfo_(),
-    storage: driveStorageInfo_(),
+    storage: driveStorageInfo_(true),
     database: { cells: cells, limit: 10000000, percent: round_(cells / 100000, 1), tables: tables },
     holidays: [y, y + 1].map(function (yy) {
       var builtIn = !!THAI_HOLIDAY_DATA_[yy];
@@ -1552,7 +1646,7 @@ function backupFolder_() {
 function backupDatabase_() {
   var ssId = scriptProps_().SPREADSHEET_ID;
   if (!ssId) throw appError_('ระบบยังไม่ได้ติดตั้งฐานข้อมูล', 'NOT_SETUP');
-  var storage = driveStorageInfo_();
+  var storage = driveStorageInfo_(true);
   if (storage && storage.percent >= 95) {
     throw appError_('พื้นที่ Google Drive ใช้ไปแล้ว ' + storage.percent + '% จึงยังไม่สำรองข้อมูล กรุณาเพิ่มพื้นที่ก่อน', 'STORAGE_FULL');
   }
@@ -3713,7 +3807,10 @@ function adminListCorrections_(ctx, p) {
     return true;
   }).sort(function (a, b) { return a.RequestedAt < b.RequestedAt ? 1 : -1; }).slice(0, 300);
   var sums = {};
-  readAll_('DailySummary').forEach(function (s) { sums[s.Key] = s; });
+  if (rows.length) {
+    var dates = rows.map(function (r) { return r.Date; }).filter(isValidYmd_).sort();
+    if (dates.length) summariesBetween_(dates[0], dates[dates.length - 1]).forEach(function (s) { sums[s.Key] = s; });
+  }
   return rows.map(function (r) {
     var v = correctionView_(r);
     var cur = sums[r.Date + '|' + r.EmployeeID];
@@ -3895,13 +3992,27 @@ function getAdminView_(ctx) {
  * รายการตั้งค่าเริ่มต้นที่ควรทำให้ครบ (แสดงบนหน้าภาพรวมของผู้ดูแลระบบจนกว่าจะครบ)
  * ตรวจจากข้อมูลจริงทั้งหมด ไม่ต้องติ๊กเอง
  */
+/** ครูเริ่มลงเวลาแล้วหรือยัง — อ่านเฉพาะคอลัมน์รหัสบุคลากรของสรุปรายวัน และจำผลไว้เมื่อเป็นจริง (ไม่กลับเป็นเท็จ) */
+function staffStartedUsing_(activeIds) {
+  if (scriptProps_().FIRST_USE_AT) return true;
+  var t = getTable_('DailySummary');
+  var last = t.sheet.getLastRow();
+  if (last < 2) return false;
+  var used = t.sheet.getRange(2, t.idx.EmployeeID + 1, last - 1, 1).getValues().some(function (r) { return activeIds[valueFromCell_(r[0], 'str')]; });
+  if (used) {
+    try { PropertiesService.getScriptProperties().setProperty('FIRST_USE_AT', nowStamp_()); MEMO_.props = null; } catch (e) { /* ignore */ }
+  }
+  return used;
+}
+
 function setupChecklist_(s, allEmps, today) {
   var active = allEmps.filter(function (e) { return e.Status === EMP_STATUS.ACTIVE; });
   var activeIds = {};
   active.forEach(function (e) { if (e.Role !== ROLES.ADMIN) activeIds[e.EmployeeID] = true; });
   var y = +today.substr(0, 4);
-  var schoolBreak = readAll_('WorkCalendar').some(function (c) {
-    return c.Type === 'SPECIAL_HOLIDAY' && (+String(c.Date).substr(0, 4) === y || +String(c.Date).substr(0, 4) === y + 1);
+  var cal = getCalendarMap_();
+  var schoolBreak = Object.keys(cal).some(function (d) {
+    return cal[d].type === 'SPECIAL_HOLIDAY' && (+d.substr(0, 4) === y || +d.substr(0, 4) === y + 1);
   });
   var items = [
     { key: 'geo', done: s.geofenceConfigured, sec: 'settings', title: 'ตั้งพิกัดโรงเรียน', hint: 'ไปที่โรงเรียนแล้วกด “ใช้ตำแหน่งปัจจุบันของฉัน” ในหน้าตั้งค่า' },
@@ -3909,7 +4020,7 @@ function setupChecklist_(s, allEmps, today) {
     { key: 'director', done: !!s.directorName, sec: 'settings', title: 'ใส่ชื่อผู้อำนวยการ', hint: 'ใช้ในช่องลงนามของใบลาและรายงาน' },
     { key: 'break', done: schoolBreak, sec: 'calendar', title: 'เพิ่มวันปิดภาคเรียน/วันหยุดของโรงเรียน', hint: 'ถ้าไม่เพิ่ม ช่วงปิดภาคเรียนครูทุกคนจะถูกนับว่าขาดงาน' },
     { key: 'staff', done: Object.keys(activeIds).length > 0, sec: 'share', title: 'เพิ่มครูและบุคลากร', hint: 'วางรายชื่อจาก Excel แล้วพิมพ์บัตรเข้าใช้งาน หรือส่งลิงก์ให้สมัครเอง' },
-    { key: 'firstUse', done: readAll_('DailySummary').some(function (g) { return activeIds[g.EmployeeID]; }), sec: 'share', title: 'ครูเริ่มลงเวลา', hint: 'ติดประกาศ QR Code ที่ห้องพักครู หรือส่งข้อความในกลุ่ม LINE' }
+    { key: 'firstUse', done: staffStartedUsing_(activeIds), sec: 'share', title: 'ครูเริ่มลงเวลา', hint: 'ติดประกาศ QR Code ที่ห้องพักครู หรือส่งข้อความในกลุ่ม LINE' }
   ];
   var done = items.filter(function (i) { return i.done; }).length;
   return { items: items, done: done, total: items.length, complete: done === items.length };
@@ -4011,15 +4122,23 @@ function getAdminOverview_(ctx) {
 }
 
 /** พื้นที่ Google Drive ของบัญชีที่ใช้ติดตั้งระบบ (ใช้ร่วมกับ Gmail/Google Photos) */
-function driveStorageInfo_() {
+function driveStorageInfo_(fresh) {
+  var cache = CacheService.getScriptCache();
+  if (!fresh) {
+    try { var hit = cache.get('drive_storage_v1'); if (hit) return JSON.parse(hit).info; } catch (e0) { /* ignore */ }
+  }
+  var info = null;
   try {
     var used = DriveApp.getStorageUsed(), limit = DriveApp.getStorageLimit();
-    if (!limit || limit <= 0) return null; // ไม่จำกัด (เช่น บางบัญชีองค์กร)
     function gb(b) { return round_(b / Math.pow(1024, 3), 2) + ' GB'; }
-    return { used: used, limit: limit, percent: Math.round(used / limit * 100), usedLabel: gb(used), limitLabel: gb(limit) };
+    // limit <= 0 = ไม่จำกัด (เช่น บางบัญชีองค์กร)
+    info = limit && limit > 0 ? { used: used, limit: limit, percent: Math.round(used / limit * 100), usedLabel: gb(used), limitLabel: gb(limit) } : null;
   } catch (e) {
     return null;
   }
+  // การเรียก Drive ใช้เวลานาน และพื้นที่เปลี่ยนช้า → จำไว้ 30 นาที
+  try { cache.put('drive_storage_v1', JSON.stringify({ info: info }), 1800); } catch (e2) { /* ignore */ }
+  return info;
 }
 
 /* ========================================================================== */
@@ -4627,7 +4746,10 @@ function holidayDataWarnings_(today) {
   var cal = null, out = [];
   years.forEach(function (yy) {
     if (THAI_HOLIDAY_DATA_[yy]) return;
-    cal = cal || readAll_('WorkCalendar');
+    if (!cal) {
+      var map = getCalendarMap_(); // ปฏิทินจากแคช
+      cal = Object.keys(map).map(function (d) { return { Date: d, Title: map[d].title }; });
+    }
     if (!calendarHasBuddhistHolidays_(cal, yy)) {
       out.push('ปฏิทินวันหยุดปี พ.ศ. ' + (yy + 543) + ' ยังไม่มีวันหยุดทางพุทธศาสนา (มาฆบูชา วิสาขบูชา อาสาฬหบูชา เข้าพรรษา) ซึ่งเปลี่ยนวันทุกปี — ' +
         'กรุณาเพิ่มในเมนูปฏิทินวันหยุดตามประกาศวันหยุดราชการ มิฉะนั้นวันดังกล่าวครูจะถูกนับว่าขาดงาน');
@@ -4915,8 +5037,8 @@ function computeAttendance_(opts) {
 
   var sums = {};
   if (dates.length) {
-    readAll_('DailySummary').forEach(function (r) {
-      if (r.Date >= from && r.Date <= to && ids[r.EmployeeID]) sums[r.Key] = r;
+    summariesBetween_(from, to).forEach(function (r) {
+      if (ids[r.EmployeeID]) sums[r.Key] = r;
     });
   }
   var leaves = {};

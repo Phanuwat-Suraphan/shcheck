@@ -445,26 +445,31 @@
   function boot() {
     bindStatic();
     bindFontScale();
-    $('#bootText').textContent = 'กำลังเชื่อมต่อเซิร์ฟเวอร์...';
-    run('getPublicConfig', []).then(function (res) {
+    var token = session.get('wsh_token') || '', dev = local.get('wsh_device') || '';
+    $('#bootText').textContent = token || dev ? 'กำลังเปิดระบบ...' : 'กำลังเชื่อมต่อเซิร์ฟเวอร์...';
+    // เปิดแอปในคำขอเดียว: ค่าระบบ + เข้าสู่ระบบอัตโนมัติ + ข้อมูลหน้าแรก (เดิมต้องรอ 3 รอบ)
+    run('bootstrap', [token, dev, clientInfo()]).then(function (res) {
       if (!res || !res.ok) throw appErr(res ? res.error : 'โหลดข้อมูลไม่สำเร็จ');
-      S.cfg = res.data;
-      S.offsetMs = res.data.serverNow - Date.now();
+      var b = res.data;
+      S.cfg = b.config;
+      S.offsetMs = S.cfg.serverNow - Date.now();
       applyMeta(S.cfg);
       $('#setupNotice').hidden = !!S.cfg.setupComplete;
       $('#registerArea').hidden = !S.cfg.allowRegistration;
       if (S.cfg.needsFirstAdmin) { showSetup(); return; }
-      var token = session.get('wsh_token');
-      if (token && S.cfg.setupComplete) {
-        S.token = token;
-        return api('auth.session', {}, { silent: true }).then(enterApp).catch(function () { clearSession(); showLogin(); });
+      if (b.session) {
+        S.token = b.session.token || token;
+        session.set('wsh_token', S.token);
+        S.preDash = b.dashboard || null;
+        enterApp(b.session);
+        return;
       }
-      if (hasDevice() && S.cfg.setupComplete) {
-        $('#bootText').textContent = 'กำลังเข้าสู่ระบบอัตโนมัติ...';
-        return silentResume().then(function (data) {
-          if (data) enterApp(data);
-          else { showLogin(); showLoginAlert(hasDevice() ? 'เชื่อมต่อไม่สำเร็จ กรุณาลองใหม่ หรือเข้าสู่ระบบด้วยรหัสผ่าน' : 'กรุณาเข้าสู่ระบบอีกครั้ง (การจำเครื่องนี้สิ้นสุดแล้ว)'); }
-        });
+      if (token) clearSession();
+      if (dev && S.cfg.setupComplete) {
+        if (b.resume && b.resume.code === 'AUTH') local.del('wsh_device');
+        showLogin();
+        showLoginAlert(hasDevice() ? 'เชื่อมต่อไม่สำเร็จ กรุณาลองใหม่ หรือเข้าสู่ระบบด้วยรหัสผ่าน' : 'กรุณาเข้าสู่ระบบอีกครั้ง (การจำเครื่องนี้สิ้นสุดแล้ว)');
+        return;
       }
       showLogin();
     }).catch(function (e) {
@@ -565,6 +570,7 @@
 
   function enterApp(data) {
     S.user = data.user;
+    if (S.user && S.user.role !== 'ADMIN' && S.user.role !== 'EXECUTIVE') local.del('wsh_admin_ui');
     S.timeoutMin = data.sessionTimeoutMin || 30;
     S.lastApi = Date.now();
     S.loadedTabs = {};
@@ -711,6 +717,7 @@
       if (!yes) return;
       var t = S.token;
       setDevice(null);
+      local.del('wsh_admin_ui');
       clearSession();
       showLogin();
       if (t) run('api', [t, 'auth.logout', {}]).catch(function () { /* ignore */ });
@@ -1091,6 +1098,12 @@
 
   /* ------------------------------------------------------------------ home / dashboard */
   function loadDashboard(silent) {
+    if (S.preDash) { // ได้มาพร้อมการเปิดแอปแล้ว (bootstrap) — ไม่ต้องเรียกเซิร์ฟเวอร์ซ้ำ
+      S.dash = S.preDash; S.preDash = null;
+      S.offsetMs = S.dash.serverNow - Date.now();
+      renderDashboard();
+      return Promise.resolve();
+    }
     return api('me.dashboard', {}, { silent: !!silent && !!S.dash, loadingText: 'กำลังโหลดข้อมูล...' }).then(function (d) {
       S.dash = d;
       S.offsetMs = d.serverNow - Date.now();
@@ -1826,7 +1839,15 @@
   function openAdmin(sec) {
     sec = typeof sec === 'string' ? sec : null;
     if (S.adminLoaded && window.Admin) { showView('admin'); if (sec) window.Admin.go(sec); else window.Admin.show(); return; }
-    api('admin.view', {}, { loadingText: 'กำลังโหลดหน้าผู้ดูแลระบบ...' }).then(function (v) {
+    var ver = (S.cfg && S.cfg.version) || '', cached = null;
+    try { cached = JSON.parse(local.get('wsh_admin_ui') || 'null'); } catch (e) { cached = null; }
+    var load = cached && cached.v === ver && cached.html
+      ? Promise.resolve({ html: cached.html, script: cached.script, role: S.user.role, roleLabel: S.user.roleLabel })
+      : api('admin.view', {}, { loadingText: 'กำลังโหลดหน้าผู้ดูแลระบบ...' }).then(function (v) {
+        try { local.set('wsh_admin_ui', JSON.stringify({ v: ver, html: v.html, script: v.script || '' })); } catch (e) { /* พื้นที่ในเครื่องเต็ม — โหลดจากเซิร์ฟเวอร์ครั้งหน้า */ }
+        return v;
+      });
+    load.then(function (v) {
       $('#adminRoot').innerHTML = v.html;
       // สคริปต์ของหน้า Admin: แยกไฟล์ (v.script) หรือฝังใน HTML (ชุดติดตั้งแบบง่าย)
       var codes = [];

@@ -231,9 +231,11 @@ var DEFAULT_SETTINGS_ = [
 /* ========================================================================== */
 
 var MEMO_ = {};
+/** > 0 ระหว่าง bootstrap(): ขั้นตอนย่อยใช้ข้อมูลที่อ่านแล้วร่วมกัน (ไม่ต้องเปิดไฟล์/อ่านหัวตารางซ้ำ) */
+var MEMO_KEEP_ = 0;
 
 /** ล้างข้อมูลชั่วคราวของการทำงานรอบนี้ (เรียกที่จุดเริ่มของทุก entry point) */
-function resetMemo_() { MEMO_ = {}; }
+function resetMemo_() { if (MEMO_KEEP_ > 0) return; MEMO_ = {}; }
 
 function scriptProps_() {
   if (!MEMO_.props) MEMO_.props = PropertiesService.getScriptProperties().getProperties();
@@ -280,12 +282,22 @@ function ensureReady_() {
 function getTable_(name) {
   MEMO_.tables = MEMO_.tables || {};
   if (MEMO_.tables[name]) return MEMO_.tables[name];
-  var schema = SCHEMA_[name];
-  if (!schema) throw new Error('Unknown table: ' + name);
+  var sh = tableSheet_(name);
+  return buildTable_(name, sh, sh.getRange('1:1').getValues()[0]);
+}
+
+function tableSheet_(name) {
+  if (!SCHEMA_[name]) throw new Error('Unknown table: ' + name);
   var sh = getSpreadsheet_().getSheetByName(name);
   if (!sh) throw appError_('ไม่พบชีต "' + name + '" กรุณารัน SetupSystem()', 'NOT_SETUP');
-  var lastCol = sh.getLastColumn();
-  var headers = lastCol > 0 ? sh.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) { return String(h).trim(); }) : [];
+  return sh;
+}
+
+/** สร้างข้อมูลโครงสร้างจากแถวหัวตาราง (ตัดช่องว่างท้ายแถว) */
+function buildTable_(name, sh, headerRow) {
+  var schema = SCHEMA_[name];
+  var headers = (headerRow || []).map(function (h) { return String(h).trim(); });
+  while (headers.length && headers[headers.length - 1] === '') headers.pop();
   var idx = {};
   headers.forEach(function (h, i) { if (h && !(h in idx)) idx[h] = i; });
   var types = {};
@@ -296,6 +308,7 @@ function getTable_(name) {
     }
   });
   var t = { name: name, sheet: sh, headers: headers, idx: idx, types: types, width: headers.length };
+  MEMO_.tables = MEMO_.tables || {};
   MEMO_.tables[name] = t;
   return t;
 }
@@ -362,17 +375,57 @@ function isEmptyRow_(row) {
 function readAll_(name) {
   MEMO_.rows = MEMO_.rows || {};
   if (MEMO_.rows[name]) return MEMO_.rows[name];
-  var t = getTable_(name);
-  var last = t.sheet.getLastRow();
+  var t, values;
+  if (MEMO_.tables && MEMO_.tables[name]) {
+    t = MEMO_.tables[name];
+    var last = t.sheet.getLastRow();
+    values = last >= 2 ? t.sheet.getRange(2, 1, last - 1, t.width).getValues() : [];
+  } else {
+    // ยังไม่เคยอ่านหัวตารางในรอบนี้: อ่านหัวตาราง + ข้อมูลในคำสั่งเดียว
+    var sh = tableSheet_(name);
+    var all = sh.getDataRange().getValues();
+    t = buildTable_(name, sh, all[0]);
+    values = all.slice(1);
+  }
   var out = [];
-  if (last >= 2) {
-    var values = t.sheet.getRange(2, 1, last - 1, t.width).getValues();
-    for (var i = 0; i < values.length; i++) {
-      if (isEmptyRow_(values[i])) continue;
-      out.push(rowToRecord_(t, values[i], i + 2));
-    }
+  for (var i = 0; i < values.length; i++) {
+    if (isEmptyRow_(values[i])) continue;
+    out.push(rowToRecord_(t, values[i], i + 2));
   }
   MEMO_.rows[name] = out;
+  return out;
+}
+
+/**
+ * สรุปรายวัน (DailySummary) ในช่วงวันที่ — อ่านเฉพาะคอลัมน์วันที่ทั้งชีต แล้วอ่านเฉพาะแถวที่อยู่ในช่วง
+ * หน้าแรก/ภาพรวมจึงไม่ต้องอ่านทั้งตารางเมื่อข้อมูลสะสมหลายปี (ถ้าอ่านทั้งตารางแล้วในรอบนี้ ใช้ข้อมูลนั้น)
+ */
+function summariesBetween_(from, to) {
+  var inRange = function (r) { return r.Date >= from && r.Date <= to; };
+  if (MEMO_.rows && MEMO_.rows.DailySummary) return MEMO_.rows.DailySummary.filter(inRange);
+  var t = getTable_('DailySummary');
+  var s = MEMO_.sum;
+  if (!s) {
+    var last = t.sheet.getLastRow();
+    var dates = last >= 2 ? t.sheet.getRange(2, t.idx.Date + 1, last - 1, 1).getValues().map(function (r) { return valueFromCell_(r[0], 'date'); }) : [];
+    s = MEMO_.sum = { dates: dates, recs: {} };
+  }
+  var blocks = [];
+  for (var i = 0; i < s.dates.length; i++) {
+    if (!(s.dates[i] >= from && s.dates[i] <= to) || (i in s.recs)) continue;
+    var b = blocks[blocks.length - 1];
+    if (b && i === b.end + 1) b.end = i; else blocks.push({ start: i, end: i });
+  }
+  // แถวที่ต้องการกระจายมาก (เช่น สร้างสรุปใหม่หลายเดือน) → อ่านทั้งตารางครั้งเดียวคุ้มกว่า
+  if (blocks.length > 25) return readAll_('DailySummary').filter(inRange);
+  blocks.forEach(function (bk) {
+    var vals = t.sheet.getRange(bk.start + 2, 1, bk.end - bk.start + 1, t.width).getValues();
+    vals.forEach(function (row, k) { s.recs[bk.start + k] = isEmptyRow_(row) ? null : rowToRecord_(t, row, bk.start + k + 2); });
+  });
+  var out = [];
+  for (var j = 0; j < s.dates.length; j++) {
+    if (s.dates[j] >= from && s.dates[j] <= to && s.recs[j]) out.push(s.recs[j]);
+  }
   return out;
 }
 
@@ -488,6 +541,7 @@ var CACHED_TABLES_ = { Employees: true, Settings: true, WorkCalendar: true };
 
 function markDirty_(name) {
   if (MEMO_.rows) delete MEMO_.rows[name];
+  if (name === 'DailySummary') delete MEMO_.sum;
   if (name === 'Employees') delete MEMO_.emps;
   if (name === 'Settings') delete MEMO_.settings;
   if (name === 'WorkCalendar') delete MEMO_.calendar;
@@ -770,7 +824,11 @@ var DB_FILE_NAME_ = 'ฐานข้อมูลระบบลงเวลา �
 var SETUP_SHEET_ = 'เริ่มต้นใช้งาน';
 
 function hasActiveAdmin_() {
-  return getEmployees_().some(function (e) { return e.Role === ROLES.ADMIN && e.Status === EMP_STATUS.ACTIVE; });
+  var cache = CacheService.getScriptCache();
+  try { if (cache.get('has_admin_v1') === '1') return true; } catch (e) { /* ignore */ }
+  var yes = getEmployees_().some(function (e) { return e.Role === ROLES.ADMIN && e.Status === EMP_STATUS.ACTIVE; });
+  if (yes) { try { cache.put('has_admin_v1', '1', 21600); } catch (e2) { /* ignore */ } }
+  return yes;
 }
 
 /**
@@ -1004,7 +1062,7 @@ function systemStatus_() {
       result: p.MAINT_RESULT || '', error: p.MAINT_ERROR || '', stale: maintenanceStale_()
     },
     backup: backupInfo_(),
-    storage: driveStorageInfo_(),
+    storage: driveStorageInfo_(true),
     database: { cells: cells, limit: 10000000, percent: round_(cells / 100000, 1), tables: tables },
     holidays: [y, y + 1].map(function (yy) {
       var builtIn = !!THAI_HOLIDAY_DATA_[yy];
@@ -1042,7 +1100,7 @@ function backupFolder_() {
 function backupDatabase_() {
   var ssId = scriptProps_().SPREADSHEET_ID;
   if (!ssId) throw appError_('ระบบยังไม่ได้ติดตั้งฐานข้อมูล', 'NOT_SETUP');
-  var storage = driveStorageInfo_();
+  var storage = driveStorageInfo_(true);
   if (storage && storage.percent >= 95) {
     throw appError_('พื้นที่ Google Drive ใช้ไปแล้ว ' + storage.percent + '% จึงยังไม่สำรองข้อมูล กรุณาเพิ่มพื้นที่ก่อน', 'STORAGE_FULL');
   }

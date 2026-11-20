@@ -10,7 +10,7 @@
  *   - ฟังก์ชันระดับบนสุดที่ "ไม่" ลงท้ายด้วย "_" สามารถถูกเรียกจาก Browser ผ่าน
  *     google.script.run ได้ทั้งหมด
  *   - ระบบนี้จึงเปิดเฉพาะฟังก์ชันสาธารณะที่จำเป็น ได้แก่
- *       doGet, include, getPublicConfig, login, resumeSession, register, firstRunSetup,
+ *       doGet, include, getPublicConfig, bootstrap, login, resumeSession, register, firstRunSetup,
  *       requestPasswordReset, api
  *       และฟังก์ชันสำหรับผู้พัฒนา (SetupSystem, CreateFirstAdmin, EmergencyResetAdmin,
  *       BenchmarkPasswordHashing, DailyMaintenance) ซึ่งตรวจสอบว่าเรียกจาก
@@ -27,7 +27,7 @@ var APP = {
   SCHOOL_FULL: 'โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่',
   NAME_EN: 'Wat Sao Hin School Attendance System',
   SLOGAN: 'ระบบลงเวลาอัจฉริยะ สะดวก โปร่งใส ตรวจสอบได้',
-  VERSION: '1.16.0',
+  VERSION: '1.17.0',
   TZ: 'Asia/Bangkok'
 };
 
@@ -169,6 +169,42 @@ function api(token, action, params) {
   } catch (err) {
     return toErrorResponse_(err, action);
   }
+}
+
+/**
+ * เปิดแอปในคำขอเดียว: ค่าระบบ + ตรวจ Session หรือเข้าสู่ระบบอัตโนมัติ (เครื่องที่จำไว้) + ข้อมูลหน้าแรก
+ * แทนการเรียก getPublicConfig → auth.session/resumeSession → me.dashboard ทีละรอบ (ลดการรอเมื่อเปิดแอป)
+ * ทุกขั้นใช้ฟังก์ชันเดิม (ตรวจสิทธิ์/บันทึก Audit เหมือนเรียกแยก)
+ */
+function bootstrap(sessionToken, deviceToken, clientInfo) {
+  resetMemo_();
+  var cfg = getPublicConfig();
+  if (!cfg.ok) return cfg;
+  var out = { config: cfg.data, session: null, dashboard: null, resume: null };
+  if (!cfg.data.setupComplete || cfg.data.needsFirstAdmin) return { ok: true, data: out };
+  MEMO_KEEP_++;
+  try {
+    var auth = null, token = '';
+    if (sessionToken) {
+      var a = api(String(sessionToken), 'auth.session', {});
+      if (a.ok) { auth = a.data; token = String(sessionToken); }
+    }
+    if (!auth && deviceToken) {
+      var rs = resumeSession(deviceToken, clientInfo);
+      out.resume = { ok: !!rs.ok, code: rs.code || '' };
+      if (rs.ok) { auth = rs.data; token = rs.data.token; }
+    }
+    if (auth) {
+      out.session = auth;
+      if (!(auth.mustChangePassword || (auth.user && auth.user.mustChangePassword))) {
+        var dash = api(token, 'me.dashboard', {});
+        if (dash.ok) out.dashboard = dash.data;
+      }
+    }
+  } finally {
+    MEMO_KEEP_--;
+  }
+  return { ok: true, data: out };
 }
 
 /** ตารางคำสั่ง → ฟังก์ชันภายใน + สิทธิ์ที่ต้องมี (null = ทุกบทบาทที่เข้าสู่ระบบแล้ว) */

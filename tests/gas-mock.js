@@ -182,7 +182,12 @@ function createGasEnv(opts = {}) {
     insertRowsAfter(after, n) { this.maxRows += n; return chainable(this, unknown); }
     insertColumnsAfter(after, n) { this.maxCols += n; return chainable(this, unknown); }
     getRange(r, c, nr, nc) {
-      if (typeof r === 'string') throw new Error('A1 notation not supported in mock');
+      if (typeof r === 'string') {
+        // รองรับเฉพาะ "ทั้งแถว" เช่น '1:1' (เหมือน Apps Script: ครอบคลุมทุกคอลัมน์ของชีต)
+        const m = /^(\d+):(\d+)$/.exec(r);
+        if (!m) throw new Error('A1 notation not supported in mock: ' + r);
+        return chainable(new MockRange(this, +m[1], 1, +m[2] - +m[1] + 1, Math.max(1, this.maxCols)), unknown);
+      }
       return chainable(new MockRange(this, r, c, nr || 1, nc || 1), unknown);
     }
     getDataRange() { return this.getRange(1, 1, Math.max(1, this.getLastRow()), Math.max(1, this.getLastColumn())); }

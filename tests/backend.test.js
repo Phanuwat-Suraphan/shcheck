@@ -607,6 +607,68 @@ test('L10', 'การจำเครื่องสิ้นสุดเมื�
   expectErr(sys.api(adm, 'settings.save', { values: { REMEMBER_DEVICE_DAYS: '91' } }), 'VALIDATION');
 });
 
+test('L12', 'เปิดแอปในคำขอเดียว (bootstrap): ค่าระบบ + Session เดิม หรือเข้าสู่ระบบอัตโนมัติด้วยเครื่องที่จำไว้ + ข้อมูลหน้าแรก; Session/เครื่องใช้ไม่ได้ → ให้เข้าสู่ระบบใหม่; ต้องเปลี่ยนรหัสก่อน → ไม่ส่งข้อมูลหน้าแรก', () => {
+  const sys = newSystem({ realSessions: true });
+  const t = addTeacher(sys, 1);
+  const call = (tk, dev) => ok(sys.env.call('bootstrap', tk || '', dev || '', { ua: 'test' }));
+  // ไม่มี Session/เครื่องที่จำไว้ → ค่าระบบอย่างเดียว
+  let b = call();
+  assert.ok(b.config && b.config.setupComplete && !b.config.needsFirstAdmin);
+  assert.deepStrictEqual([b.session, b.dashboard], [null, null]);
+  // Session เดิมยังใช้ได้ → ได้ข้อมูลผู้ใช้ + หน้าแรกในคำขอเดียว
+  b = call(t.token);
+  assert.strictEqual(b.session.user.employeeId, t.id);
+  assert.ok(b.dashboard && b.dashboard.today && b.dashboard.month);
+  // เครื่องที่จำไว้ (Session เดิมหมดอายุ/ไม่มี) → เข้าสู่ระบบอัตโนมัติ + หน้าแรก
+  const rem = ok(sys.env.call('login', 'teacher1', 'Teach3rPass1', { ua: 'phone', remember: true }));
+  assert.ok(rem.device);
+  b = call('not-a-valid-token', rem.device);
+  assert.ok(b.session.token && b.session.token !== rem.token, 'ได้ Session ใหม่');
+  assert.deepStrictEqual([b.resume.ok, b.session.user.employeeId], [true, t.id]);
+  assert.ok(b.dashboard.today);
+  assert.ok(records(sys, 'AuditLogs').some(a => a.Action === 'LOGIN_REMEMBERED'));
+  ok(sys.api(b.session.token, 'me.dashboard', {}));                  // Session ใหม่ใช้งานต่อได้
+  // เครื่องที่จำไว้ใช้ไม่ได้ → ไม่มี Session, บอกให้เข้าสู่ระบบใหม่
+  b = call('', 'deadbeefdeadbeef.' + 'a'.repeat(64));
+  assert.deepStrictEqual([b.session, b.resume.ok, b.resume.code], [null, false, 'AUTH']);
+  // บัญชีที่ต้องเปลี่ยนรหัสผ่านก่อน → ได้ Session แต่ไม่ส่งข้อมูลหน้าแรก
+  const nu = ok(sys.api(sys.admin, 'emp.create', { fullName: 'นายใหม่ ต้องเปลี่ยนรหัส', position: 'ครู', username: 'new.user', role: 'USER' }));
+  const lg = ok(sys.login('new.user', nu.tempPassword));
+  b = call(lg.token);
+  assert.deepStrictEqual([b.session.mustChangePassword, b.dashboard], [true, null]);
+});
+
+test('P09', 'อ่านสรุปรายวันเฉพาะช่วงวันที่ (เร็วขึ้นเมื่อข้อมูลสะสม): ผลตรงกับการอ่านทั้งตาราง แม้แถวไม่เรียงตามวันที่ (บันทึกเวลาย้อนหลัง/สร้างสรุปใหม่)', () => {
+  const sys = newSystem({ now: '2026-11-02 07:00:00' });
+  const t = addTeacher(sys, 1), t2 = addTeacher(sys, 2);
+  ['2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05', '2026-11-06'].forEach(d => {
+    sys.at(d + ' 07:45:00'); ok(sys.api(t.token, 'att.checkIn', INSIDE));
+    if (d !== '2026-11-04') { sys.at(d + ' 07:50:00'); ok(sys.api(t2.token, 'att.checkIn', INSIDE)); }
+  });
+  // วันที่ 4 ผู้บริหารบันทึกเวลาแทนภายหลัง → แถวสรุปของวันที่ 4 ไปอยู่ท้ายตาราง (ไม่เรียงวันที่)
+  sys.at('2026-11-09 08:00:00');
+  ok(sys.api(sys.admin, 'corr.adminCreate', { employeeId: t2.id, date: '2026-11-04', type: 'IN', time: '07:40', reason: 'ลืมกดลงเวลาเข้า' }));
+  const ctx = sys.env.context;
+  const keys = rows => rows.map(r => r.Key).sort();
+  const same = () => [['2026-11-01', '2026-11-30'], ['2026-11-04', '2026-11-04'], ['2026-11-03', '2026-11-05'], ['2026-12-01', '2026-12-31'], ['2026-11-06', '2026-11-09']].forEach(([a, b]) => {
+    ctx.resetMemo_(); const part = keys(ctx.summariesBetween_(a, b));
+    ctx.resetMemo_(); const all = keys(ctx.readAll_('DailySummary').filter(r => r.Date >= a && r.Date <= b));
+    assert.deepStrictEqual(part, all, a + '..' + b);
+  });
+  same();
+  const sumsOf = (id) => { ctx.resetMemo_(); return ctx.summariesBetween_('2026-11-01', '2026-11-30').filter(r => r.EmployeeID === id).length; };
+  assert.deepStrictEqual([sumsOf(t.id), sumsOf(t2.id)], [5, 5]);
+  // อ่านช่วงที่ซ้อนกันในรอบเดียว ไม่อ่านแถวซ้ำ และยังได้ผลถูกต้อง
+  ctx.resetMemo_();
+  assert.strictEqual(ctx.summariesBetween_('2026-11-02', '2026-11-03').length, 4);
+  assert.strictEqual(ctx.summariesBetween_('2026-11-01', '2026-11-30').length, 10);
+  // สร้างสรุปรายวันใหม่ (เขียนทั้งเดือนใหม่) → ยังตรงกับการอ่านทั้งตาราง
+  ok(sys.api(sys.admin, 'sys.rebuildSummary', { year: 2026, month: 11 }));
+  same();
+  const m = ok(sys.api(sys.admin, 'report.monthly', { year: 2026, month: 11 }));
+  assert.strictEqual(m.tables[0].rows.find(r => r.employeeId === t2.id).present, 5);
+});
+
 test('L11', 'เข้าสู่ระบบด้วยรหัสครู (รหัสประจำตัวบุคลากร) แทนชื่อผู้ใช้ได้ ไม่สนตัวพิมพ์; ใส่ผิดนับรวมกับบัญชีเดียวกัน (ล็อกเหมือนเดิม)', () => {
   const sys = newSystem({ realSessions: true });
   const r = ok(sys.register(Object.assign(regForm(1), { staffCode: '' })));
@@ -696,8 +758,8 @@ test('A03', 'ฟังก์ชันที่ Browser เรียกได้ 
   const injected = ['Date', 'Intl']; // global ที่ simulator ใส่ให้ ไม่ใช่โค้ดของระบบ
   const publicFns = Object.keys(c).filter(k => typeof c[k] === 'function' && !k.endsWith('_') && !injected.includes(k)).sort();
   assert.deepStrictEqual(publicFns, ['BenchmarkPasswordHashing', 'CreateFirstAdmin', 'DailyMaintenance', 'EmergencyResetAdmin',
-    'SetupSystem', 'api', 'doGet', 'firstRunSetup', 'getPublicConfig', 'include', 'login', 'register', 'requestPasswordReset',
-    'resumeSession'].sort());
+    'SetupSystem', 'api', 'bootstrap', 'doGet', 'firstRunSetup', 'getPublicConfig', 'include', 'login', 'register', 'requestPasswordReset',
+    'resumeSession'].sort()); // bootstrap = เปิดแอปในคำขอเดียว (เรียก getPublicConfig/api/resumeSession ภายใน — ตรวจสิทธิ์เหมือนเดิม)
   assert.throws(() => sys.env.call('recordAttendance_'), /Private/);
 });
 
@@ -1137,10 +1199,12 @@ test('V07', 'ตั้งค่า "การลาไม่ต้องรอ�
   assert.strictEqual(ok(sys.api(sys.admin, 'report.daily', { date: '2026-11-09' })).tables[0].rows.find(x => x.employeeId === t.id).statusCode, 'ABSENT');
 });
 
-test('D02', 'แจ้งเตือนเมื่อพื้นที่ Google Drive ใกล้เต็ม (≥ 85%)', () => {
-  const sys = newSystem();
+test('D02', 'แจ้งเตือนเมื่อพื้นที่ Google Drive ใกล้เต็ม (≥ 85%) — ระบบจำค่าพื้นที่ไว้ 30 นาที (เรียก Drive ช้า) แต่หน้าสถานะระบบ/การสำรองข้อมูลตรวจค่าล่าสุดเสมอ', () => {
+  const sys = newSystem({ now: '2026-11-09 07:00:00' });
   assert.ok(!ok(sys.api(sys.admin, 'admin.overview', {})).warnings.some(w => /Google Drive/.test(w)));
   sys.env.state.storageUsed = 14 * 1024 ** 3;
+  assert.strictEqual(ok(sys.api(sys.admin, 'sys.status', {})).storage.percent, 93);            // ตรวจค่าล่าสุด
+  sys.at('2026-11-09 07:31:00');                                                                // พ้น 30 นาที
   const w = ok(sys.api(sys.admin, 'admin.overview', {})).warnings.find(x => /Google Drive/.test(x));
   assert.ok(w && /93%/.test(w), w);
   assert.strictEqual(ok(sys.api(sys.admin, 'settings.get', {})).storage.percent, 93);

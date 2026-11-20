@@ -38,8 +38,8 @@ function computeAttendance_(opts) {
 
   var sums = {};
   if (dates.length) {
-    readAll_('DailySummary').forEach(function (r) {
-      if (r.Date >= from && r.Date <= to && ids[r.EmployeeID]) sums[r.Key] = r;
+    summariesBetween_(from, to).forEach(function (r) {
+      if (ids[r.EmployeeID]) sums[r.Key] = r;
     });
   }
   var leaves = {};

@@ -1224,6 +1224,46 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
     assert.ok(/ไปราชการ\/ประชุม\/อบรม/.test(await d.textContent('#repResult .grid-stats')));
   });
 
+  await step('E45', 'เปิดเร็ว: เปิดแอปเรียกเซิร์ฟเวอร์ครั้งเดียวจนเห็นหน้าแรก (ทั้ง Session เดิมและเครื่องที่จำไว้), เปิดหน้าผู้ดูแลครั้งถัดไปไม่ดาวน์โหลดโค้ดซ้ำ', async () => {
+    const rpcLog = (page) => {
+      const log = [];
+      page.on('request', req => {
+        if (!req.url().endsWith('/rpc')) return;
+        const b = JSON.parse(req.postData() || '{}');
+        log.push(b.fn === 'api' ? 'api:' + (b.args || [])[1] : b.fn);
+      });
+      return log;
+    };
+    const tp = await newPage();
+    await loginOk(tp, 'somsri.j', 'SomsriNew2026');                 // โทรศัพท์: จำการเข้าสู่ระบบไว้
+    await tp.waitForSelector('#monthStats .stat-card');
+    const log = rpcLog(tp);
+    // เปิดแอปใหม่ (ปิดแท็บแล้วเปิด = Session ในแท็บหาย เหลือเครื่องที่จำไว้)
+    await tp.evaluate(() => sessionStorage.clear());
+    await tp.reload();
+    await tp.waitForSelector('#view-app:not([hidden]) #monthStats .stat-card');
+    await tp.waitForFunction(() => document.querySelector('#homeName').textContent.length > 1);
+    assert.deepStrictEqual(log, ['bootstrap'], 'เปิดแอปด้วยเครื่องที่จำไว้: ' + JSON.stringify(log));
+    log.length = 0;
+    await tp.reload();                                                // Session เดิมในแท็บ
+    await tp.waitForSelector('#view-app:not([hidden]) #monthStats .stat-card');
+    assert.deepStrictEqual(log, ['bootstrap'], 'โหลดหน้าใหม่: ' + JSON.stringify(log));
+    // ผู้ดูแล: เปิดหน้าผู้ดูแลครั้งแรกดาวน์โหลดโค้ด ครั้งถัดไปใช้ที่เก็บในเครื่อง
+    const d = await newPage({ desktop: true });
+    const dl = rpcLog(d);
+    await loginOk(d, DEFAULTS.adminUser, ADMIN_NEW_PW);
+    await d.click('#toAdminBtn');
+    await d.waitForSelector('#view-admin:not([hidden]) #ovStats .stat-card');
+    assert.ok(dl.includes('api:admin.view'));
+    dl.length = 0;
+    await d.reload();
+    await d.waitForSelector('#view-app:not([hidden])');
+    await d.click('#toAdminBtn');
+    await d.waitForSelector('#view-admin:not([hidden]) #ovStats .stat-card');
+    assert.ok(!dl.includes('api:admin.view'), JSON.stringify(dl));
+    assert.ok(dl.includes('bootstrap') && dl.includes('api:admin.overview'), JSON.stringify(dl));
+  });
+
   await step('E20', 'ไม่มี JavaScript error ในทุกหน้าที่ทดสอบ', async () => {
     assert.deepStrictEqual(pageErrors, []);
   });

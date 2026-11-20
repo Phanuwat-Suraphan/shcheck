@@ -33,13 +33,27 @@ function getAdminView_(ctx) {
  * รายการตั้งค่าเริ่มต้นที่ควรทำให้ครบ (แสดงบนหน้าภาพรวมของผู้ดูแลระบบจนกว่าจะครบ)
  * ตรวจจากข้อมูลจริงทั้งหมด ไม่ต้องติ๊กเอง
  */
+/** ครูเริ่มลงเวลาแล้วหรือยัง — อ่านเฉพาะคอลัมน์รหัสบุคลากรของสรุปรายวัน และจำผลไว้เมื่อเป็นจริง (ไม่กลับเป็นเท็จ) */
+function staffStartedUsing_(activeIds) {
+  if (scriptProps_().FIRST_USE_AT) return true;
+  var t = getTable_('DailySummary');
+  var last = t.sheet.getLastRow();
+  if (last < 2) return false;
+  var used = t.sheet.getRange(2, t.idx.EmployeeID + 1, last - 1, 1).getValues().some(function (r) { return activeIds[valueFromCell_(r[0], 'str')]; });
+  if (used) {
+    try { PropertiesService.getScriptProperties().setProperty('FIRST_USE_AT', nowStamp_()); MEMO_.props = null; } catch (e) { /* ignore */ }
+  }
+  return used;
+}
+
 function setupChecklist_(s, allEmps, today) {
   var active = allEmps.filter(function (e) { return e.Status === EMP_STATUS.ACTIVE; });
   var activeIds = {};
   active.forEach(function (e) { if (e.Role !== ROLES.ADMIN) activeIds[e.EmployeeID] = true; });
   var y = +today.substr(0, 4);
-  var schoolBreak = readAll_('WorkCalendar').some(function (c) {
-    return c.Type === 'SPECIAL_HOLIDAY' && (+String(c.Date).substr(0, 4) === y || +String(c.Date).substr(0, 4) === y + 1);
+  var cal = getCalendarMap_();
+  var schoolBreak = Object.keys(cal).some(function (d) {
+    return cal[d].type === 'SPECIAL_HOLIDAY' && (+d.substr(0, 4) === y || +d.substr(0, 4) === y + 1);
   });
   var items = [
     { key: 'geo', done: s.geofenceConfigured, sec: 'settings', title: 'ตั้งพิกัดโรงเรียน', hint: 'ไปที่โรงเรียนแล้วกด “ใช้ตำแหน่งปัจจุบันของฉัน” ในหน้าตั้งค่า' },
@@ -47,7 +61,7 @@ function setupChecklist_(s, allEmps, today) {
     { key: 'director', done: !!s.directorName, sec: 'settings', title: 'ใส่ชื่อผู้อำนวยการ', hint: 'ใช้ในช่องลงนามของใบลาและรายงาน' },
     { key: 'break', done: schoolBreak, sec: 'calendar', title: 'เพิ่มวันปิดภาคเรียน/วันหยุดของโรงเรียน', hint: 'ถ้าไม่เพิ่ม ช่วงปิดภาคเรียนครูทุกคนจะถูกนับว่าขาดงาน' },
     { key: 'staff', done: Object.keys(activeIds).length > 0, sec: 'share', title: 'เพิ่มครูและบุคลากร', hint: 'วางรายชื่อจาก Excel แล้วพิมพ์บัตรเข้าใช้งาน หรือส่งลิงก์ให้สมัครเอง' },
-    { key: 'firstUse', done: readAll_('DailySummary').some(function (g) { return activeIds[g.EmployeeID]; }), sec: 'share', title: 'ครูเริ่มลงเวลา', hint: 'ติดประกาศ QR Code ที่ห้องพักครู หรือส่งข้อความในกลุ่ม LINE' }
+    { key: 'firstUse', done: staffStartedUsing_(activeIds), sec: 'share', title: 'ครูเริ่มลงเวลา', hint: 'ติดประกาศ QR Code ที่ห้องพักครู หรือส่งข้อความในกลุ่ม LINE' }
   ];
   var done = items.filter(function (i) { return i.done; }).length;
   return { items: items, done: done, total: items.length, complete: done === items.length };
@@ -149,15 +163,23 @@ function getAdminOverview_(ctx) {
 }
 
 /** พื้นที่ Google Drive ของบัญชีที่ใช้ติดตั้งระบบ (ใช้ร่วมกับ Gmail/Google Photos) */
-function driveStorageInfo_() {
+function driveStorageInfo_(fresh) {
+  var cache = CacheService.getScriptCache();
+  if (!fresh) {
+    try { var hit = cache.get('drive_storage_v1'); if (hit) return JSON.parse(hit).info; } catch (e0) { /* ignore */ }
+  }
+  var info = null;
   try {
     var used = DriveApp.getStorageUsed(), limit = DriveApp.getStorageLimit();
-    if (!limit || limit <= 0) return null; // ไม่จำกัด (เช่น บางบัญชีองค์กร)
     function gb(b) { return round_(b / Math.pow(1024, 3), 2) + ' GB'; }
-    return { used: used, limit: limit, percent: Math.round(used / limit * 100), usedLabel: gb(used), limitLabel: gb(limit) };
+    // limit <= 0 = ไม่จำกัด (เช่น บางบัญชีองค์กร)
+    info = limit && limit > 0 ? { used: used, limit: limit, percent: Math.round(used / limit * 100), usedLabel: gb(used), limitLabel: gb(limit) } : null;
   } catch (e) {
     return null;
   }
+  // การเรียก Drive ใช้เวลานาน และพื้นที่เปลี่ยนช้า → จำไว้ 30 นาที
+  try { cache.put('drive_storage_v1', JSON.stringify({ info: info }), 1800); } catch (e2) { /* ignore */ }
+  return info;
 }
 
 /* ========================================================================== */
@@ -765,7 +787,10 @@ function holidayDataWarnings_(today) {
   var cal = null, out = [];
   years.forEach(function (yy) {
     if (THAI_HOLIDAY_DATA_[yy]) return;
-    cal = cal || readAll_('WorkCalendar');
+    if (!cal) {
+      var map = getCalendarMap_(); // ปฏิทินจากแคช
+      cal = Object.keys(map).map(function (d) { return { Date: d, Title: map[d].title }; });
+    }
     if (!calendarHasBuddhistHolidays_(cal, yy)) {
       out.push('ปฏิทินวันหยุดปี พ.ศ. ' + (yy + 543) + ' ยังไม่มีวันหยุดทางพุทธศาสนา (มาฆบูชา วิสาขบูชา อาสาฬหบูชา เข้าพรรษา) ซึ่งเปลี่ยนวันทุกปี — ' +
         'กรุณาเพิ่มในเมนูปฏิทินวันหยุดตามประกาศวันหยุดราชการ มิฉะนั้นวันดังกล่าวครูจะถูกนับว่าขาดงาน');
