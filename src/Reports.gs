@@ -123,7 +123,7 @@ function buildDay_(date, info, sum, leave, ended) {
       else if (!halfAfternoon) d.missingOut = true;
     }
   } else if (leave) {
-    d.status = 'LEAVE';
+    d.status = leave.LeaveType === 'OFFICIAL' ? 'OFFICIAL' : 'LEAVE'; // ไปราชการ/ประชุม/อบรม ไม่ใช่การลา
   } else if (ended) {
     d.status = 'ABSENT';
   } else {
@@ -144,7 +144,7 @@ function buildDay_(date, info, sum, leave, ended) {
 
 function totalsOf_(days) {
   var t = {
-    workdays: 0, present: 0, late: 0, lateMinutes: 0, leaveDays: 0, absent: 0, incomplete: 0,
+    workdays: 0, present: 0, late: 0, lateMinutes: 0, leaveDays: 0, officialDays: 0, absent: 0, incomplete: 0,
     missingIn: 0, missingOut: 0, earlyLeave: 0, holidayWork: 0, notYet: 0,
     avgIn: '', avgOut: '', rate: null
   };
@@ -156,7 +156,10 @@ function totalsOf_(days) {
     t.workdays++;
     if (d.status === 'PRESENT' || d.status === 'LATE') t.present++;
     if (d.status === 'LATE') { t.late++; t.lateMinutes += d.lateMinutes; }
-    if (d.leave) t.leaveDays += d.leave.period === 'FULL' ? 1 : 0.5;
+    if (d.leave) {
+      var lv = d.leave.period === 'FULL' ? 1 : 0.5;
+      if (d.leave.type === 'OFFICIAL') t.officialDays += lv; else t.leaveDays += lv;
+    }
     if (d.status === 'ABSENT') t.absent++;
     if (d.missingIn) t.missingIn++;
     if (d.missingOut) t.missingOut++;
@@ -167,7 +170,7 @@ function totalsOf_(days) {
   });
   t.avgIn = inN ? minToHHMM_(inSum / inN) : '';
   t.avgOut = outN ? minToHHMM_(outSum / outN) : '';
-  var denom = t.workdays - t.leaveDays;
+  var denom = t.workdays - t.leaveDays - t.officialDays; // วันลาและวันไปราชการไม่นำมาคิดร้อยละการมา
   t.rate = denom > 0 ? round_(Math.min(100, t.present / denom * 100), 1) : null;
   return t;
 }
@@ -215,7 +218,7 @@ function reportDaily_(ctx, p) {
   var res = computeAttendance_({ employees: emps, from: date, to: date, withLogs: true });
   var info = res.infos[date];
   var rep = reportHeader_(ctx, 'daily', 'รายงานการลงเวลาปฏิบัติงานประจำวัน', thaiDate_(date, 'long'));
-  var c = { total: 0, present: 0, onTime: 0, late: 0, leave: 0, absent: 0, missingIn: 0, missingOut: 0, notYet: 0, holidayWork: 0, earlyLeave: 0 };
+  var c = { total: 0, present: 0, onTime: 0, late: 0, leave: 0, official: 0, absent: 0, missingIn: 0, missingOut: 0, notYet: 0, holidayWork: 0, earlyLeave: 0 };
   var rows = [];
   res.people.forEach(function (pp) {
     if (!pp.days.length) return;
@@ -224,7 +227,7 @@ function reportDaily_(ctx, p) {
     if (d.status === 'PRESENT' || d.status === 'LATE') c.present++;
     if (d.status === 'PRESENT') c.onTime++;
     if (d.status === 'LATE') c.late++;
-    if (d.leave) c.leave++;
+    if (d.leave) { if (d.leave.type === 'OFFICIAL') c.official++; else c.leave++; }
     if (d.status === 'ABSENT') c.absent++;
     if (d.missingIn) c.missingIn++;
     if (d.missingOut) c.missingOut++;
@@ -269,6 +272,7 @@ function reportDaily_(ctx, p) {
     { label: 'มาปฏิบัติงาน', value: c.present, unit: 'คน', tone: 'success' },
     { label: 'มาสาย', value: c.late, unit: 'คน', tone: 'warning' },
     { label: 'ลา', value: c.leave, unit: 'คน', tone: 'sky' },
+    { label: 'ไปราชการ/ประชุม/อบรม', value: c.official, unit: 'คน', tone: 'navy' },
     { label: 'ขาดงาน', value: c.absent, unit: 'คน', tone: 'danger' },
     { label: 'ไม่ลงเวลาเข้า', value: c.missingIn, unit: 'คน', tone: 'danger' },
     { label: 'ไม่ลงเวลาออก', value: c.missingOut, unit: 'คน', tone: 'warning' },
@@ -277,8 +281,9 @@ function reportDaily_(ctx, p) {
   if (c.holidayWork) rep.summary.push({ label: 'ปฏิบัติงานวันหยุด', value: c.holidayWork, unit: 'คน', tone: 'navy' });
   rep.chart = {
     kind: 'doughnut',
-    labels: ['ตรงเวลา', 'มาสาย', 'ลา', 'ขาดงาน', 'ยังไม่ลงเวลา'],
-    data: [c.onTime, c.late, rows.filter(function (r) { return r.statusCode === 'LEAVE'; }).length, c.absent, c.notYet]
+    labels: ['ตรงเวลา', 'มาสาย', 'ลา', 'ขาดงาน', 'ยังไม่ลงเวลา', 'ไปราชการ'],
+    data: [c.onTime, c.late, rows.filter(function (r) { return r.statusCode === 'LEAVE'; }).length, c.absent, c.notYet,
+      rows.filter(function (r) { return r.statusCode === 'OFFICIAL'; }).length]
   };
   rep.params = { date: date };
   return rep;
@@ -292,16 +297,16 @@ function reportMonthly_(ctx, p) {
   var res = computeAttendance_({ employees: emps, from: from, to: to });
   var rep = reportHeader_(ctx, 'monthly', 'รายงานสรุปการปฏิบัติงานประจำเดือน',
     'เดือน' + thaiMonthYear_(ym.y, ym.m) + ' (' + thaiDate_(from) + ' – ' + thaiDate_(to) + ')');
-  var rows = [], sum = { present: 0, late: 0, leave: 0, absent: 0, incomplete: 0, rateSum: 0, rateN: 0 };
+  var rows = [], sum = { present: 0, late: 0, leave: 0, official: 0, absent: 0, incomplete: 0, rateSum: 0, rateN: 0 };
   res.people.forEach(function (pp) {
     var t = pp.totals;
     rows.push({
       no: rows.length + 1, staffCode: pp.emp.staffCode, fullName: pp.emp.fullName, position: pp.emp.position,
-      workdays: t.workdays, present: t.present, late: t.late, lateMinutes: t.lateMinutes, leaveDays: t.leaveDays,
+      workdays: t.workdays, present: t.present, late: t.late, lateMinutes: t.lateMinutes, leaveDays: t.leaveDays, officialDays: t.officialDays,
       absent: t.absent, incomplete: t.incomplete, avgIn: t.avgIn || '-', avgOut: t.avgOut || '-',
       rate: t.rate === null ? '-' : t.rate, employeeId: pp.emp.employeeId
     });
-    sum.present += t.present; sum.late += t.late; sum.leave += t.leaveDays; sum.absent += t.absent; sum.incomplete += t.incomplete;
+    sum.present += t.present; sum.late += t.late; sum.leave += t.leaveDays; sum.official += t.officialDays; sum.absent += t.absent; sum.incomplete += t.incomplete;
     if (t.rate !== null) { sum.rateSum += t.rate; sum.rateN++; }
   });
   var calendarWorkdays = res.dates.filter(function (d) { return res.infos[d].isWorkday; }).length;
@@ -316,6 +321,7 @@ function reportMonthly_(ctx, p) {
       { key: 'present', label: 'มา (วัน)', align: 'center', width: 62, num: true },
       { key: 'late', label: 'สาย (ครั้ง)', align: 'center', width: 62, num: true },
       { key: 'leaveDays', label: 'ลา (วัน)', align: 'center', width: 62, num: true },
+      { key: 'officialDays', label: 'ไปราชการ (วัน)', align: 'center', width: 70, num: true },
       { key: 'absent', label: 'ขาด (วัน)', align: 'center', width: 62, num: true },
       { key: 'incomplete', label: 'ไม่ครบ (ครั้ง)', align: 'center', width: 70, num: true },
       { key: 'avgIn', label: 'เข้าเฉลี่ย', align: 'center', width: 66 },
@@ -330,26 +336,28 @@ function reportMonthly_(ctx, p) {
     { label: 'รวมการมาปฏิบัติงาน', value: sum.present, unit: 'คน-วัน', tone: 'success' },
     { label: 'รวมการมาสาย', value: sum.late, unit: 'ครั้ง', tone: 'warning' },
     { label: 'รวมวันลา', value: sum.leave, unit: 'วัน', tone: 'sky' },
+    { label: 'รวมวันไปราชการ/ประชุม/อบรม', value: sum.official, unit: 'วัน', tone: 'navy' },
     { label: 'รวมวันขาดงาน', value: sum.absent, unit: 'วัน', tone: 'danger' },
     { label: 'ลงเวลาไม่ครบ', value: sum.incomplete, unit: 'ครั้ง', tone: 'warning' },
     { label: 'ร้อยละการมาปฏิบัติงานเฉลี่ย', value: sum.rateN ? round_(sum.rateSum / sum.rateN, 1) : '-', unit: '%', tone: 'success' }
   ];
   // กราฟรายวัน
-  var series = { labels: [], onTime: [], late: [], leave: [], absent: [] };
+  var series = { labels: [], onTime: [], late: [], leave: [], official: [], absent: [] };
   res.dates.forEach(function (date) {
     if (!res.infos[date].isWorkday) return;
-    var c = { onTime: 0, late: 0, leave: 0, absent: 0 };
+    var c = { onTime: 0, late: 0, leave: 0, official: 0, absent: 0 };
     res.people.forEach(function (pp) {
       pp.days.forEach(function (d) {
         if (d.date !== date) return;
         if (d.status === 'PRESENT') c.onTime++;
         else if (d.status === 'LATE') c.late++;
         else if (d.status === 'LEAVE') c.leave++;
+        else if (d.status === 'OFFICIAL') c.official++;
         else if (d.status === 'ABSENT') c.absent++;
       });
     });
     series.labels.push(String(+date.substr(8, 2)));
-    series.onTime.push(c.onTime); series.late.push(c.late); series.leave.push(c.leave); series.absent.push(c.absent);
+    series.onTime.push(c.onTime); series.late.push(c.late); series.leave.push(c.leave); series.official.push(c.official); series.absent.push(c.absent);
   });
   rep.chart = { kind: 'stackedBar', series: series };
   rep.params = { year: ym.y, month: ym.m };
@@ -365,7 +373,7 @@ function reportYearly_(ctx, p) {
   var res = computeAttendance_({ employees: emps, from: from, to: to });
   var rep = reportHeader_(ctx, 'yearly', 'รายงานสรุปการปฏิบัติงานประจำปี', 'ปี พ.ศ. ' + (y + 543) + ' (มกราคม – ธันวาคม)');
   var months = [];
-  for (var m = 1; m <= 12; m++) months.push({ m: m, workdays: 0, present: 0, late: 0, leave: 0, absent: 0, incomplete: 0, denom: 0 });
+  for (var m = 1; m <= 12; m++) months.push({ m: m, workdays: 0, present: 0, late: 0, leave: 0, official: 0, absent: 0, incomplete: 0, denom: 0 });
   res.dates.forEach(function (d) { if (res.infos[d].isWorkday) months[+d.substr(5, 2) - 1].workdays++; });
   res.people.forEach(function (pp) {
     pp.days.forEach(function (d) {
@@ -374,7 +382,7 @@ function reportYearly_(ctx, p) {
       if (d.status === 'PRESENT' || d.status === 'LATE') mm.present++;
       if (d.status === 'LATE') mm.late++;
       var lv = d.leave ? (d.leave.period === 'FULL' ? 1 : 0.5) : 0;
-      mm.leave += lv;
+      if (d.leave && d.leave.type === 'OFFICIAL') mm.official += lv; else mm.leave += lv;
       if (d.status === 'ABSENT') mm.absent++;
       if (d.missingIn || d.missingOut) mm.incomplete++;
       mm.denom += 1 - lv;
@@ -382,7 +390,7 @@ function reportYearly_(ctx, p) {
   });
   var monthRows = months.map(function (mm) {
     return {
-      month: THAI_MONTHS[mm.m - 1], workdays: mm.workdays, present: mm.present, late: mm.late, leave: mm.leave,
+      month: THAI_MONTHS[mm.m - 1], workdays: mm.workdays, present: mm.present, late: mm.late, leave: mm.leave, official: mm.official,
       absent: mm.absent, incomplete: mm.incomplete, rate: mm.denom > 0 ? round_(Math.min(100, mm.present / mm.denom * 100), 1) : '-'
     };
   });
@@ -390,7 +398,7 @@ function reportYearly_(ctx, p) {
     var t = pp.totals;
     return {
       no: i + 1, staffCode: pp.emp.staffCode, fullName: pp.emp.fullName, position: pp.emp.position,
-      workdays: t.workdays, present: t.present, late: t.late, leaveDays: t.leaveDays, absent: t.absent,
+      workdays: t.workdays, present: t.present, late: t.late, leaveDays: t.leaveDays, officialDays: t.officialDays, absent: t.absent,
       incomplete: t.incomplete, rate: t.rate === null ? '-' : t.rate, employeeId: pp.emp.employeeId
     };
   });
@@ -402,6 +410,7 @@ function reportYearly_(ctx, p) {
       { key: 'present', label: 'มาปฏิบัติงาน', align: 'center', width: 80, num: true },
       { key: 'late', label: 'มาสาย', align: 'center', width: 70, num: true },
       { key: 'leave', label: 'ลา', align: 'center', width: 70, num: true },
+      { key: 'official', label: 'ไปราชการ', align: 'center', width: 70, num: true },
       { key: 'absent', label: 'ขาดงาน', align: 'center', width: 70, num: true },
       { key: 'incomplete', label: 'ลงเวลาไม่ครบ', align: 'center', width: 80, num: true },
       { key: 'rate', label: 'ร้อยละการมา', align: 'center', width: 80, num: true }
@@ -419,6 +428,7 @@ function reportYearly_(ctx, p) {
       { key: 'present', label: 'มา (วัน)', align: 'center', width: 62, num: true },
       { key: 'late', label: 'สาย (ครั้ง)', align: 'center', width: 62, num: true },
       { key: 'leaveDays', label: 'ลา (วัน)', align: 'center', width: 62, num: true },
+      { key: 'officialDays', label: 'ไปราชการ (วัน)', align: 'center', width: 70, num: true },
       { key: 'absent', label: 'ขาด (วัน)', align: 'center', width: 62, num: true },
       { key: 'incomplete', label: 'ไม่ครบ (ครั้ง)', align: 'center', width: 70, num: true },
       { key: 'rate', label: 'ร้อยละการมา', align: 'center', width: 72, num: true }
@@ -426,15 +436,16 @@ function reportYearly_(ctx, p) {
     rows: personRows
   });
   var tot = months.reduce(function (a, mm) {
-    a.present += mm.present; a.late += mm.late; a.leave += mm.leave; a.absent += mm.absent; a.incomplete += mm.incomplete; a.denom += mm.denom;
+    a.present += mm.present; a.late += mm.late; a.leave += mm.leave; a.official += mm.official; a.absent += mm.absent; a.incomplete += mm.incomplete; a.denom += mm.denom;
     return a;
-  }, { present: 0, late: 0, leave: 0, absent: 0, incomplete: 0, denom: 0 });
+  }, { present: 0, late: 0, leave: 0, official: 0, absent: 0, incomplete: 0, denom: 0 });
   rep.summary = [
     { label: 'จำนวนบุคลากร', value: personRows.length, unit: 'คน', tone: 'navy' },
     { label: 'วันทำงานทั้งปี (ถึงปัจจุบัน)', value: months.reduce(function (a, mm) { return a + mm.workdays; }, 0), unit: 'วัน', tone: 'navy' },
     { label: 'รวมการมาปฏิบัติงาน', value: tot.present, unit: 'คน-วัน', tone: 'success' },
     { label: 'รวมการมาสาย', value: tot.late, unit: 'ครั้ง', tone: 'warning' },
     { label: 'รวมวันลา', value: tot.leave, unit: 'วัน', tone: 'sky' },
+    { label: 'รวมวันไปราชการ/ประชุม/อบรม', value: tot.official, unit: 'วัน', tone: 'navy' },
     { label: 'รวมวันขาดงาน', value: tot.absent, unit: 'วัน', tone: 'danger' },
     { label: 'ลงเวลาไม่ครบ', value: tot.incomplete, unit: 'ครั้ง', tone: 'warning' },
     { label: 'ร้อยละการมาปฏิบัติงานทั้งปี', value: tot.denom > 0 ? round_(Math.min(100, tot.present / tot.denom * 100), 1) : '-', unit: '%', tone: 'success' }
@@ -445,6 +456,7 @@ function reportYearly_(ctx, p) {
     present: months.map(function (mm) { return mm.present; }),
     late: months.map(function (mm) { return mm.late; }),
     leave: months.map(function (mm) { return mm.leave; }),
+    official: months.map(function (mm) { return mm.official; }),
     absent: months.map(function (mm) { return mm.absent; }),
     rate: monthRows.map(function (r) { return r.rate === '-' ? null : r.rate; })
   };
@@ -507,10 +519,10 @@ function reportIndividual_(ctx, p) {
   });
   if (leaves.length) {
     rep.tables.push({
-      key: 'leaves', title: 'รายการลาในช่วงเวลา',
+      key: 'leaves', title: 'รายการลา / ไปราชการ ในช่วงเวลา',
       columns: [
         { key: 'no', label: 'ที่', align: 'center', width: 36 },
-        { key: 'type', label: 'ประเภท', width: 90 },
+        { key: 'type', label: 'ประเภท', width: 110 },
         { key: 'period', label: 'ช่วงวันที่', width: 200 },
         { key: 'days', label: 'จำนวนวัน', align: 'center', width: 70, num: true },
         { key: 'status', label: 'สถานะ', align: 'center', width: 90 },
@@ -525,6 +537,7 @@ function reportIndividual_(ctx, p) {
     { label: 'มาปฏิบัติงาน', value: t.present, unit: 'วัน', tone: 'success' },
     { label: 'มาสาย', value: t.late, unit: 'ครั้ง (' + t.lateMinutes + ' นาที)', tone: 'warning' },
     { label: 'ลา', value: t.leaveDays, unit: 'วัน', tone: 'sky' },
+    { label: 'ไปราชการ/ประชุม/อบรม', value: t.officialDays, unit: 'วัน', tone: 'navy' },
     { label: 'ขาดงาน', value: t.absent, unit: 'วัน', tone: 'danger' },
     { label: 'ลงเวลาไม่ครบ', value: t.incomplete, unit: 'ครั้ง', tone: 'warning' },
     { label: 'เวลาเข้างานเฉลี่ย', value: t.avgIn || '-', unit: 'น.', tone: 'navy' },
@@ -572,7 +585,7 @@ function reportLeaveSummary_(ctx, p) {
   });
   var rep = reportHeader_(ctx, 'leaveSummary', 'บัญชีสรุปวันลา มาสาย และขาดงาน', r.label + ' (' + r.rangeLabel + ')');
   rep.tables.push({
-    key: 'people', title: 'นับเฉพาะใบลาที่อนุมัติแล้ว · ลาป่วย/ลากิจ/ลาพักผ่อนนับวันทำการ · ลาคลอดบุตรนับวันต่อเนื่อง',
+    key: 'people', title: 'นับเฉพาะใบลาที่อนุมัติแล้ว · ลาป่วย/ลากิจ/ลาพักผ่อนนับวันทำการ · ลาคลอดบุตรนับวันต่อเนื่อง · ไปราชการ/ประชุม/อบรมไม่นับเป็นวันลา',
     columns: [
       { key: 'no', label: 'ที่', align: 'center', width: 32 },
       { key: 'fullName', label: 'ชื่อ-นามสกุล', width: 170 },
@@ -586,7 +599,7 @@ function reportLeaveSummary_(ctx, p) {
       { key: 'vacD', label: 'ลาพักผ่อน (วัน)', align: 'center', width: 56, num: true },
       { key: 'matD', label: 'ลาคลอดบุตร (วัน)', align: 'center', width: 60, num: true },
       { key: 'othD', label: 'ลาอื่น ๆ (วัน)', align: 'center', width: 52, num: true },
-      { key: 'offD', label: 'ไปราชการ (วัน)', align: 'center', width: 56, num: true },
+      { key: 'offD', label: 'ไปราชการ/ประชุม/อบรม (วัน)', align: 'center', width: 64, num: true },
       { key: 'late', label: 'มาสาย (ครั้ง)', align: 'center', width: 52, num: true },
       { key: 'absent', label: 'ขาดงาน (วัน)', align: 'center', width: 52, num: true }
     ],

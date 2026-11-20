@@ -27,7 +27,7 @@ var APP = {
   SCHOOL_FULL: 'โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่',
   NAME_EN: 'Wat Sao Hin School Attendance System',
   SLOGAN: 'ระบบลงเวลาอัจฉริยะ สะดวก โปร่งใส ตรวจสอบได้',
-  VERSION: '1.15.0',
+  VERSION: '1.16.0',
   TZ: 'Asia/Bangkok'
 };
 
@@ -40,6 +40,8 @@ var EMP_STATUS_LABELS = { PENDING: 'รออนุมัติ', ACTIVE: 'ใ�
 var POSITIONS = ['ผู้อำนวยการ', 'ครู', 'บุคลากรทางการศึกษา', 'เจ้าหน้าที่อื่น ๆ'];
 
 var LEAVE_TYPES = { SICK: 'ลาป่วย', PERSONAL: 'ลากิจ', VACATION: 'ลาพักผ่อน', MATERNITY: 'ลาคลอดบุตร', OFFICIAL: 'ไปราชการ', OTHER: 'อื่น ๆ' };
+/** ลักษณะของการไปราชการ (เก็บใน TypeDetail — ค่าว่าง = ไปราชการ) · ฝั่ง Browser ใช้รายการเดียวกันใน JavaScript.html */
+var OFFICIAL_KINDS = ['ไปราชการ', 'ไปประชุม', 'ไปอบรม/สัมมนา', 'ไปศึกษาดูงาน'];
 var LEAVE_PERIODS = { FULL: 'เต็มวัน', MORNING: 'ครึ่งวันเช้า', AFTERNOON: 'ครึ่งวันบ่าย' };
 var REQUEST_STATUS = { PENDING: 'PENDING', APPROVED: 'APPROVED', REJECTED: 'REJECTED', CANCELLED: 'CANCELLED' };
 var REQUEST_STATUS_LABELS = { PENDING: 'รออนุมัติ', APPROVED: 'อนุมัติแล้ว', REJECTED: 'ไม่อนุมัติ', CANCELLED: 'ยกเลิก' };
@@ -49,7 +51,7 @@ var ATT_STATUS_LABELS = {
   ON_TIME: 'ตรงเวลา', LATE: 'มาสาย', NORMAL: 'ปกติ', EARLY: 'ออกก่อนเวลา', HOLIDAY: 'วันหยุด'
 };
 var DAY_STATUS_LABELS = {
-  PRESENT: 'มาปฏิบัติงาน', LATE: 'มาสาย', LEAVE: 'ลา', ABSENT: 'ขาดงาน',
+  PRESENT: 'มาปฏิบัติงาน', LATE: 'มาสาย', LEAVE: 'ลา', OFFICIAL: 'ไปราชการ', ABSENT: 'ขาดงาน',
   NOT_YET: 'ยังไม่ลงเวลา', HOLIDAY: 'วันหยุด', HOLIDAY_WORK: 'ปฏิบัติงานวันหยุด'
 };
 var CALENDAR_TYPES = {

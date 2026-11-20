@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.15.0
+<!-- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.16.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Index.html
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่ -->
 <html lang="th">
@@ -592,6 +592,7 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
 @media (min-width: 900px) {
   .grid-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .grid-stats.five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .grid-stats.six { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   .appbar .user-chip { display: inline-flex; }
   .app-main { padding-bottom: 40px; }
   .tabnav {
@@ -1087,7 +1088,7 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
         <div class="page-head" style="margin-top:22px">
           <h2><span class="ms">insights</span>สรุปเดือน <span id="monthLabel">-</span></h2>
         </div>
-        <div class="grid grid-stats five" id="monthStats"></div>
+        <div class="grid grid-stats six" id="monthStats"></div>
 
         <div class="card" style="margin-top:16px">
           <div class="row-between">
@@ -1108,7 +1109,7 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
             <div class="field"><label for="histMonth">เดือน</label><select id="histMonth"></select></div>
             <div class="field"><label for="histYear">ปี (พ.ศ.)</label><select id="histYear"></select></div>
           </div>
-          <div class="grid grid-stats five" id="histStats"></div>
+          <div class="grid grid-stats six" id="histStats"></div>
         </div>
         <div class="card" style="margin-top:16px">
           <div class="row-between"><div class="card-title"><span class="ms">list_alt</span><span id="histTitle">รายการ</span></div>
@@ -1667,7 +1668,7 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
   }
 
   var BADGE = {
-    PRESENT: ['success', 'check_circle'], LATE: ['warning', 'schedule'], LEAVE: ['info', 'event_busy'], ABSENT: ['danger', 'cancel'],
+    PRESENT: ['success', 'check_circle'], LATE: ['warning', 'schedule'], LEAVE: ['info', 'event_busy'], OFFICIAL: ['navy', 'work'], ABSENT: ['danger', 'cancel'],
     NOT_YET: ['muted', 'hourglass_empty'], HOLIDAY: ['muted', 'beach_access'], HOLIDAY_WORK: ['navy', 'work_history'],
     ON_TIME: ['success', 'check_circle'], NORMAL: ['success', 'check_circle'], EARLY: ['warning', 'running_with_errors'],
     PENDING: ['warning', 'pending'], APPROVED: ['success', 'verified'], REJECTED: ['danger', 'block'], CANCELLED: ['muted', 'do_not_disturb_on'],
@@ -2309,6 +2310,7 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
     ['event_busy', 'แจ้งลา / พิมพ์ใบลา', 'เมนู <b>การลา</b> → เลือกวัน → แตะประเภทการลา → ยืนยัน · ใบลาป่วย/กิจ/คลอด/พักผ่อน กด <b>พิมพ์ใบลา</b> ได้ใบลาแบบราชการพร้อมสถิติการลา · ดูสถิติการลาของตัวเองแยกรอบการประเมินได้ในเมนูเดียวกัน'],
     ['notifications', 'รู้ได้อย่างไรว่าใบลา/คำร้องอนุมัติแล้ว', 'เมื่อผู้บริหารพิจารณาแล้ว หน้าแรกจะขึ้นกล่อง <b>ผลการพิจารณา</b> ใต้ปุ่มลงเวลา บอกว่าอนุมัติหรือไม่อนุมัติ พร้อม <b>เหตุผล</b> · อ่านแล้วกด <b>รับทราบ</b> · ดูย้อนหลังได้ในเมนู <b>การลา</b> / <b>แก้ไขเวลา</b>'],
     ['military_tech', 'ลา/มาสายไปกี่ครั้งแล้ว (เกณฑ์เลื่อนเงินเดือน)', 'เมนู <b>การลา</b> → <b>สถิติการลาของฉัน</b> แสดงจำนวนครั้ง/วันลา และมาสายในแต่ละรอบ พร้อมแถบเทียบ <b>เกณฑ์ที่โรงเรียนกำหนด</b> · เมื่อใกล้ถึงเกณฑ์ หน้าแรกจะเตือนให้ทราบล่วงหน้า'],
+    ['work', 'ไปราชการ / ประชุม / อบรม', 'เมนู <b>การลา</b> → เลือกวัน → แตะ <b>ไปราชการ / ประชุม / อบรม</b> → เลือกลักษณะงาน → ยืนยัน · ประชุมช่วงบ่ายแล้วไม่กลับโรงเรียน: ลงเวลาเข้าตอนเช้าตามปกติ แล้วเลือก <b>ครึ่งวันบ่าย</b> · <b>ไม่นับเป็นวันลา</b>'],
     ['print', 'พิมพ์สรุปการลงเวลาของฉัน', 'เมนู <b>ประวัติ</b> → เลือกเดือน → <b>พิมพ์สรุปเดือนนี้</b> (ใช้เป็นหลักฐานประกอบ PA ได้)'],
     ['bookmark_added', 'ไม่อยากใส่รหัสผ่านทุกวัน', 'ตอนเข้าสู่ระบบติ๊ก <b>จำการเข้าสู่ระบบบนเครื่องนี้</b> (เฉพาะโทรศัพท์ส่วนตัว) · เพิ่มไอคอนไว้บนหน้าจอ: เมนู <b>บัญชี → เพิ่มไอคอนบนหน้าจอ</b>'],
     ['text_increase', 'ตัวหนังสือเล็กอ่านยาก', 'เมนู <b>บัญชี → ขนาดตัวอักษร</b> เลือก <b>ใหญ่</b> หรือ <b>ใหญ่มาก</b>'],
@@ -2393,7 +2395,7 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
           '<td class="c">' + esc(d.statusLabel || '') + '</td><td>' + esc((d.lateMinutes ? 'สาย ' + d.lateMinutes + ' นาที' + (d.note ? ', ' : '') : '') + (d.note || '')) + '</td></tr>';
       }).join('') + '</tbody></table>' +
       '<div class="sb-sum">สรุป วันทำงาน <b>' + (t.workdays || 0) + '</b> วัน · มาปฏิบัติงาน <b>' + (t.present || 0) + '</b> วัน · มาสาย <b>' + (t.late || 0) + '</b> ครั้ง' +
-        (t.lateMinutes ? ' (' + t.lateMinutes + ' นาที)' : '') + ' · ลา <b>' + (t.leaveDays || 0) + '</b> วัน · ขาดงาน <b>' + (t.absent || 0) + '</b> วัน · ลงเวลาไม่ครบ <b>' + (t.incomplete || 0) + '</b> ครั้ง' +
+        (t.lateMinutes ? ' (' + t.lateMinutes + ' นาที)' : '') + ' · ลา <b>' + (t.leaveDays || 0) + '</b> วัน' + (t.officialDays ? ' · ไปราชการ/ประชุม/อบรม <b>' + t.officialDays + '</b> วัน' : '') + ' · ขาดงาน <b>' + (t.absent || 0) + '</b> วัน · ลงเวลาไม่ครบ <b>' + (t.incomplete || 0) + '</b> ครั้ง' +
         (t.rate !== null && t.rate !== undefined ? ' · ร้อยละการมาปฏิบัติงาน <b>' + t.rate + '%</b>' : '') + '</div>' +
       '<div class="sb-sign"><div>ลงชื่อ ' + dots + ' ผู้ปฏิบัติงาน<br>( ' + esc(u.fullName) + ' )<br>ตำแหน่ง ' + esc(u.position || '') + '</div>' +
       '<div>ลงชื่อ ' + dots + ' ผู้รับรอง<br>( ' + esc((h.signer && h.signer.name) || dots) + ' )<br>' + esc((h.signer && h.signer.position) || 'ผู้อำนวยการโรงเรียน') + '</div></div>' +
@@ -2506,6 +2508,7 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
       ['success', 'how_to_reg', t.present, 'วัน', 'มาปฏิบัติงาน'],
       ['warning', 'schedule', t.late, 'ครั้ง', 'มาสาย' + (t.lateMinutes ? ' (' + t.lateMinutes + ' นาที)' : '')],
       ['sky', 'event_busy', t.leaveDays, 'วัน', 'ลา'],
+      ['navy', 'work', t.officialDays || 0, 'วัน', 'ไปราชการ'],
       ['warning', 'rule', t.incomplete, 'ครั้ง', 'ลงเวลาไม่ครบ'],
       ['danger', 'person_cancel', t.absent, 'วัน', 'ขาดงาน']
     ];
@@ -2816,8 +2819,10 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
   }
   var LEAVE_TYPE_META = [
     ['SICK', 'ลาป่วย', 'sick'], ['PERSONAL', 'ลากิจ', 'event_note'], ['VACATION', 'ลาพักผ่อน', 'beach_access'],
-    ['MATERNITY', 'ลาคลอดบุตร', 'pregnant_woman'], ['OFFICIAL', 'ไปราชการ', 'work'], ['OTHER', 'อื่น ๆ (พิมพ์เอง)', 'edit_note']
+    ['MATERNITY', 'ลาคลอดบุตร', 'pregnant_woman'], ['OFFICIAL', 'ไปราชการ / ประชุม / อบรม', 'work'], ['OTHER', 'อื่น ๆ (พิมพ์เอง)', 'edit_note']
   ];
+  /** ลักษณะการไปราชการ — ต้องตรงกับ OFFICIAL_KINDS ใน Code.gs (ตัวแรก = ค่าเริ่มต้น) */
+  var OFFICIAL_KINDS = ['ไปราชการ', 'ไปประชุม', 'ไปอบรม/สัมมนา', 'ไปศึกษาดูงาน'];
   var LEAVE_OTHER_SUGGESTIONS = ['ลาอุปสมบท', 'ลาประกอบพิธีฮัจย์', 'ลาไปช่วยเหลือภริยาที่คลอดบุตร', 'ลาไปศึกษา ฝึกอบรม ดูงาน',
     'ลาติดตามคู่สมรส', 'ลาเข้ารับการตรวจเลือก/เตรียมพล', 'ลาไปฟื้นฟูสมรรถภาพด้านอาชีพ'];
   var LEAVE_PERIOD_LABEL = { FULL: 'เต็มวัน', MORNING: 'ครึ่งวันเช้า', AFTERNOON: 'ครึ่งวันบ่าย' };
@@ -2891,32 +2896,41 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
    */
   function leaveConfirmDialog(o) {
     var meta = leaveMeta(o.type);
-    var isOther = o.type === 'OTHER';
+    var isOther = o.type === 'OTHER', isOfficial = o.type === 'OFFICIAL';
     modal({
-      title: 'ยืนยันการลา', icon: meta[2],
+      title: isOfficial ? 'ยืนยันการไปราชการ' : 'ยืนยันการลา', icon: meta[2],
       body: '<div class="leave-summary">' + (o.who ? '<div class="small muted">ผู้ลา</div><div style="font-weight:700;margin-bottom:6px">' + esc(o.who) + '</div>' : '') +
-        '<div class="big">' + esc(isOther ? 'อื่น ๆ' : meta[1]) + '</div><div>' + esc(leaveRangeText(o.startDate, o.endDate, o.period)) + '</div>' +
-        '<div class="tiny muted">ระบบนับเฉพาะวันทำการ (ไม่นับวันหยุด)</div></div>' +
+        '<div class="big" id="lcBig">' + esc(isOther ? 'อื่น ๆ' : (isOfficial ? OFFICIAL_KINDS[0] : meta[1])) + '</div><div>' + esc(leaveRangeText(o.startDate, o.endDate, o.period)) + '</div>' +
+        '<div class="tiny muted">' + (isOfficial ? 'ไม่นับเป็นวันลา และไม่นับในเกณฑ์การเลื่อนเงินเดือน — รายงานแสดงเป็น “ไปราชการ”' : 'ระบบนับเฉพาะวันทำการ (ไม่นับวันหยุด)') + '</div></div>' +
+        (isOfficial ? '<div class="field" data-field="typeDetail"><span class="field-label">ลักษณะงาน</span><div class="seg" id="lcKind">' +
+          OFFICIAL_KINDS.map(function (k, i) { return '<button type="button" data-val="' + esc(k) + '"' + (i ? '' : ' class="active"') + '>' + esc(k) + '</button>'; }).join('') + '</div><span class="err"></span></div>' : '') +
         (isOther ? '<div class="field" data-field="typeDetail"><label for="lcDetail">ประเภทการลา (พิมพ์เอง)</label>' +
           '<input id="lcDetail" type="text" maxlength="60" list="lcDetailList" placeholder="เช่น ลาอุปสมบท"><datalist id="lcDetailList">' +
           LEAVE_OTHER_SUGGESTIONS.map(function (x) { return '<option value="' + esc(x) + '">'; }).join('') + '</datalist><span class="err"></span></div>' : '') +
-        '<div class="field" data-field="reason"><label for="lcReason">เหตุผล / หมายเหตุ <span class="muted">(ไม่บังคับ)</span></label>' +
-        '<textarea id="lcReason" maxlength="500" style="min-height:70px" placeholder="เช่น ไปพบแพทย์"></textarea><span class="err"></span></div>' +
+        '<div class="field" data-field="reason"><label for="lcReason">' + (isOfficial ? 'เรื่อง / สถานที่' : 'เหตุผล / หมายเหตุ') + ' <span class="muted">(ไม่บังคับ)</span></label>' +
+        '<textarea id="lcReason" maxlength="500" style="min-height:70px" placeholder="' + (isOfficial ? 'เช่น ประชุมผู้บริหาร ณ สพป.เชียงใหม่ เขต 1' : 'เช่น ไปพบแพทย์') + '"></textarea><span class="err"></span></div>' +
         '<div class="field" data-field="attachment"><span class="field-label">เอกสารประกอบ <span class="muted">(ไม่บังคับ)</span></span>' +
         '<label class="file-drop">' + icon('attach_file') + '<span class="small" id="lcFileLabel">แนบไฟล์ PDF หรือรูปภาพ (ไม่เกิน 5 MB)</span>' +
         '<input type="file" id="lcFile" accept="application/pdf,image/jpeg,image/png,image/webp"></label><span class="err"></span></div>' +
         (o.note ? '<p class="small muted mb-0">' + esc(o.note) + '</p>' : ''),
       onOpen: function (root) {
+        $$('#lcKind button', root).forEach(function (b) {
+          b.addEventListener('click', function () { segSelect($('#lcKind', root), b); $('#lcBig', root).textContent = b.getAttribute('data-val'); });
+        });
         var f = $('#lcFile', root);
         f.addEventListener('change', function () { $('#lcFileLabel', root).textContent = f.files[0] ? f.files[0].name : 'แนบไฟล์ PDF หรือรูปภาพ (ไม่เกิน 5 MB)'; });
       },
       actions: [{ label: 'ยกเลิก', cls: 'outline' }, {
-        label: o.confirmText || 'ยืนยันการลา', cls: 'success', icon: 'check_circle', onClick: function (close, btn, root) {
+        label: o.confirmText || (isOfficial ? 'ยืนยันการไปราชการ' : 'ยืนยันการลา'), cls: 'success', icon: 'check_circle', onClick: function (close, btn, root) {
           clearFieldErrors(root);
           var data = { type: o.type, startDate: o.startDate, endDate: o.endDate, period: o.period, reason: $('#lcReason', root).value.trim() };
           if (isOther) {
             data.typeDetail = $('#lcDetail', root).value.trim();
             if (data.typeDetail.length < 2) { showFieldError(root, 'typeDetail', 'กรุณาพิมพ์ประเภทการลา'); return false; }
+          }
+          if (isOfficial) {
+            var kind = $('#lcKind .active', root).getAttribute('data-val');
+            data.typeDetail = kind === OFFICIAL_KINDS[0] ? '' : kind;
           }
           setBtnLoading(btn, true);
           fileToPayload($('#lcFile', root).files[0]).then(function (att) {
@@ -3201,7 +3215,7 @@ ol.howto .ms { font-size: 18px; vertical-align: -3px; color: var(--navy-700); }
     downloadBase64: downloadBase64, viewAttachment: viewAttachment, loadChartJs: loadChartJs, acquirePosition: acquirePosition,
     leaveCard: leaveCard, corrCard: corrCard, bkkToday: bkkToday, bkkParts: bkkParts, serverNow: serverNow,
     fillMonthYear: fillMonthYear, TH_M: TH_M, TH_MS: TH_MS, backToUser: backToUser, doLogout: doLogout, showGeoHelp: showGeoHelp,
-    parseYmd: parseYmd, LEAVE_TYPE_META: LEAVE_TYPE_META, leaveConfirmDialog: leaveConfirmDialog, addDaysYmd: addDaysYmd,
+    parseYmd: parseYmd, LEAVE_TYPE_META: LEAVE_TYPE_META, OFFICIAL_KINDS: OFFICIAL_KINDS, leaveConfirmDialog: leaveConfirmDialog, addDaysYmd: addDaysYmd,
     segSelect: segSelect, setThaiHint: setThaiHint, bindPrintLeave: bindPrintLeave, printHtml: printHtml, copyText: copyText, openHelp: openHelp
   };
 

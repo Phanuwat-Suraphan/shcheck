@@ -216,7 +216,7 @@ window.Admin = (function () {
   var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
   var esc = A.esc, icon = A.icon, badge = A.badge;
   var st = { role: null, user: null, sec: 'overview', charts: {}, overview: null, members: [], report: null, repType: 'daily', emps: null, lvStatus: 'PENDING', crStatus: 'PENDING', bound: false };
-  var COLORS = { onTime: '#0CA30C', leave: '#2A78D6', late: '#EDA100', absent: '#D03B3B', notYet: '#94A3B8', grid: '#EEF2F7', text: '#334155' };
+  var COLORS = { onTime: '#0CA30C', leave: '#2A78D6', official: '#7C5CBF', late: '#EDA100', absent: '#D03B3B', notYet: '#94A3B8', grid: '#EEF2F7', text: '#334155' };
   var ROLE_LABEL = { USER: 'บุคลากร', EXECUTIVE: 'ผู้บริหาร', ADMIN: 'ผู้ดูแลระบบ' };
   var POSITIONS = ['ผู้อำนวยการ', 'ครู', 'บุคลากรทางการศึกษา', 'เจ้าหน้าที่อื่น ๆ'];
   var ACTIONS = {
@@ -311,7 +311,7 @@ window.Admin = (function () {
         statCard('danger', 'person_cancel', c.absent, 'คน', 'ขาดงาน' + (o.isWorkday ? ' (หลัง ' + o.workEnd + ' น.)' : '')),
         statCard('muted', 'hourglass_empty', c.notYet, 'คน', 'ยังไม่ได้ลงเวลา'),
         statCard('warning', 'rule', c.incomplete, 'คน', 'ลงเวลาไม่ครบ' + (c.inProgress ? ' (ยังไม่ออก ' + c.inProgress + ')' : '')),
-        statCard('navy', 'person_add', o.pending.registrations, 'คน', 'สมัครสมาชิกรออนุมัติ', isAdmin() ? 'registrations' : null)
+        statCard('navy', 'work', c.official, 'คน', 'ไปราชการ/ประชุม/อบรม', 'leaves')
       ].join('');
       setCounts(o.pending);
       renderSegbar();
@@ -392,7 +392,7 @@ window.Admin = (function () {
   function renderSegbar() {
     var by = {};
     (st.overview.today || []).forEach(function (r) { by[r.status] = (by[r.status] || 0) + 1; });
-    var parts = [['ตรงเวลา', by.PRESENT || 0, COLORS.onTime], ['ลา', by.LEAVE || 0, COLORS.leave], ['มาสาย', by.LATE || 0, COLORS.late],
+    var parts = [['ตรงเวลา', by.PRESENT || 0, COLORS.onTime], ['ลา', by.LEAVE || 0, COLORS.leave], ['ไปราชการ', by.OFFICIAL || 0, COLORS.official], ['มาสาย', by.LATE || 0, COLORS.late],
       ['ขาดงาน', by.ABSENT || 0, COLORS.absent], ['ยังไม่ลงเวลา', by.NOT_YET || 0, COLORS.notYet]];
     if (by.HOLIDAY_WORK) parts.push(['ปฏิบัติงานวันหยุด', by.HOLIDAY_WORK, '#1B4F8A']);
     var total = parts.reduce(function (a, p) { return a + p[1]; }, 0);
@@ -406,7 +406,7 @@ window.Admin = (function () {
       }).join('') + '</div>';
   }
   function stackedBarConfig(labels, series, opts) {
-    var ds = [['ตรงเวลา', series.onTime, COLORS.onTime], ['ลา', series.leave, COLORS.leave], ['มาสาย', series.late, COLORS.late], ['ขาดงาน', series.absent, COLORS.absent]];
+    var ds = [['ตรงเวลา', series.onTime, COLORS.onTime], ['ลา', series.leave, COLORS.leave], ['ไปราชการ', series.official || [], COLORS.official], ['มาสาย', series.late, COLORS.late], ['ขาดงาน', series.absent, COLORS.absent]];
     return {
       type: 'bar',
       data: {
@@ -430,7 +430,7 @@ window.Admin = (function () {
     };
   }
   function legendHtml(items) { return items.map(function (i) { return '<span><i style="background:' + i[1] + '"></i>' + esc(i[0]) + '</span>'; }).join(''); }
-  var STATUS_LEGEND = [['ตรงเวลา', COLORS.onTime], ['ลา', COLORS.leave], ['มาสาย', COLORS.late], ['ขาดงาน', COLORS.absent]];
+  var STATUS_LEGEND = [['ตรงเวลา', COLORS.onTime], ['ลา', COLORS.leave], ['ไปราชการ', COLORS.official], ['มาสาย', COLORS.late], ['ขาดงาน', COLORS.absent]];
   function renderTrend(t) {
     $('#ovTrendLegend').innerHTML = legendHtml(STATUS_LEGEND);
     A.loadChartJs().then(function (Chart) {
@@ -450,7 +450,8 @@ window.Admin = (function () {
     var noOut = rows.filter(function (r) { return r.missingOut; });
     lines.push('👥 บุคลากรที่ต้องลงเวลา ' + c.total + ' คน');
     lines.push('✅ มาปฏิบัติงาน ' + c.present + ' คน' + (c.late ? ' (มาสาย ' + c.late + ' คน)' : ''));
-    if (c.leave) lines.push('🗓️ ลา / ไปราชการ ' + c.leave + ' คน');
+    if (c.leave) lines.push('🗓️ ลา ' + c.leave + ' คน');
+    if (c.official) lines.push('🏛️ ไปราชการ / ประชุม / อบรม ' + c.official + ' คน');
     if (c.notYet) lines.push('⏳ ยังไม่ลงเวลา ' + c.notYet + ' คน');
     if (c.absent) lines.push('❌ ขาดงาน ' + c.absent + ' คน');
     if (noOut.length) lines.push('⚠️ ไม่ลงเวลาออก ' + noOut.length + ' คน');
@@ -460,7 +461,10 @@ window.Admin = (function () {
       list.forEach(function (r) { lines.push('• ' + fmt(r)); });
     }
     var name = function (r) { return r.fullName; };
-    if (opt.leave) section('ลา / ไปราชการ', rows.filter(function (r) { return r.leaveLabel; }).sort(byCode), function (r) { return r.fullName + ' (' + r.leaveLabel + ')'; });
+    if (opt.leave) {
+      section('ลา', rows.filter(function (r) { return r.leaveLabel && r.leaveType !== 'OFFICIAL'; }).sort(byCode), function (r) { return r.fullName + ' (' + r.leaveLabel + ')'; });
+      section('ไปราชการ / ประชุม / อบรม', rows.filter(function (r) { return r.leaveType === 'OFFICIAL'; }).sort(byCode), function (r) { return r.fullName + ' (' + r.leaveLabel + ')'; });
+    }
     if (opt.missing) {
       section('ยังไม่ลงเวลา', rows.filter(function (r) { return r.status === 'NOT_YET'; }).sort(byCode), name);
       section('ขาดงาน', rows.filter(function (r) { return r.status === 'ABSENT'; }).sort(byCode), name);
@@ -513,7 +517,7 @@ window.Admin = (function () {
   /** แสดงปุ่ม "บันทึกเวลาแทน" เมื่อยังไม่ลงเวลาเข้า หรือพ้นเวลาเลิกงานแล้วยังไม่ลงเวลาออก (ไม่ใช่ตนเอง/วันลา/วันหยุด) */
   function canRecordTime(r) {
     if (!st.user || r.employeeId === st.user.employeeId) return false;
-    if (r.status === 'LEAVE' || r.status === 'HOLIDAY' || r.status === 'HOLIDAY_WORK') return false;
+    if (r.status === 'LEAVE' || r.status === 'OFFICIAL' || r.status === 'HOLIDAY' || r.status === 'HOLIDAY_WORK') return false;
     return !r.checkIn || !!r.missingOut;
   }
 
@@ -799,9 +803,11 @@ window.Admin = (function () {
       var active = list.filter(function (e) { return e.status === 'ACTIVE'; });
       var today = A.bkkToday();
       A.modal({
-        title: 'บันทึกให้หลายคน (ไปราชการ / อบรม / ลา)', icon: 'groups', wide: true,
+        title: 'บันทึกให้หลายคน (ไปราชการ / ประชุม / อบรม / ลา)', icon: 'groups', wide: true,
         body: '<div class="form-grid two"><div class="field" data-field="type"><label for="glType">ประเภท</label><select id="glType">' +
             A.LEAVE_TYPE_META.map(function (m) { return '<option value="' + m[0] + '"' + (m[0] === 'OFFICIAL' ? ' selected' : '') + '>' + esc(m[1].replace(' (พิมพ์เอง)', '')) + '</option>'; }).join('') + '</select><span class="err"></span></div>' +
+            '<div class="field" id="glKindWrap"><label for="glKind">ลักษณะงาน</label><select id="glKind">' +
+              A.OFFICIAL_KINDS.map(function (k) { return '<option value="' + esc(k) + '">' + esc(k) + '</option>'; }).join('') + '</select></div>' +
             '<div class="field" data-field="typeDetail" id="glDetailWrap" hidden><label for="glDetail">ประเภทการลา (พิมพ์เอง)</label><input id="glDetail" maxlength="60" placeholder="เช่น ลาไปศึกษา ฝึกอบรม ดูงาน"><span class="err"></span></div></div>' +
           '<div class="form-grid two"><div class="field" data-field="startDate"><label for="glStart">ตั้งแต่วันที่</label><input type="date" id="glStart" value="' + today + '"><span class="hint" data-thai-for="glStart"></span><span class="err"></span></div>' +
             '<div class="field" data-field="endDate"><label for="glEnd">ถึงวันที่</label><input type="date" id="glEnd" value="' + today + '"><span class="hint" data-thai-for="glEnd"></span><span class="err"></span></div></div>' +
@@ -828,7 +834,10 @@ window.Admin = (function () {
             [$('#glStart', root), $('#glEnd', root)].forEach(function (i) { A.setThaiHint(i); });
           };
           root._picked = picked;
-          $('#glType', root).addEventListener('change', function () { $('#glDetailWrap', root).hidden = $('#glType', root).value !== 'OTHER'; });
+          $('#glType', root).addEventListener('change', function () {
+            $('#glDetailWrap', root).hidden = $('#glType', root).value !== 'OTHER';
+            $('#glKindWrap', root).hidden = $('#glType', root).value !== 'OFFICIAL';
+          });
           $('#glStart', root).addEventListener('change', function () { if (!$('#glEnd', root).value || $('#glEnd', root).value < $('#glStart', root).value) $('#glEnd', root).value = $('#glStart', root).value; sync(); });
           $('#glEnd', root).addEventListener('change', sync);
           $$('#glPeriod button', root).forEach(function (b) { b.addEventListener('click', function () { if (!b.disabled) A.segSelect($('#glPeriod', root), b); }); });
@@ -846,6 +855,7 @@ window.Admin = (function () {
             A.clearFieldErrors(root);
             var data = { employeeIds: root._picked(), type: $('#glType', root).value, startDate: $('#glStart', root).value, endDate: $('#glEnd', root).value,
               period: $('#glPeriod .active', root).getAttribute('data-val'), reason: $('#glReason', root).value.trim() };
+            if (data.type === 'OFFICIAL') data.typeDetail = $('#glKind', root).value === A.OFFICIAL_KINDS[0] ? '' : $('#glKind', root).value;
             if (data.type === 'OTHER') {
               data.typeDetail = $('#glDetail', root).value.trim();
               if (data.typeDetail.length < 2) { A.showFieldError(root, 'typeDetail', 'กรุณาพิมพ์ประเภทการลา'); return false; }
@@ -1088,7 +1098,7 @@ window.Admin = (function () {
       }).join('') + '</div>' + charts + rep.tables.map(tableHtml).join('') + '</div>';
     if (!rep.chart) return;
     if (rep.chart.kind === 'doughnut') {
-      var d = rep.chart.data, parts = [['ตรงเวลา', d[0], COLORS.onTime], ['ลา', d[2], COLORS.leave], ['มาสาย', d[1], COLORS.late], ['ขาดงาน', d[3], COLORS.absent], ['ยังไม่ลงเวลา', d[4], COLORS.notYet]];
+      var d = rep.chart.data, parts = [['ตรงเวลา', d[0], COLORS.onTime], ['ลา', d[2], COLORS.leave], ['ไปราชการ', d[5] || 0, COLORS.official], ['มาสาย', d[1], COLORS.late], ['ขาดงาน', d[3], COLORS.absent], ['ยังไม่ลงเวลา', d[4], COLORS.notYet]];
       var total = parts.reduce(function (a, p) { return a + p[1]; }, 0);
       $('#repSeg').innerHTML = total ? '<div class="segbar">' + parts.filter(function (p) { return p[1] > 0; }).map(function (p) { return '<div style="flex-grow:' + p[1] + ';background:' + p[2] + '" title="' + esc(p[0]) + ' ' + p[1] + ' คน"></div>'; }).join('') + '</div>' +
         '<div class="segbar-legend">' + parts.map(function (p) { return '<div class="it"><i style="background:' + p[2] + '"></i>' + esc(p[0]) + '<b>' + p[1] + ' คน</b></div>'; }).join('') + '</div>' : A.emptyState('ไม่มีข้อมูล', 'inbox');
@@ -1098,7 +1108,7 @@ window.Admin = (function () {
       if (rep.chart.kind === 'stackedBar') {
         st.charts.rep1 = new Chart($('#repChart1'), stackedBarConfig(rep.chart.series.labels, rep.chart.series, { titlePrefix: 'วันที่ ' }));
       } else if (rep.chart.kind === 'yearTrend') {
-        st.charts.rep1 = new Chart($('#repChart1'), stackedBarConfig(rep.chart.labels, { onTime: rep.chart.present.map(function (v, i) { return v - rep.chart.late[i]; }), late: rep.chart.late, leave: rep.chart.leave, absent: rep.chart.absent }, { unit: 'คน-วัน' }));
+        st.charts.rep1 = new Chart($('#repChart1'), stackedBarConfig(rep.chart.labels, { onTime: rep.chart.present.map(function (v, i) { return v - rep.chart.late[i]; }), late: rep.chart.late, leave: rep.chart.leave, official: rep.chart.official, absent: rep.chart.absent }, { unit: 'คน-วัน' }));
         st.charts.rep2 = new Chart($('#repChart2'), {
           type: 'line',
           data: { labels: rep.chart.labels, datasets: [{ label: 'ร้อยละการมาปฏิบัติงาน', data: rep.chart.rate, borderColor: '#1B4F8A', backgroundColor: '#1B4F8A', borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, spanGaps: false, tension: 0.25 }] },
@@ -1166,7 +1176,7 @@ window.Admin = (function () {
       return parts.join(', ');
     };
     var awayNote = function (r) {
-      if (r.leaveType === 'OFFICIAL') return 'ไปราชการ' + (r.leaveLabel && r.leaveLabel !== 'ไปราชการ' ? ' (' + r.leaveLabel + ')' : '');
+      if (r.leaveType === 'OFFICIAL') return r.leaveLabel || 'ไปราชการ';
       if (r.leaveLabel) return r.leaveLabel;
       if (r.statusCode === 'ABSENT') return 'ไม่ได้ลงเวลา';
       if (r.statusCode === 'NOT_YET') return 'ยังไม่ลงเวลา';

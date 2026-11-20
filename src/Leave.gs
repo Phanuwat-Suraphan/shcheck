@@ -83,6 +83,7 @@ function countWorkdays_(from, to) {
 /** ชื่อประเภทการลาสำหรับแสดงผล (ประเภท "อื่น ๆ" ใช้ข้อความที่พิมพ์เอง) */
 function leaveTypeLabel_(r) {
   if (r.LeaveType === 'OTHER' && r.TypeDetail) return r.TypeDetail;
+  if (r.LeaveType === 'OFFICIAL' && OFFICIAL_KINDS.indexOf(r.TypeDetail) > 0) return r.TypeDetail; // ไปประชุม / ไปอบรม/สัมมนา / ไปศึกษาดูงาน
   return LEAVE_TYPES[r.LeaveType] || r.LeaveType;
 }
 
@@ -123,6 +124,8 @@ function createLeave_(emp, p, opts) {
   if (type === 'OTHER') {
     if (detail.length < 2) throw appError_('กรุณาพิมพ์ประเภทการลา เช่น ลาอุปสมบท', 'VALIDATION', { field: 'typeDetail' });
     if (detail.length > 60) throw appError_('ประเภทการลาต้องไม่เกิน 60 ตัวอักษร', 'VALIDATION', { field: 'typeDetail' });
+  } else if (type === 'OFFICIAL') {
+    detail = OFFICIAL_KINDS.indexOf(detail) > 0 ? detail : ''; // ไปราชการ (ค่าเริ่มต้น) / ไปประชุม / ไปอบรม/สัมมนา / ไปศึกษาดูงาน
   } else {
     detail = '';
   }
@@ -183,8 +186,8 @@ function submitLeave_(ctx, p) {
   });
   return {
     leave: leaveView_(rec),
-    message: auto ? 'บันทึกการลาเรียบร้อยแล้ว (' + leaveTypeLabel_(rec) + ' ' + rec.Days + ' วัน)'
-      : 'ส่งใบลาเรียบร้อยแล้ว (' + leaveTypeLabel_(rec) + ' ' + rec.Days + ' วัน) รอผู้บริหาร/ผู้ดูแลระบบอนุมัติ'
+    message: (auto ? 'บันทึก' : 'ส่ง') + (rec.LeaveType === 'OFFICIAL' ? 'การไปราชการ' : (auto ? 'การลา' : 'ใบลา')) + 'เรียบร้อยแล้ว (' + leaveTypeLabel_(rec) + ' ' + rec.Days + ' วัน)' +
+      (auto ? '' : ' รอผู้บริหาร/ผู้ดูแลระบบอนุมัติ')
   };
 }
 

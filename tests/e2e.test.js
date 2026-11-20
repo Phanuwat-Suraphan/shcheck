@@ -394,7 +394,7 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
     await admin.click('#repRunBtn');
     await admin.waitForFunction(() => (window.__charts || []).some(c => c.id === 'repChart1'));
     const charts = await admin.evaluate(() => window.__charts.filter(c => c.id === 'repChart1'));
-    assert.deepStrictEqual(charts.pop().datasets.map(d => d.label), ['ตรงเวลา', 'ลา', 'มาสาย', 'ขาดงาน']);
+    assert.deepStrictEqual(charts.pop().datasets.map(d => d.label), ['ตรงเวลา', 'ลา', 'ไปราชการ', 'มาสาย', 'ขาดงาน']);
     await admin.click('#repTypeSeg [data-val="yearly"]');
     await admin.click('#repRunBtn');
     await admin.waitForFunction(() => (window.__charts || []).some(c => c.id === 'repChart2' && c.type === 'line'));
@@ -1144,7 +1144,7 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
     await d.waitForSelector('#lsText');
     let txt = await d.inputValue('#lsText');
     ['📋 สรุปการปฏิบัติงานประจำวัน', 'โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่', 'วันพุธที่ 25 พฤศจิกายน พ.ศ. 2569 · ข้อมูล ณ 08:45 น.', '✅ มาปฏิบัติงาน 1 คน (มาสาย 1 คน)',
-      '\nลา / ไปราชการ\n• นางสาวสมศรี ใจดี (ลากิจ)', '\nยังไม่ลงเวลา\n• '].forEach(x => assert.ok(txt.includes(x), x + '\n---\n' + txt));
+      '\nลา\n• นางสาวสมศรี ใจดี (ลากิจ)', '\nยังไม่ลงเวลา\n• '].forEach(x => assert.ok(txt.includes(x), x + '\n---\n' + txt));
     assert.ok(!/\nมาสาย\n/.test(txt), 'ค่าเริ่มต้นไม่แสดงรายชื่อผู้มาสาย');
     await d.click('label:has(#lsLate)');
     await d.waitForFunction(() => /\nมาสาย\n• /.test(document.querySelector('#lsText').value));
@@ -1167,6 +1167,61 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
     ['ข้อมูล ณ 17:00 น.', '❌ ขาดงาน ', '⚠️ ไม่ลงเวลาออก 1 คน', '\nขาดงาน\n• ', '\nไม่ลงเวลาออก\n• นางสาวมาลี ศรีสุข'].forEach(x => assert.ok(txt.includes(x), x + '\n---\n' + txt));
     assert.ok(!txt.includes('ยังไม่ลงเวลา'), txt);
     await modalAction(d2, 'ปิด');
+  });
+
+  await step('E44', 'ไปราชการ / ประชุม / อบรม แยกจากการลา: ครูเลือกลักษณะงานตอนแจ้ง, ผู้บริหารบันทึก "ไปประชุม" ให้ → ภาพรวม/สรุป LINE/รายงานรายวันแสดง "ไปราชการ" แยกจาก "ลา"', async () => {
+    await setClock('2026-11-27 07:30:00');
+    const tp = await newPage();
+    await loginOk(tp, 'somsri.j', 'SomsriNew2026');
+    await tp.click('#userTabs [data-tab="leave"]');
+    await tp.click('#lvQuickDay [data-val="custom"]');
+    await tp.fill('#leaveStart', '2026-12-02'); await tp.dispatchEvent('#leaveStart', 'change');
+    assert.ok(/ไปราชการ \/ ประชุม \/ อบรม/.test(await tp.textContent('#leaveTypeGrid [data-type="OFFICIAL"]')));
+    await tp.click('#leaveTypeGrid [data-type="OFFICIAL"]');
+    await tp.waitForSelector('#lcKind');
+    await tp.click('#lcKind [data-val="ไปอบรม/สัมมนา"]');
+    assert.strictEqual(await tp.textContent('#lcBig'), 'ไปอบรม/สัมมนา');
+    await tp.fill('#lcReason', 'อบรมการจัดการเรียนรู้เชิงรุก ณ สพป.เชียงใหม่ เขต 1');
+    await shot(tp, '38-official-kind-mobile.png');
+    await modalAction(tp, 'ยืนยันการไปราชการ');
+    await toast(tp, /ส่งการไปราชการเรียบร้อยแล้ว \(ไปอบรม\/สัมมนา 1 วัน\)/);
+    await tp.locator('#myLeaves .req-card', { hasText: 'ไปอบรม/สัมมนา' }).waitFor();
+    // ผู้บริหาร: บันทึก "ไปประชุม" ให้ครูวันนี้
+    const d = await newPage({ desktop: true });
+    await loginOk(d, DEFAULTS.adminUser, ADMIN_NEW_PW);
+    await d.click('#toAdminBtn');
+    await d.waitForSelector('#view-admin:not([hidden])');
+    await d.click('#adminNav [data-sec="leaves"]');
+    await d.click('#lvGroupBtn');
+    await d.waitForSelector('#glList .pick-item');
+    await d.selectOption('#glKind', 'ไปประชุม');
+    await d.fill('#glReason', 'ประชุมครูกลุ่มเครือข่ายโรงเรียน');
+    await d.fill('#glSearch', 'สมปอง');
+    await d.locator('#glList .pick-item:not([hidden]) input').first().check();
+    await d.fill('#glSearch', '');
+    await d.click('.modal-actions .btn.success');
+    await toast(d, /บันทึกแล้ว 1 คน/);
+    // ภาพรวม: การ์ด "ไปราชการ/ประชุม/อบรม" + สถานะในตาราง
+    await d.click('#adminNav [data-sec="overview"]');
+    const card = d.locator('#ovStats .stat-card', { hasText: 'ไปราชการ/ประชุม/อบรม' });
+    await card.waitFor();
+    await d.waitForFunction(() => /ไปราชการ/.test(Array.from(document.querySelectorAll('#ovTable tr')).filter(tr => /นายสมปอง รักดี/.test(tr.textContent)).map(tr => tr.textContent).join('')));
+    assert.ok(/^\s*1\s*คน/.test(await card.locator('.stat-value').textContent()), await card.textContent());
+    assert.ok(/ไปราชการ/.test(await d.textContent('#ovSegbar')));
+    await shot(d, '39-official-overview-desktop.png');
+    // สรุปส่งกลุ่ม LINE: แยกหัวข้อ
+    await d.click('#ovBriefBtn');
+    await d.waitForSelector('#lsText');
+    const txt = await d.inputValue('#lsText');
+    ['🏛️ ไปราชการ / ประชุม / อบรม 1 คน', '\nไปราชการ / ประชุม / อบรม\n• นายสมปอง รักดี (ไปประชุม)'].forEach(x => assert.ok(txt.includes(x), x + '\n---\n' + txt));
+    assert.ok(!/🗓️ ลา /.test(txt), 'ไม่มีคนลาวันนี้');
+    await modalAction(d, 'ปิด');
+    // รายงานรายวัน
+    await d.click('#adminNav [data-sec="reports"]');
+    await d.fill('#repDate', '2026-11-27');
+    await d.click('#repRunBtn');
+    await d.locator('#repResult tr', { hasText: 'นายสมปอง รักดี' }).filter({ hasText: 'ไปประชุม' }).waitFor();
+    assert.ok(/ไปราชการ\/ประชุม\/อบรม/.test(await d.textContent('#repResult .grid-stats')));
   });
 
   await step('E20', 'ไม่มี JavaScript error ในทุกหน้าที่ทดสอบ', async () => {

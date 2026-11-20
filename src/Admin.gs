@@ -58,7 +58,7 @@ function getAdminOverview_(ctx) {
   var today = todayStr_();
   var emps = getActiveEmployees_().filter(function (e) { return e.ActiveFrom && e.ActiveFrom <= today; });
   var res = computeAttendance_({ employees: emps, from: today, to: today });
-  var c = { total: 0, present: 0, onTime: 0, late: 0, leave: 0, absent: 0, notYet: 0, incomplete: 0, inProgress: 0, holidayWork: 0 };
+  var c = { total: 0, present: 0, onTime: 0, late: 0, leave: 0, official: 0, absent: 0, notYet: 0, incomplete: 0, inProgress: 0, holidayWork: 0 };
   var list = [];
   res.people.forEach(function (pp) {
     var d = pp.days[0];
@@ -67,7 +67,7 @@ function getAdminOverview_(ctx) {
     if (d.status === 'PRESENT' || d.status === 'LATE') c.present++;
     if (d.status === 'PRESENT') c.onTime++;
     if (d.status === 'LATE') c.late++;
-    if (d.leave) c.leave++;
+    if (d.leave) { if (d.leave.type === 'OFFICIAL') c.official++; else c.leave++; }
     if (d.status === 'ABSENT') c.absent++;
     if (d.status === 'NOT_YET') c.notYet++;
     if (d.missingIn || d.missingOut) c.incomplete++;
@@ -77,6 +77,7 @@ function getAdminOverview_(ctx) {
       employeeId: pp.emp.employeeId, staffCode: pp.emp.staffCode, fullName: pp.emp.fullName, position: pp.emp.position,
       checkIn: d.checkIn ? d.checkIn.substr(0, 5) : '', checkOut: d.checkOut ? d.checkOut.substr(0, 5) : '',
       status: d.status, statusLabel: d.statusLabel, note: d.note, lateMinutes: d.lateMinutes, missingOut: d.missingOut, missingIn: d.missingIn,
+      leaveType: d.leave ? d.leave.type : '',
       leaveLabel: d.leave ? d.leave.typeLabel + (d.leave.period !== 'FULL' ? ' ' + d.leave.periodLabel : '') : ''
     });
   });
@@ -89,20 +90,21 @@ function getAdminOverview_(ctx) {
   // แนวโน้ม 7 วันทำงานล่าสุด
   var trendRes = computeAttendance_({ employees: emps, from: addDays_(today, -20), to: today });
   var workdates = trendRes.dates.filter(function (d) { return trendRes.infos[d].isWorkday; }).slice(-7);
-  var trend = { labels: [], onTime: [], late: [], leave: [], absent: [] };
+  var trend = { labels: [], onTime: [], late: [], leave: [], official: [], absent: [] };
   workdates.forEach(function (date) {
-    var t = { onTime: 0, late: 0, leave: 0, absent: 0 };
+    var t = { onTime: 0, late: 0, leave: 0, official: 0, absent: 0 };
     trendRes.people.forEach(function (pp) {
       pp.days.forEach(function (d) {
         if (d.date !== date) return;
         if (d.status === 'PRESENT') t.onTime++;
         else if (d.status === 'LATE') t.late++;
         else if (d.status === 'LEAVE') t.leave++;
+        else if (d.status === 'OFFICIAL') t.official++;
         else if (d.status === 'ABSENT') t.absent++;
       });
     });
     trend.labels.push(thaiDate_(date, 'short').replace(/ \d+$/, ''));
-    trend.onTime.push(t.onTime); trend.late.push(t.late); trend.leave.push(t.leave); trend.absent.push(t.absent);
+    trend.onTime.push(t.onTime); trend.late.push(t.late); trend.leave.push(t.leave); trend.official.push(t.official); trend.absent.push(t.absent);
   });
   var allEmps = getEmployees_();
   var warnings = [];

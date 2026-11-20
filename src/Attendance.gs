@@ -223,13 +223,13 @@ function getMyDashboard_(ctx) {
   var me = month.people[0];
   var todayRow = null;
   for (var i = 0; i < me.days.length; i++) if (me.days[i].date === today) todayRow = me.days[i];
-  var recent = me.days.filter(function (d) { return d.date <= today && (d.checkIn || d.checkOut || d.status === 'LEAVE' || d.status === 'ABSENT'); })
+  var recent = me.days.filter(function (d) { return d.date <= today && (d.checkIn || d.checkOut || d.status === 'LEAVE' || d.status === 'OFFICIAL' || d.status === 'ABSENT'); })
     .slice(-7).reverse();
   if (recent.length < 7) {
     // เติมจากเดือนก่อนหน้าให้ครบ 7 รายการ
     var prevEnd = addDays_(monthStart_(y, m), -1);
     var prev = computeAttendance_({ employees: [emp], from: addDays_(prevEnd, -20), to: prevEnd }).people[0];
-    var extra = prev.days.filter(function (d) { return d.checkIn || d.checkOut || d.status === 'LEAVE' || d.status === 'ABSENT'; }).reverse();
+    var extra = prev.days.filter(function (d) { return d.checkIn || d.checkOut || d.status === 'LEAVE' || d.status === 'OFFICIAL' || d.status === 'ABSENT'; }).reverse();
     recent = recent.concat(extra).slice(0, 7);
   }
   var myLeaves = readAll_('LeaveRequests').filter(function (r) { return r.EmployeeID === emp.EmployeeID && r.Status === 'PENDING'; }).length;

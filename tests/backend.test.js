@@ -1568,6 +1568,64 @@ test('H02', 'หน้าแรกของผู้บริหาร/ผู้
   assert.strictEqual(ok(sys.api(sys.admin, 'admin.overview', {})).approvals.total, 5);
 });
 
+test('V13', 'ไปราชการ/ประชุม/อบรม แยกจากการลา: สถานะ "ไปราชการ" ทุกรายงาน, ลักษณะงาน (ไปประชุม/ไปอบรม/สัมมนา), ครึ่งวันบ่ายไม่เตือนไม่ลงเวลาออก, ไม่ลดร้อยละการมา, ภาพรวม/หน้าแรกครูแยกนับ', () => {
+  const sys = newSystem({ now: '2026-11-09 07:00:00' }); // จันทร์
+  const t = addTeacher(sys, 1), t2 = addTeacher(sys, 2), t3 = addTeacher(sys, 3);
+  // ครูแจ้งเอง: ไปอบรม/สัมมนา 2 วัน; ลักษณะงานที่ไม่รู้จัก → "ไปราชการ"
+  const a = ok(sys.api(t.token, 'leave.submit', { type: 'OFFICIAL', typeDetail: 'ไปอบรม/สัมมนา', startDate: '2026-11-10', endDate: '2026-11-11', reason: 'อบรมการจัดการเรียนรู้เชิงรุก' }));
+  assert.strictEqual(a.leave.typeLabel, 'ไปอบรม/สัมมนา');
+  assert.ok(/^ส่งการไปราชการเรียบร้อยแล้ว \(ไปอบรม\/สัมมนา 2 วัน\)/.test(a.message), a.message);
+  const odd = ok(sys.api(t2.token, 'leave.submit', { type: 'OFFICIAL', typeDetail: 'เที่ยวทะเล', startDate: '2026-11-12', endDate: '2026-11-12' })).leave;
+  assert.deepStrictEqual([odd.typeDetail, odd.typeLabel], ['', 'ไปราชการ']);
+  [a.leave, odd].forEach(l => ok(sys.api(sys.admin, 'leave.review', { leaveId: l.leaveId, decision: 'APPROVE' })));
+  // ผู้บริหารบันทึก "ไปประชุม" ครึ่งวันบ่ายให้ t3 → เช้ามาทำงานตามปกติ
+  ok(sys.api(sys.admin, 'leave.adminCreateMany', { employeeIds: [t3.id], type: 'OFFICIAL', typeDetail: 'ไปประชุม', startDate: '2026-11-10', endDate: '2026-11-10', period: 'AFTERNOON', reason: 'ประชุมกลุ่มเครือข่าย' }));
+  sys.at('2026-11-09 07:40:00'); ok(sys.api(t.token, 'att.checkIn', INSIDE));
+  sys.at('2026-11-10 07:50:00'); ok(sys.api(t3.token, 'att.checkIn', INSIDE));
+  // ภาพรวมวันนี้: แยกนับลา / ไปราชการ
+  sys.at('2026-11-10 08:40:00');
+  const o = ok(sys.api(sys.admin, 'admin.overview', {}));
+  const ov = id => o.today.find(r => r.employeeId === id);
+  assert.deepStrictEqual([o.counts.leave, o.counts.official], [0, 2]);
+  assert.deepStrictEqual([ov(t.id).status, ov(t.id).leaveType, ov(t.id).leaveLabel], ['OFFICIAL', 'OFFICIAL', 'ไปอบรม/สัมมนา']);
+  assert.strictEqual(ov(t3.id).leaveLabel, 'ไปประชุม ครึ่งวันบ่าย');
+  assert.ok(Array.isArray(o.trend.official));
+  const dash = ok(sys.api(t.token, 'me.dashboard', {}));
+  assert.deepStrictEqual([dash.today.row.status, dash.today.row.statusLabel], ['OFFICIAL', 'ไปราชการ']);
+  // รายงานรายวัน (หลังเลิกงาน)
+  sys.at('2026-11-10 17:00:00');
+  const rep = ok(sys.api(sys.admin, 'report.daily', { date: '2026-11-10' }));
+  const row = id => rep.tables[0].rows.find(r => r.employeeId === id);
+  assert.deepStrictEqual([row(t.id).statusCode, row(t.id).status, row(t.id).note], ['OFFICIAL', 'ไปราชการ', 'ไปอบรม/สัมมนา']);
+  assert.deepStrictEqual([row(t3.id).statusCode, row(t3.id).note], ['PRESENT', 'ไปประชุม (ครึ่งวันบ่าย)']); // ไม่เตือนไม่ลงเวลาออก
+  const sv = label => rep.summary.find(x => x.label === label).value;
+  assert.deepStrictEqual([sv('ไปราชการ/ประชุม/อบรม'), sv('ลา')], [2, 0]);
+  assert.strictEqual(rep.chart.data[5], 1);
+  // รายงานรายเดือน: แยกวันไปราชการ และไม่นำมาคิดร้อยละการมา
+  sys.at('2026-11-12 17:00:00');
+  const m = ok(sys.api(sys.admin, 'report.monthly', { year: 2026, month: 11 }));
+  const mr = id => m.tables[0].rows.find(r => r.employeeId === id);
+  assert.ok(m.tables[0].columns.some(c => c.key === 'officialDays' && c.label === 'ไปราชการ (วัน)'));
+  assert.deepStrictEqual([mr(t.id).workdays, mr(t.id).present, mr(t.id).leaveDays, mr(t.id).officialDays, mr(t.id).absent, mr(t.id).rate], [4, 1, 0, 2, 1, 50]);
+  assert.deepStrictEqual([mr(t3.id).officialDays, mr(t2.id).officialDays], [0.5, 1]);
+  assert.strictEqual(m.summary.find(x => x.label === 'รวมวันไปราชการ/ประชุม/อบรม').value, 3.5);
+  assert.ok(m.chart.series.official.some(v => v > 0));
+  // หน้าแรกครู: การ์ดสรุปเดือน + ไม่เตือน "ลงเวลาไม่ครบ" ในวันไปราชการ
+  const d2 = ok(sys.api(t.token, 'me.dashboard', {}));
+  assert.deepStrictEqual([d2.month.totals.officialDays, d2.month.totals.leaveDays], [2, 0]);
+  assert.ok(!d2.issues.some(x => x.date === '2026-11-10' || x.date === '2026-11-11'), JSON.stringify(d2.issues));
+  // รายปีและรายบุคคล
+  const y = ok(sys.api(sys.admin, 'report.yearly', { year: 2026 }));
+  assert.strictEqual(y.tables[0].rows[10].official, 3.5);
+  assert.strictEqual(y.chart.official[10], 3.5);
+  const ind = ok(sys.api(sys.admin, 'report.individual', { employeeId: t.id, from: '2026-11-09', to: '2026-11-12' }));
+  assert.strictEqual(ind.summary.find(x => x.label === 'ไปราชการ/ประชุม/อบรม').value, 2);
+  assert.deepStrictEqual(ind.tables.find(x => x.key === 'leaves').rows.map(r => r.type), ['ไปอบรม/สัมมนา']);
+  // บัญชีสรุปรายรอบ: คอลัมน์ไปราชการ ไม่นับเป็นลาป่วย+ลากิจ
+  const ls = ok(sys.api(sys.admin, 'report.leaveSummary', { fiscalYear: 2570, round: 1 })).tables[0];
+  assert.deepStrictEqual([ls.rows.find(r => r.employeeId === t.id).offD, ls.rows.find(r => r.employeeId === t.id).spT], [2, 0]);
+});
+
 test('V11', 'อนุมัติใบลาทั้งหมดในครั้งเดียว: ข้ามใบลาของตนเองพร้อมเหตุผล, บันทึก Audit ทุกรายการ, จำกัด 50 รายการ, บุคลากรทั่วไปทำไม่ได้', () => {
   const sys = newSystem({ now: '2026-11-09 07:00:00' });
   const t = addTeacher(sys, 1), t2 = addTeacher(sys, 2), ex = addTeacher(sys, 3, 'EXECUTIVE');
@@ -1765,10 +1823,10 @@ test('N02', 'สรุปประจำวันสำหรับกลุ่�
   const o = ok(sys.api(sys.admin, 'admin.overview', {}));
   assert.deepStrictEqual([o.nowLabel, o.school], ['08:45', 'โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่']);
   const by = id => o.today.find(r => r.employeeId === id);
-  assert.deepStrictEqual([by(t.id).leaveLabel, by(t.id).status], ['ไปราชการ', 'LEAVE']);
+  assert.deepStrictEqual([by(t.id).leaveLabel, by(t.id).leaveType, by(t.id).status], ['ไปราชการ', 'OFFICIAL', 'OFFICIAL']); // ไปราชการแยกจากการลา
   assert.deepStrictEqual([by(t2.id).leaveLabel, by(t2.id).status], ['ลากิจ ครึ่งวันเช้า', 'LEAVE']);
   assert.deepStrictEqual([by(t3.id).leaveLabel, by(t3.id).status, by(t3.id).checkIn], ['', 'LATE', '08:45']);
-  assert.deepStrictEqual([o.counts.present, o.counts.late, o.counts.leave], [1, 1, 2]);
+  assert.deepStrictEqual([o.counts.present, o.counts.late, o.counts.leave, o.counts.official], [1, 1, 1, 1]);
   // ลาครึ่งวันเช้าแล้วมาทำงานช่วงบ่าย: ยังแสดงประเภทการลา และนับว่ามาปฏิบัติงาน
   sys.at('2026-11-09 12:50:00');
   ok(sys.api(t2.token, 'att.checkIn', INSIDE));
