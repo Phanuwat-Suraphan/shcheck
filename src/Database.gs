@@ -443,9 +443,9 @@ function readTail_(name, n) {
   return out;
 }
 
-function getRecord_(name, rowNum) {
+function getRecord_(name, rowNum, fromFinder) {
   var t = getTable_(name);
-  if (rowNum < 2 || rowNum > t.sheet.getLastRow()) return null;
+  if (rowNum < 2 || (!fromFinder && rowNum > t.sheet.getLastRow())) return null;
   var row = t.sheet.getRange(rowNum, 1, 1, t.width).getValues()[0];
   return isEmptyRow_(row) ? null : rowToRecord_(t, row, rowNum);
 }
@@ -468,7 +468,7 @@ function findRowNumbers_(name, field, value) {
 function findOne_(name, field, value) {
   var rows = findRowNumbers_(name, field, value);
   for (var i = 0; i < rows.length; i++) {
-    var rec = getRecord_(name, rows[i]);
+    var rec = getRecord_(name, rows[i], true);
     if (rec && String(rec[field]) === String(value)) return rec;
   }
   return null;
@@ -480,7 +480,6 @@ function appendRecord_(name, rec) {
   var t = getTable_(name);
   t.sheet.appendRow(recordToRow_(t, rec, null));
   markDirty_(name);
-  return t.sheet.getLastRow();
 }
 
 function appendRecords_(name, recs) {

@@ -1380,7 +1380,18 @@
         prog.set(0, 'done'); prog.set(1, 'active');
       }).then(function (pos) {
         prog.set(0, 'done'); prog.set(1, pos.accuracy <= s.maxAccuracyM ? 'done' : 'fail'); prog.set(2, 'active');
-        return api(type === 'IN' ? 'att.checkIn' : 'att.checkOut', { lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy }, { silent: true })
+        var payload = { lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy };
+        var send = function (attempt) {
+          return api(type === 'IN' ? 'att.checkIn' : 'att.checkOut', payload, { silent: true }).catch(function (e) {
+            // มีคนกดพร้อมกันมาก (BUSY) หรือเน็ตสะดุด → ลองใหม่อัตโนมัติ 1 ครั้ง (บันทึกซ้ำไม่ได้: Server ตรวจว่าลงเวลาแล้วหรือยัง)
+            if (attempt < 1 && (e.code === 'BUSY' || e.code === 'NETWORK')) {
+              prog.note('มีผู้ใช้งานพร้อมกันจำนวนมาก — กำลังลองใหม่อัตโนมัติ...');
+              return new Promise(function (res) { setTimeout(res, 1500 + Math.floor(Math.random() * 1500)); }).then(function () { return send(attempt + 1); });
+            }
+            throw e;
+          });
+        };
+        return send(0)
           .then(function (r) {
             prog.set(2, 'done'); prog.set(3, 'done');
             setTimeout(function () { prog.close(); showAttendanceSuccess(r); }, 350);

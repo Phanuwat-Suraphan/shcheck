@@ -91,9 +91,10 @@ function computeLogStatus_(type, time, dayInfo, s) {
 function summaryKey_(date, empId) { return date + '|' + empId; }
 
 /** สร้าง/ปรับปรุงแถว DailySummary (เรียกภายใต้ Lock) */
-function upsertDailySummary_(date, emp, patch) {
+/** found: ระเบียนที่ค้นแล้ว (null = รู้แล้วว่ายังไม่มี) — ไม่ส่ง = ค้นหาเอง */
+function upsertDailySummary_(date, emp, patch, found) {
   var key = summaryKey_(date, emp.EmployeeID);
-  var existing = findOne_('DailySummary', 'Key', key);
+  var existing = found !== undefined ? found : findOne_('DailySummary', 'Key', key);
   var base = existing || {
     Key: key, Date: date, EmployeeID: emp.EmployeeID, StaffCode: emp.StaffCode, FullName: emp.FullName,
     CheckInTime: '', CheckOutTime: '', CheckInLogID: '', CheckOutLogID: '', InDistanceM: null, OutDistanceM: null,
@@ -138,6 +139,8 @@ function recordAttendance_(ctx, type, p) {
     try { loc = parseLocationInput_(p); ev = s.geofenceConfigured ? evaluateLocation_(loc, s) : null; } catch (e) { loc = null; ev = null; }
   }
 
+  // เตรียมก่อนเข้าคิว: เปิดไฟล์ อ่านหัวตาราง และปฏิทินไว้ก่อน — ช่วงที่ผู้อื่นต้องรอ (ถือ Lock) จึงสั้นที่สุด
+  getTable_('AttendanceLogs'); getTable_('DailySummary'); getCalendarMap_();
   var result = withLock_(function () {
     // เวลาจาก Server (อ่านภายใน Lock เพื่อให้ลำดับเวลาถูกต้อง)
     var date = todayStr_();
@@ -183,7 +186,7 @@ function recordAttendance_(ctx, type, p) {
       patch.CheckOutTime = time; patch.CheckOutLogID = log.AttendanceID; patch.OutDistanceM = ev ? ev.distanceM : null;
       patch.EarlyLeave = st.early;
     }
-    upsertDailySummary_(date, emp, patch);
+    upsertDailySummary_(date, emp, patch, summary); // ใช้แถวที่ค้นไว้แล้ว ไม่ค้นซ้ำ
     return { log: log, status: st, dayInfo: dayInfo };
   });
 

@@ -1264,6 +1264,24 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
     assert.ok(dl.includes('bootstrap') && dl.includes('api:admin.overview'), JSON.stringify(dl));
   });
 
+  await step('E46', 'คนกดลงเวลาพร้อมกันจำนวนมาก: ระบบไม่ว่างชั่วคราว (BUSY) → แอปลองใหม่อัตโนมัติแล้วลงเวลาสำเร็จ ครูไม่ต้องกดซ้ำ', async () => {
+    await setClock('2026-11-30 07:40:00');
+    const tp = await newPage();
+    await loginOk(tp, 'somsri.j', 'SomsriNew2026');
+    await tp.waitForSelector('#checkInBtn:not([disabled])');
+    app.env.state.lockBusy = true;                         // จำลอง: คิวบันทึกถูกผู้อื่นใช้อยู่
+    try {
+      await tp.click('#checkInBtn');
+      await tp.locator('.modal', { hasText: 'กำลังลองใหม่อัตโนมัติ' }).waitFor({ timeout: 15000 });
+    } finally {
+      app.env.state.lockBusy = false;                      // คิวว่างแล้ว → ครั้งที่ลองใหม่สำเร็จ
+    }
+    await tp.waitForSelector('.modal .result-hero.ok', { timeout: 15000 });
+    assert.ok(/07:40/.test(await tp.textContent('.modal')), await tp.textContent('.modal'));
+    assert.strictEqual(app.env.SpreadsheetApp.openById(app.env.state.props.SPREADSHEET_ID).getSheetByName('AttendanceLogs')._records()
+      .filter(r => r.Date === '2026-11-30' && r.Type === 'IN' && r.FullName === 'นางสาวสมศรี ใจดี').length, 1, 'บันทึกครั้งเดียว');
+  });
+
   await step('E20', 'ไม่มี JavaScript error ในทุกหน้าที่ทดสอบ', async () => {
     assert.deepStrictEqual(pageErrors, []);
   });
