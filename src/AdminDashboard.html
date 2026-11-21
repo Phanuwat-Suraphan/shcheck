@@ -58,6 +58,20 @@
   .pick-item input { width: 20px; height: 20px; accent-color: var(--navy-700); flex-shrink: 0; }
   .pick-item span:nth-child(2) { flex: 1; min-width: 0; }
   .pick-item:has(input:checked) { background: var(--sky-50); }
+  .sig-box { background: #fff; border: 1.5px dashed var(--border-strong); border-radius: 14px; min-height: 96px; display: flex; align-items: center; justify-content: center; padding: 10px; }
+  .sig-box img { max-width: 100%; max-height: 120px; }
+  .sig-box.pending { border-color: var(--sky-500); background: #F7FBFF; }
+  .sig-box.sm { min-height: 60px; }
+  .sig-box.sm img { max-height: 70px; }
+  .so-table td.so-check { width: 44px; text-align: center; }
+  .so-table td.so-check input { width: 20px; height: 20px; accent-color: var(--navy-700); }
+  .so-table td.so-check .ms { color: var(--success-500); }
+  .so-table tr.so-done td { background: #F3FBF6; }
+  .so-who { display: flex; flex-direction: column; line-height: 1.35; }
+  .so-who .link-btn { align-self: flex-start; padding: 2px 0; font-size: .8rem; }
+  .so-summary { margin-bottom: 8px; font-weight: 600; color: var(--navy-800); }
+  .rep-sign-status { align-self: center; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+  .rep-sign-status .ms { font-size: 18px; color: var(--sky-500); }
   .announce-preview { white-space: pre-wrap; word-break: break-word; background: #EEF6FF; border-radius: 12px; padding: 10px 12px; margin-bottom: 4px; }
   .task-chips { display: flex; flex-wrap: wrap; gap: 8px; }
   .task-chip { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--border-strong); background: #fff; border-radius: 12px; padding: 8px 12px; font-weight: 600; cursor: pointer; min-height: 44px; color: var(--navy-800); }
@@ -105,6 +119,7 @@
     <button type="button" data-sec="leaves"><span class="ms">event_busy</span>อนุมัติการลา<span class="count" data-count="leaves" hidden></span></button>
     <button type="button" data-sec="corrections"><span class="ms">edit_calendar</span>คำร้องแก้ไขเวลา<span class="count" data-count="corrections" hidden></span></button>
     <button type="button" data-sec="reports"><span class="ms">analytics</span>รายงานและสถิติ</button>
+    <button type="button" data-sec="signoff"><span class="ms">draw</span>ลงนามรับรอง</button>
     <button type="button" data-sec="calendar"><span class="ms">calendar_month</span>ปฏิทินวันหยุด</button>
     <button type="button" data-sec="share"><span class="ms">qr_code_2</span>แชร์ระบบ / QR Code</button>
     <button type="button" data-sec="settings" data-admin-only><span class="ms">settings</span>ตั้งค่าระบบ</button>
@@ -227,6 +242,7 @@
         <button type="button" class="btn danger" data-export="pdf"><span class="ms">picture_as_pdf</span>Export PDF</button>
         <button type="button" class="btn outline" id="repPrintBtn"><span class="ms">print</span>พิมพ์รายงาน</button>
         <button type="button" class="btn outline" id="repSignBookBtn" hidden><span class="ms">menu_book</span>พิมพ์บัญชีลงเวลา (แบบสมุดลงเวลา)</button>
+        <span class="small muted rep-sign-status" id="repSignStatus" hidden></span>
       </div>
       <div id="repResult"></div>
     </section>
@@ -260,6 +276,47 @@
             <button type="button" class="btn success block" id="shareBulkBtn"><span class="ms">group_add</span>เพิ่มบุคลากรหลายคน</button>
           </div>
         </div>
+      </div>
+    </section>
+
+    <!-- ================= ลงนามรับรองบัญชีลงเวลา (ลายเซ็นสแกน) ================= -->
+    <section data-panel-sec="signoff" hidden>
+      <div class="page-head"><h2><span class="ms">draw</span>ลงนามรับรองบัญชีลงเวลา</h2>
+        <div class="row" style="gap:8px"><div class="field" style="margin:0"><select id="soMonth" aria-label="เดือน"></select></div>
+        <div class="field" style="margin:0"><select id="soYear" aria-label="ปี พ.ศ."></select></div></div></div>
+      <div class="admin-grid-2" style="margin-top:0">
+        <div class="card" id="soSigCard">
+          <div class="card-title"><span class="ms">signature</span>ลายเซ็นของฉัน</div>
+          <p class="small muted">เซ็นด้วยปากกาสีน้ำเงินหรือดำบนกระดาษขาว แล้วถ่ายรูปหรือสแกนให้ลายเซ็นเต็มภาพ (ไม่มีเงาทับ) — ระบบลบพื้นหลังและครอปให้อัตโนมัติ · ลายเซ็นนี้ใช้ได้เฉพาะเมื่อท่านกดลงนามเอง</p>
+          <div class="sig-box" id="soSigBox"><span class="muted small">ยังไม่มีลายเซ็น</span></div>
+          <div class="tiny muted" id="soSigInfo" style="margin-top:6px"></div>
+          <input type="file" id="soSigFile" accept="image/*" hidden>
+          <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
+            <button type="button" class="btn outline" id="soSigPick"><span class="ms">add_a_photo</span>อัปโหลด / ถ่ายรูปลายเซ็น</button>
+            <button type="button" class="btn" id="soSigSave" hidden><span class="ms">save</span>บันทึกลายเซ็นนี้</button>
+            <button type="button" class="btn ghost" id="soSigCancel" hidden>ยกเลิก</button>
+            <button type="button" class="btn ghost" id="soSigRemove" hidden><span class="ms">delete</span>ลบลายเซ็น</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title"><span class="ms">verified</span>ลงนาม (ย้อนหลังได้ทุกวัน)</div>
+          <div class="form-grid two">
+            <div class="field"><label for="soRole">ลงนามในฐานะ</label>
+              <select id="soRole"><option value="CERTIFIER">ผู้รับรอง “ตรวจแล้วถูกต้อง” (ผู้อำนวยการ)</option><option value="CHECKER">ผู้ตรวจสอบ</option></select></div>
+            <div class="field"><label for="soPosition">ตำแหน่งที่พิมพ์ใต้ลายเซ็น</label><input type="text" id="soPosition" maxlength="120"></div>
+          </div>
+          <div class="row" style="gap:8px;flex-wrap:wrap">
+            <button type="button" class="btn outline sm" id="soSelectAll"><span class="ms">done_all</span>เลือกทุกวันที่ยังไม่ได้ลงนาม</button>
+            <button type="button" class="btn" id="soSignBtn" disabled><span class="ms">draw</span>ลงนามวันที่เลือก</button>
+          </div>
+          <p class="tiny muted" id="soNote" style="margin-top:10px"></p>
+          <div class="divider">พิมพ์</div>
+          <button type="button" class="btn outline block" id="soPrintMonth"><span class="ms">menu_book</span>พิมพ์บัญชีลงเวลาทั้งเดือน (1 หน้าต่อวัน พร้อมลายเซ็น)</button>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <div class="card-title"><span class="ms">event_note</span><span id="soTitle">วันที่ต้องมีบัญชีลงเวลา</span></div>
+        <div id="soDays"></div>
       </div>
     </section>
 

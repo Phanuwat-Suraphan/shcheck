@@ -13,7 +13,7 @@ const path = require('path');
 
 const SRC = path.join(__dirname, '..', 'src');
 const DIST = path.join(__dirname, '..', 'dist');
-const GS_ORDER = ['Code', 'Database', 'Crypto', 'Auth', 'Attendance', 'Leave', 'Admin', 'Reports'];
+const GS_ORDER = ['Code', 'Database', 'Crypto', 'Auth', 'Attendance', 'Leave', 'Admin', 'Reports', 'SignOff'];
 const read = (f) => fs.readFileSync(path.join(SRC, f), 'utf8');
 
 const version = (/VERSION:\s*'([^']+)'/.exec(read('Code.gs')) || [])[1] || '';

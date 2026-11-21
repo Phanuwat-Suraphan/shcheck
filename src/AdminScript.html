@@ -265,7 +265,7 @@ window.Admin = (function () {
       var g = e.target.closest('[data-go-sec]'); if (g) go(g.getAttribute('data-go-sec'));
       var r = e.target.closest('[data-reload]'); if (r) go(r.getAttribute('data-reload'));
     });
-    bindOverview(); bindMembers(); bindRequests(); bindReports(); bindCalendar(); bindSettings(); bindAudit(); bindShare(); bindAnnounce();
+    bindOverview(); bindMembers(); bindRequests(); bindReports(); bindSignoff(); bindCalendar(); bindSettings(); bindAudit(); bindShare(); bindAnnounce();
     go(st.firstSec || 'overview');
   }
   function show() { go(st.sec); }
@@ -277,7 +277,7 @@ window.Admin = (function () {
     $$('[data-panel-sec]').forEach(function (p) { p.hidden = p.getAttribute('data-panel-sec') !== sec; });
     window.scrollTo(0, 0);
     ({ overview: loadOverview, registrations: loadRegistrations, members: loadMembers, leaves: loadLeaves, corrections: loadCorrections,
-      reports: initReports, calendar: loadCalendar, settings: loadSettings, audit: loadAudit, share: loadShare })[sec]();
+      reports: initReports, signoff: loadSignoff, calendar: loadCalendar, settings: loadSettings, audit: loadAudit, share: loadShare })[sec]();
   }
   function setCounts(p) {
     Object.keys(p).forEach(function (k) {
@@ -1058,6 +1058,7 @@ window.Admin = (function () {
       renderReport(rep);
       $('#repExportBar').hidden = false;
       $('#repSignBookBtn').hidden = rep.type !== 'daily';
+      renderRepSignStatus(rep);
     }).catch(err);
   }
   function cellHtml(col, row) {
@@ -1151,14 +1152,36 @@ window.Admin = (function () {
     setTimeout(function () { window.print(); setTimeout(cleanup, 1500); }, 100);
   }
 
-  /**
-   * บัญชีลงเวลาปฏิบัติราชการประจำวัน (แบบสมุดลงเวลา): เรียงตามเวลามา, "เส้นแดง" ที่เวลาถือว่าสาย,
-   * ผู้ไม่มา/ลา/ไปราชการอยู่ท้ายตาราง และช่องลงนามรับรองของผู้อำนวยการ
-   */
+  /** สถานะการลงนามของบัญชีลงเวลาวันที่ดูรายงาน */
+  function renderRepSignStatus(rep) {
+    var el = $('#repSignStatus'), so = rep.type === 'daily' ? rep.signOffs : null;
+    el.hidden = !so;
+    if (!so) return;
+    var who = [so.checker ? 'ผู้ตรวจสอบ ' + esc(so.checker.name) : '', so.certifier ? 'ผู้รับรอง ' + esc(so.certifier.name) : ''].filter(Boolean);
+    el.innerHTML = icon(so.certifier ? 'verified' : 'pending_actions') + (who.length ? 'ลงนามแล้ว: ' + who.join(' · ') : 'ยังไม่ได้ลงนามรับรอง') +
+      ' <button type="button" class="link-btn" data-go-sec="signoff">ไปหน้าลงนาม</button>';
+  }
+
+  /** พิมพ์บัญชีลงเวลาของวันที่ดูรายงาน (มีลายเซ็นถ้าลงนามแล้ว) */
   function printSignBook() {
     var rep = st.report;
     if (!rep || rep.type !== 'daily' || !rep.signBook) return;
-    var b = rep.signBook, rows = rep.tables[0].rows;
+    var date = rep.params && rep.params.date;
+    var go = function (sg) {
+      A.printHtml(signBookPage({ signBook: rep.signBook, dayInfo: rep.dayInfo, rows: rep.tables[0].rows },
+        { school: rep.school, signer: rep.signer, generatedAt: rep.generatedAt }, sg && sg.days ? sg.days[date] : null, sg ? sg.images : null), 'portrait');
+    };
+    if (!rep.signOffs || !(rep.signOffs.certifier || rep.signOffs.checker)) { go(null); return; }
+    A.api('sign.print', { date: date }, { loadingText: 'กำลังเตรียมลายเซ็น...' }).then(go).catch(err);
+  }
+
+  /**
+   * หน้า "บัญชีลงเวลาปฏิบัติราชการ" 1 วัน (แบบสมุดลงเวลา): เรียงตามเวลามา, "เส้นแดง" ที่เวลาถือว่าสาย,
+   * ผู้ไม่มา/ลา/ไปราชการอยู่ท้ายตาราง และช่องลงนาม — วันที่ลงนามในระบบแล้วแสดงภาพลายเซ็นและวันเวลาที่ลงนามจริง
+   * pg = { signBook, dayInfo, rows } · meta = { school, signer, generatedAt } · so = { CERTIFIER, CHECKER } · images = { id: dataUrl }
+   */
+  function signBookPage(pg, meta, so, images) {
+    var b = pg.signBook, rows = pg.rows;
     var came = rows.filter(function (r) { return r.checkIn && r.checkIn !== '-'; }).sort(function (x, y) { return x.checkIn < y.checkIn ? -1 : (x.checkIn > y.checkIn ? 1 : 0); });
     var onTime = came.filter(function (r) { return r.statusCode !== 'LATE'; });
     var late = came.filter(function (r) { return r.statusCode === 'LATE'; });
@@ -1182,25 +1205,310 @@ window.Admin = (function () {
       if (r.statusCode === 'NOT_YET') return 'ยังไม่ลงเวลา';
       return r.status || '';
     };
-    var body = onTime.map(function (r) { return tr(r, cameNote(r)); }).join('') +
-      '<tr class="sb-red"><td colspan="6">เส้นแดง — ลงเวลามาหลัง ' + esc(b.lateAfter) + ' น. ถือว่ามาสาย</td></tr>' +
-      late.map(function (r) { return tr(r, cameNote(r)); }).join('') +
-      (notCame.length ? '<tr class="sb-gap"><td colspan="6">ไม่ได้ลงเวลามา</td></tr>' + notCame.map(function (r) { return tr(r, awayNote(r)); }).join('') : '');
+    var items = onTime.map(function (r) { return tr(r, cameNote(r)); })
+      .concat(['<tr class="sb-red"><td colspan="6">เส้นแดง — ลงเวลามาหลัง ' + esc(b.lateAfter) + ' น. ถือว่ามาสาย</td></tr>'])
+      .concat(late.map(function (r) { return tr(r, cameNote(r)); }))
+      .concat(notCame.length ? ['<tr class="sb-gap"><td colspan="6">ไม่ได้ลงเวลามา</td></tr>'] : [])
+      .concat(notCame.map(function (r) { return tr(r, awayNote(r)); }));
+    // แบ่งหน้าเมื่อบุคลากรมาก: ทุกหน้ามีหัวบัญชีและช่องลงนาม/ลายเซ็นรับรองของวันนั้น
+    var chunks = [];
+    for (var ci = 0; ci < items.length; ci += SB_ROWS_PER_PAGE) chunks.push(items.slice(ci, ci + SB_ROWS_PER_PAGE));
+    var compact = items.length > 16;
     var cnt = function (f) { return notCame.filter(f).length; };
     var leave = cnt(function (r) { return r.leaveType && r.leaveType !== 'OFFICIAL'; });
     var official = cnt(function (r) { return r.leaveType === 'OFFICIAL'; });
     var other = notCame.length - leave - official;
-    var signer = rep.signer || {};
+    var signer = meta.signer || {};
     var dots = '..............................................';
-    A.printHtml('<div class="sb-doc"><div class="sb-title">บัญชีลงเวลาปฏิบัติราชการ</div><div class="sb-sub">' + esc(rep.school) + '</div>' +
+    var line = function (o) {
+      var src = o && o.sig && images ? images[o.sig] : '';
+      return '<span class="sb-sigline' + (src ? ' has-sig' : '') + '">' + (src ? '<img class="sb-sig" src="' + esc(src) + '" alt="">' : '') + dots + '</span>';
+    };
+    var when = function (o) { return o ? '<div class="sb-when">ลงนามผ่านระบบเมื่อ ' + esc(o.signedLabel) + '</div>' : ''; };
+    var ck = so && so.CHECKER, ce = so && so.CERTIFIER;
+    var head = '<div class="sb-title">บัญชีลงเวลาปฏิบัติราชการ</div><div class="sb-sub">' + esc(meta.school) + '</div>' +
       '<div class="sb-sub">ประจำวัน' + esc(b.dayName) + 'ที่ ' + esc(b.day) + ' เดือน ' + esc(b.month) + ' พ.ศ. ' + esc(b.year) + '</div>' +
       '<div class="sb-meta">เวลาปฏิบัติราชการ ' + esc(b.workStart) + ' – ' + esc(b.workEnd) + ' น. · ลงเวลามาหลัง ' + esc(b.lateAfter) + ' น. ถือว่ามาสาย' +
-      (rep.dayInfo && !rep.dayInfo.isWorkday ? ' · <b>วันหยุด: ' + esc(rep.dayInfo.holidayName || '') + '</b>' : '') + '</div>' +
-      '<table class="sb-table"><thead><tr><th style="width:7%">ที่</th><th style="width:30%">ชื่อ - สกุล</th><th style="width:17%">ตำแหน่ง</th><th style="width:10%">เวลามา</th><th style="width:10%">เวลากลับ</th><th>หมายเหตุ</th></tr></thead><tbody>' + body + '</tbody></table>' +
-      '<div class="sb-sum">สรุป บุคลากรทั้งหมด <b>' + rows.length + '</b> คน · มาปฏิบัติราชการ <b>' + came.length + '</b> คน (ตรงเวลา ' + onTime.length + ' คน, มาสาย ' + late.length + ' คน) · ลา <b>' + leave + '</b> คน · ไปราชการ <b>' + official + '</b> คน · ไม่ได้ลงเวลา <b>' + other + '</b> คน</div>' +
-      '<div class="sb-sign"><div>ลงชื่อ ' + dots + ' ผู้ตรวจสอบ<br>( ' + dots + ' )<br>ตำแหน่ง ' + dots + '</div>' +
-      '<div>ตรวจแล้วถูกต้อง<br>ลงชื่อ ' + dots + '<br>( ' + esc(signer.name || dots) + ' )<br>' + esc(signer.position || 'ผู้อำนวยการโรงเรียน') + '</div></div>' +
-      '<div class="sb-foot">เวลามา/เวลากลับบันทึกจากระบบลงเวลาปฏิบัติงานออนไลน์ (เวลาของเซิร์ฟเวอร์ Google และตรวจตำแหน่ง GPS) · พิมพ์เมื่อ ' + esc(rep.generatedAt) + '</div></div>', 'portrait');
+      (pg.dayInfo && !pg.dayInfo.isWorkday ? ' · <b>วันหยุด: ' + esc(pg.dayInfo.holidayName || '') + '</b>' : '') + '</div>';
+    var sum = '<div class="sb-sum">สรุป บุคลากรทั้งหมด <b>' + rows.length + '</b> คน · มาปฏิบัติราชการ <b>' + came.length + '</b> คน (ตรงเวลา ' + onTime.length + ' คน, มาสาย ' + late.length + ' คน) · ลา <b>' + leave + '</b> คน · ไปราชการ <b>' + official + '</b> คน · ไม่ได้ลงเวลา <b>' + other + '</b> คน</div>';
+    var sign = '<div class="sb-sign"><div>ลงชื่อ ' + line(ck) + ' ผู้ตรวจสอบ<br>( ' + (ck ? esc(ck.name) : dots) + ' )<br>ตำแหน่ง ' + (ck ? esc(ck.position || '') : dots) + when(ck) + '</div>' +
+      '<div>ตรวจแล้วถูกต้อง<br>ลงชื่อ ' + line(ce) + '<br>( ' + esc(ce ? ce.name : (signer.name || dots)) + ' )<br>' + esc(ce ? (ce.position || '') : (signer.position || 'ผู้อำนวยการโรงเรียน')) + when(ce) + '</div></div>';
+    return chunks.map(function (ch, k) {
+      var last = k === chunks.length - 1;
+      return '<div class="sb-doc">' + head +
+        '<table class="sb-table' + (compact ? ' compact-rows' : '') + '"><thead><tr><th style="width:7%">ที่</th><th style="width:30%">ชื่อ - สกุล</th><th style="width:17%">ตำแหน่ง</th><th style="width:10%">เวลามา</th><th style="width:10%">เวลากลับ</th><th>หมายเหตุ</th></tr></thead><tbody>' + ch.join('') + '</tbody></table>' +
+        (last ? sum : '<div class="sb-sum">(มีต่อหน้าถัดไป)</div>') + sign +
+        '<div class="sb-foot">เวลามา/เวลากลับบันทึกจากระบบลงเวลาปฏิบัติงานออนไลน์ (เวลาของเซิร์ฟเวอร์ Google และตรวจตำแหน่ง GPS) · พิมพ์เมื่อ ' + esc(meta.generatedAt) +
+        (chunks.length > 1 ? ' · หน้า ' + (k + 1) + '/' + chunks.length : '') + '</div></div>';
+    }).join('');
+  }
+  var SB_ROWS_PER_PAGE = 24; // ไม่เกินนี้ต่อหน้า A4 แนวตั้ง (รวมช่องลงนาม) — มากกว่านี้แบ่งหน้าใหม่พร้อมลายเซ็น
+
+  /* ------------------------------------------------------------------ signoff: ลายเซ็นสแกน + ลงนามรับรองบัญชีลงเวลา */
+  function bindSignoff() {
+    A.fillMonthYear($('#soMonth'), $('#soYear'), 3);
+    $('#soMonth').addEventListener('change', loadSignoff);
+    $('#soYear').addEventListener('change', loadSignoff);
+    $('#soRole').addEventListener('change', function () {
+      if (st.so) $('#soPosition').value = st.so.positions[$('#soRole').value] || '';
+      renderSignoffDays();
+    });
+    $('#soSigPick').addEventListener('click', function () { $('#soSigFile').value = ''; $('#soSigFile').click(); });
+    $('#soSigFile').addEventListener('change', function () {
+      var f = this.files && this.files[0];
+      if (!f) return;
+      processSignatureFile(f).then(function (r) { st.soPending = r; renderMySig(); })
+        .catch(function (e) { A.toast(e.message, 'error', 6500); });
+    });
+    $('#soSigSave').addEventListener('click', function () {
+      if (!st.soPending) return;
+      A.api('sign.save', { image: st.soPending.dataUrl }, { loadingText: 'กำลังบันทึกลายเซ็น...' }).then(function (r) {
+        st.soPending = null; st.soSig = r;
+        if (st.so) st.so.hasSignature = true;
+        renderMySig(); renderSignoffDays();
+        A.toast(r.message, 'success');
+      }).catch(err);
+    });
+    $('#soSigCancel').addEventListener('click', function () { st.soPending = null; renderMySig(); });
+    $('#soSigRemove').addEventListener('click', function () {
+      A.confirmDialog({ title: 'ลบลายเซ็น', message: 'ลบลายเซ็นของท่านออกจากระบบใช่หรือไม่ (วันที่ลงนามไว้แล้วจะพิมพ์เป็นช่องว่างให้ลงชื่อด้วยปากกา)', confirmText: 'ลบลายเซ็น', danger: true }).then(function (y) {
+        if (!y) return;
+        A.api('sign.remove', {}).then(function (r) {
+          st.soSig = { image: '' };
+          if (st.so) st.so.hasSignature = false;
+          renderMySig(); renderSignoffDays();
+          A.toast(r.message, 'success');
+        }).catch(err);
+      });
+    });
+    $('#soSelectAll').addEventListener('click', function () { $$('#soDays [data-so-date]').forEach(function (c) { c.checked = true; }); updateSoSignBtn(); });
+    $('#soSignBtn').addEventListener('click', signSelectedDays);
+    $('#soPrintMonth').addEventListener('click', printSignBookMonth);
+    $('#soDays').addEventListener('change', function (e) {
+      if (e.target.id === 'soAllBox') $$('#soDays [data-so-date]').forEach(function (c) { c.checked = e.target.checked; });
+      updateSoSignBtn();
+    });
+    $('#soDays').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-so-revoke]');
+      if (!b) return;
+      var x = b.getAttribute('data-so-revoke').split('|');
+      A.confirmDialog({ title: 'ยกเลิกการลงนาม', message: 'ยกเลิกการลงนาม' + (x[1] === 'CERTIFIER' ? 'รับรอง' : 'ตรวจสอบ') + 'ของวันที่ ' + A.thDate(x[0]) + ' ใช่หรือไม่', confirmText: 'ยกเลิกการลงนาม', danger: true }).then(function (y) {
+        if (y) A.api('sign.revoke', { date: x[0], role: x[1] }).then(function (r) { A.toast(r.message, 'success'); loadSignoff(); }).catch(err);
+      });
+    });
+  }
+  function soYM() { return { year: +$('#soYear').value, month: +$('#soMonth').value }; }
+  function loadSignoff() {
+    var p = soYM();
+    p.withSignature = !st.soSig;
+    A.api('sign.month', p, { loadingText: 'กำลังโหลดรายการวัน...' }).then(function (so) {
+      var first = !st.so;
+      st.so = so;
+      if (so.signature) st.soSig = so.signature;
+      if (first) $('#soRole').value = so.defaultRole;
+      if (first || !$('#soPosition').value.trim()) $('#soPosition').value = so.positions[$('#soRole').value] || '';
+      renderMySig(); renderSignoffDays();
+    }).catch(err);
+  }
+  function renderMySig() {
+    var pend = st.soPending, cur = st.soSig && st.soSig.image, src = pend ? pend.dataUrl : cur;
+    $('#soSigBox').innerHTML = src ? '<img src="' + esc(src) + '" alt="ลายเซ็นของฉัน">' : '<span class="muted small">ยังไม่มีลายเซ็น</span>';
+    $('#soSigBox').classList.toggle('pending', !!pend);
+    $('#soSigInfo').textContent = pend ? 'ตัวอย่างหลังลบพื้นหลัง (' + pend.width + '×' + pend.height + ' px) — ตรวจว่าลายเซ็นครบและชัด แล้วกด “บันทึกลายเซ็นนี้”'
+      : (cur ? 'อัปโหลดเมื่อ ' + (st.soSig.updatedLabel || '-') : 'ยังไม่มีลายเซ็น — อัปโหลดก่อนจึงจะลงนามได้');
+    $('#soSigSave').hidden = !pend;
+    $('#soSigCancel').hidden = !pend;
+    $('#soSigRemove').hidden = !!pend || !cur;
+    $('#soSigPick').innerHTML = icon('add_a_photo') + (cur || pend ? 'เลือกภาพใหม่' : 'อัปโหลด / ถ่ายรูปลายเซ็น');
+  }
+  function renderSignoffDays() {
+    var so = st.so;
+    if (!so) return;
+    var role = $('#soRole').value, key = role === 'CERTIFIER' ? 'certifier' : 'checker', otherKey = role === 'CERTIFIER' ? 'checker' : 'certifier';
+    $('#soTitle').textContent = 'วันที่ต้องมีบัญชีลงเวลา · ' + so.label;
+    $('#soNote').innerHTML = so.hasSignature
+      ? 'ลงนามย้อนหลังได้ทุกวันตั้งแต่ ' + esc(so.startLabel) + ' · วันนี้ลงนามได้หลัง ' + esc(so.workEnd) + ' น. · บัญชีที่พิมพ์แสดงวันเวลาที่ลงนามจริง'
+      : '<b>อัปโหลดลายเซ็นของท่านก่อน</b> จึงจะลงนามได้';
+    if (!so.days.length) { $('#soDays').innerHTML = A.emptyState('ยังไม่มีวันที่ต้องลงนามในเดือนนี้', 'event_available'); updateSoSignBtn(); return; }
+    var done = 0;
+    var who = function (o, r, date) {
+      if (!o) return '<span class="muted small nowrap">ยังไม่ลงนาม</span>';
+      return '<div class="so-who"><b>' + esc(o.name) + '</b><span class="tiny muted">' + esc(o.position || '') + ' · ลงนาม ' + esc(o.signedLabel) + '</span>' +
+        (o.mine || so.isAdmin ? '<button type="button" class="link-btn" data-so-revoke="' + esc(date + '|' + r) + '">ยกเลิกการลงนาม</button>' : '') + '</div>';
+    };
+    var rows = so.days.map(function (d) {
+      var mineOther = d[otherKey] && d[otherKey].mine;
+      var can = so.hasSignature && d.signable && !d[key] && !mineOther;
+      if (d[key]) done++;
+      var reason = d[key] ? '' : (!d.signable ? 'หลัง ' + so.workEnd + ' น.' : (mineOther ? 'ลงนามอีกบทบาทแล้ว' : ''));
+      var c = d.counts;
+      return '<tr' + (d[key] ? ' class="so-done"' : '') + '>' +
+        '<td data-label="เลือก" class="so-check">' + (can ? '<input type="checkbox" data-so-date="' + esc(d.date) + '" aria-label="เลือก ' + esc(d.label) + '">'
+          : (d[key] ? icon('check_circle') : (reason ? '<span class="tiny muted">' + esc(reason) + '</span>' : ''))) + '</td>' +
+        '<td data-label="วันที่" class="nowrap"><b>' + esc(d.dayName) + ' ' + esc(d.label) + '</b>' + (d.isWorkday ? '' : '<div class="tiny muted">' + esc(d.holidayName) + ' · มีผู้มาปฏิบัติงาน</div>') + '</td>' +
+        '<td data-label="บุคลากร">มา ' + c.came + '/' + c.total + ' คน' + (c.late ? ' · สาย ' + c.late : '') + (c.away ? ' · ลา/ราชการ ' + c.away : '') + (c.absent ? ' · ขาด ' + c.absent : '') + '</td>' +
+        '<td data-label="ผู้ตรวจสอบ">' + who(d.checker, 'CHECKER', d.date) + '</td>' +
+        '<td data-label="ผู้รับรอง">' + who(d.certifier, 'CERTIFIER', d.date) + '</td></tr>';
+    }).join('');
+    $('#soDays').innerHTML = '<div class="so-summary">' + (role === 'CERTIFIER' ? 'รับรองแล้ว ' : 'ตรวจสอบแล้ว ') + done + '/' + so.days.length + ' วัน</div>' +
+      '<div class="table-wrap"><table class="table stack-mobile so-table"><thead><tr><th style="width:44px"><input type="checkbox" id="soAllBox" aria-label="เลือกทั้งหมด"></th>' +
+      '<th>วันที่</th><th>บุคลากร</th><th>ผู้ตรวจสอบ</th><th>ผู้รับรอง (ตรวจแล้วถูกต้อง)</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+    updateSoSignBtn();
+  }
+  function updateSoSignBtn() {
+    var boxes = $$('#soDays [data-so-date]'), n = boxes.filter(function (c) { return c.checked; }).length;
+    $('#soSignBtn').disabled = !n;
+    $('#soSignBtn').innerHTML = icon('draw') + (n ? 'ลงนามวันที่เลือก (' + n + ' วัน)' : 'ลงนามวันที่เลือก');
+    $('#soSelectAll').disabled = !boxes.length;
+    var all = $('#soAllBox');
+    if (all) { all.disabled = !boxes.length; all.checked = boxes.length > 0 && n === boxes.length; }
+  }
+  function signSelectedDays() {
+    var dates = $$('#soDays [data-so-date]').filter(function (c) { return c.checked; }).map(function (c) { return c.getAttribute('data-so-date'); });
+    if (!dates.length) return;
+    var role = $('#soRole').value, pos = $('#soPosition').value.trim();
+    if (!pos) { A.toast('กรุณาระบุตำแหน่งที่พิมพ์ใต้ลายเซ็น', 'warning'); $('#soPosition').focus(); return; }
+    var img = st.soSig && st.soSig.image;
+    A.confirmDialog({
+      title: role === 'CERTIFIER' ? 'ลงนามรับรองบัญชีลงเวลา' : 'ลงนามตรวจสอบบัญชีลงเวลา',
+      html: 'ลงนามในฐานะ <b>' + (role === 'CERTIFIER' ? 'ผู้รับรอง “ตรวจแล้วถูกต้อง”' : 'ผู้ตรวจสอบ') + '</b> จำนวน <b>' + dates.length + ' วัน</b><br>ตำแหน่ง: ' + esc(pos) +
+        (img ? '<div class="sig-box sm" style="margin:10px 0"><img src="' + esc(img) + '" alt=""></div>' : '') +
+        '<span class="small muted">ภาพลายเซ็นของท่านจะแสดงในบัญชีลงเวลาของวันที่เลือก พร้อมวันเวลาที่ลงนามจริง</span>',
+      confirmText: 'ลงนาม'
+    }).then(function (y) {
+      if (!y) return;
+      A.api('sign.certify', { role: role, position: pos, dates: dates }, { loadingText: 'กำลังลงนาม...' }).then(function (r) {
+        A.toast(r.message, 'success', 6500);
+        loadSignoff();
+      }).catch(err);
+    });
+  }
+  function printSignBookMonth() {
+    var role = $('#soRole').value;
+    A.api('report.signBookMonth', soYM(), { loadingText: 'กำลังเตรียมบัญชีลงเวลาทั้งเดือน...' }).then(function (r) {
+      if (!r.pages.length) { A.toast('ยังไม่มีบัญชีลงเวลาในเดือนนี้', 'info'); return; }
+      var print = function (x) {
+        var meta = { school: x.school, signer: x.signer, generatedAt: x.generatedAt };
+        A.printHtml(x.pages.map(function (pg) { return signBookPage(pg, meta, x.signOffs[pg.date], x.images); }).join(''), 'portrait');
+      };
+      // วันที่ท่านลงนามได้แต่ยังไม่มีลายเซ็นในบทบาทที่เลือก → เสนอให้ลงนามก่อน เพื่อให้มีลายเซ็นทุกหน้า
+      var open = {};
+      (st.so && st.so.hasSignature ? st.so.days : []).forEach(function (d) {
+        var key = role === 'CERTIFIER' ? 'certifier' : 'checker', other = role === 'CERTIFIER' ? 'checker' : 'certifier';
+        if (d.signable && !d[key] && !(d[other] && d[other].mine)) open[d.date] = true;
+      });
+      var missing = r.pages.filter(function (pg) { return open[pg.date] && !(r.signOffs[pg.date] && r.signOffs[pg.date][role]); }).map(function (pg) { return pg.date; });
+      if (!missing.length) { print(r); return; }
+      var pos = $('#soPosition').value.trim();
+      A.modal({
+        title: 'ยังไม่ได้ลงนาม ' + missing.length + ' วัน', icon: 'draw',
+        body: '<p>บัญชีลงเวลาเดือนนี้มี <b>' + missing.length + ' วัน</b> ที่ยังไม่มีลายเซ็น' + (role === 'CERTIFIER' ? 'ผู้รับรอง “ตรวจแล้วถูกต้อง”' : 'ผู้ตรวจสอบ') +
+          ' — ลงนามทั้งหมดในชื่อของท่าน' + (pos ? ' (' + esc(pos) + ')' : '') + ' ก่อนพิมพ์ เพื่อให้ลายเซ็นอยู่ครบทุกหน้าหรือไม่</p>',
+        actions: [
+          { label: 'พิมพ์โดยไม่ลงนาม', cls: 'outline', onClick: function () { print(r); } },
+          { label: 'ลงนามทั้งหมดแล้วพิมพ์', icon: 'draw', onClick: function () {
+            A.api('sign.certify', { role: role, position: pos, dates: missing }, { loadingText: 'กำลังลงนาม...' }).then(function (c) {
+              A.toast(c.message, 'success', 6500);
+              loadSignoff();
+              return A.api('report.signBookMonth', soYM(), { loadingText: 'กำลังเตรียมบัญชีลงเวลาทั้งเดือน...' }).then(print);
+            }).catch(err);
+          } }
+        ]
+      });
+    }).catch(err);
+  }
+
+  /**
+   * ภาพลายเซ็นจากกล้อง/สแกนเนอร์ → PNG พื้นหลังโปร่งใส ครอปเฉพาะลายเซ็น (ไม่เกิน 600×200 px และ 44,000 ตัวอักษร)
+   * พื้นหลังคำนวณเฉพาะที่ (ค่าเฉลี่ยรอบ ๆ) จึงรองรับภาพถ่ายที่แสงไม่เท่ากัน/มีเงาจาง ๆ
+   */
+  function processSignatureFile(file) {
+    return new Promise(function (resolve, reject) {
+      if (!file || (file.type && !/^image\//.test(file.type))) { reject(new Error('กรุณาเลือกไฟล์รูปภาพ (JPG หรือ PNG)')); return; }
+      if (file.size > 15 * 1024 * 1024) { reject(new Error('ไฟล์ใหญ่เกินไป (ไม่เกิน 15 MB)')); return; }
+      var url = URL.createObjectURL(file), img = new Image();
+      img.onload = function () {
+        try { resolve(signatureFromImage(img)); } catch (e) { reject(e); } finally { URL.revokeObjectURL(url); }
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('เปิดไฟล์รูปภาพไม่ได้ กรุณาใช้ไฟล์ JPG หรือ PNG')); };
+      img.src = url;
+    });
+  }
+  function signatureFromImage(img) {
+    var sc = Math.min(1, 1400 / Math.max(img.naturalWidth, img.naturalHeight));
+    var w = Math.max(1, Math.round(img.naturalWidth * sc)), h = Math.max(1, Math.round(img.naturalHeight * sc));
+    var c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    var g = c.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.drawImage(img, 0, 0, w, h);
+    var d = g.getImageData(0, 0, w, h).data, n = w * h, i;
+    var lum = new Float32Array(n);
+    for (i = 0; i < n; i++) lum[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+    var bg = boxBlur(lum, w, h, Math.max(8, Math.round(Math.max(w, h) / 30)));
+    var alpha = new Uint8ClampedArray(n);
+    for (i = 0; i < n; i++) alpha[i] = (bg[i] - lum[i] - 18) * 4; // หมึกเข้มกว่าพื้นหลังรอบ ๆ (ตัดสัญญาณรบกวนอ่อน ๆ)
+    var box = inkBox(alpha, w, h);
+    if (!box) throw new Error('ไม่พบลายเซ็นในภาพ กรุณาเซ็นด้วยปากกาสีเข้มบนกระดาษขาว แล้วถ่ายให้ลายเซ็นเต็มภาพ');
+    var x0 = Math.max(0, box.x0 - 6), y0 = Math.max(0, box.y0 - 6), x1 = Math.min(w - 1, box.x1 + 6), y1 = Math.min(h - 1, box.y1 + 6);
+    var cw = x1 - x0 + 1, ch = y1 - y0 + 1;
+    var crop = document.createElement('canvas');
+    crop.width = cw; crop.height = ch;
+    var cg = crop.getContext('2d'), od = cg.createImageData(cw, ch), o = od.data;
+    for (var y = 0; y < ch; y++) {
+      for (var x = 0; x < cw; x++) {
+        var si = (y + y0) * w + x + x0, di = (y * cw + x) * 4;
+        o[di] = d[si * 4] * 0.55; o[di + 1] = d[si * 4 + 1] * 0.55; o[di + 2] = d[si * 4 + 2] * 0.7; o[di + 3] = alpha[si]; // สีหมึกเดิม เข้มขึ้นเล็กน้อย
+      }
+    }
+    cg.putImageData(od, 0, 0);
+    var scale = Math.max(Math.min(1, 600 / cw, 200 / ch), 40 / cw, 15 / ch);
+    for (var k = 0; k < 8; k++) {
+      var fw = Math.round(cw * scale), fh = Math.round(ch * scale);
+      if (fw > 1000 || fh > 500) break;
+      var f = document.createElement('canvas');
+      f.width = fw; f.height = fh;
+      var fg = f.getContext('2d');
+      fg.imageSmoothingQuality = 'high';
+      fg.drawImage(crop, 0, 0, fw, fh);
+      var url = f.toDataURL('image/png');
+      if (url.length <= 44000) return { dataUrl: url, width: fw, height: fh };
+      scale *= 0.8;
+      if (cw * scale < 40 || ch * scale < 15) break;
+    }
+    throw new Error('ภาพลายเซ็นมีรายละเอียดมากเกินไป กรุณาถ่ายให้เห็นเฉพาะลายเซ็นบนกระดาษขาวแล้วลองใหม่');
+  }
+  /** ค่าเฉลี่ยรอบ ๆ แต่ละจุด (รัศมี r) ด้วย integral image */
+  function boxBlur(src, w, h, r) {
+    var W = w + 1, I = new Float64Array(W * (h + 1)), x, y;
+    for (y = 0; y < h; y++) {
+      var row = 0;
+      for (x = 0; x < w; x++) { row += src[y * w + x]; I[(y + 1) * W + x + 1] = I[y * W + x + 1] + row; }
+    }
+    var out = new Float32Array(w * h);
+    for (y = 0; y < h; y++) {
+      var a = Math.max(0, y - r), b = Math.min(h, y + r + 1);
+      for (x = 0; x < w; x++) {
+        var l = Math.max(0, x - r), rr = Math.min(w, x + r + 1);
+        out[y * w + x] = (I[b * W + rr] - I[a * W + rr] - I[b * W + l] + I[a * W + l]) / ((rr - l) * (b - a));
+      }
+    }
+    return out;
+  }
+  /** กรอบของลายเซ็น: ตัดขอบที่มีหมึกเพียงเล็กน้อย (จุดสกปรก/ขอบกระดาษ) */
+  function inkBox(alpha, w, h) {
+    var cols = new Float64Array(w), rows = new Float64Array(h), total = 0;
+    for (var y = 0; y < h; y++) {
+      for (var x = 0; x < w; x++) {
+        var a = alpha[y * w + x];
+        if (a > 40) { cols[x] += a; rows[y] += a; total += a; }
+      }
+    }
+    if (total < 255 * 40) return null;
+    var cut = total * 0.004;
+    var lo = function (arr) { var s = 0; for (var i = 0; i < arr.length; i++) { s += arr[i]; if (s > cut) return i; } return 0; };
+    var hi = function (arr) { var s = 0; for (var i = arr.length - 1; i >= 0; i--) { s += arr[i]; if (s > cut) return i; } return arr.length - 1; };
+    var bx = { x0: lo(cols), x1: hi(cols), y0: lo(rows), y1: hi(rows) };
+    return bx.x1 - bx.x0 >= 8 && bx.y1 - bx.y0 >= 4 ? bx : null;
   }
 
   /* ------------------------------------------------------------------ calendar */

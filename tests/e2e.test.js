@@ -1310,6 +1310,82 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
     assert.strictEqual(await d.inputValue('#sStatsStart'), '');
   });
 
+  await step('E48', 'ลงนามรับรองด้วยลายเซ็นสแกน: อัปโหลดรูปถ่ายลายเซ็น (ลบพื้นหลัง/ครอปอัตโนมัติ) → เลือกหลายวันย้อนหลังแล้วลงนามครั้งเดียว → พิมพ์ทั้งเดือนโดยลงนามวันที่เหลือก่อน → ลายเซ็นรับรองอยู่ทุกหน้า', async () => {
+    await setClock('2026-11-30 17:10:00'); // หลังเลิกงาน: ลงนามวันนี้ได้ด้วย
+    const d = await newPage({ desktop: true });
+    await loginOk(d, DEFAULTS.adminUser, ADMIN_NEW_PW);
+    await d.click('#toAdminBtn');
+    await d.waitForSelector('#view-admin:not([hidden])');
+    await d.click('#adminNav [data-sec="signoff"]');
+    await d.waitForSelector('#soDays table');
+    assert.ok(/อัปโหลดลายเซ็นของท่านก่อน/.test(await d.textContent('#soNote')));
+    assert.strictEqual(await d.locator('#soDays [data-so-date]').count(), 0, 'ยังไม่มีลายเซ็น → ยังเลือกวันไม่ได้');
+    // รูปถ่ายลายเซ็นจำลอง: กระดาษสีครีมมีเงาไล่ระดับ + หมึกน้ำเงิน (JPEG)
+    const b64 = await d.evaluate(() => {
+      const c = document.createElement('canvas'); c.width = 1000; c.height = 420;
+      const g = c.getContext('2d');
+      const grad = g.createLinearGradient(0, 0, 1000, 420); grad.addColorStop(0, '#f4f1e8'); grad.addColorStop(1, '#c4bfb1');
+      g.fillStyle = grad; g.fillRect(0, 0, 1000, 420);
+      g.strokeStyle = '#1b2f8a'; g.lineWidth = 7; g.lineCap = 'round'; g.lineJoin = 'round';
+      g.beginPath(); g.moveTo(180, 260);
+      g.bezierCurveTo(240, 80, 330, 90, 300, 250); g.bezierCurveTo(280, 330, 420, 140, 470, 210);
+      g.bezierCurveTo(520, 280, 560, 120, 640, 190); g.bezierCurveTo(700, 240, 760, 230, 820, 170);
+      g.stroke();
+      g.beginPath(); g.moveTo(230, 300); g.lineTo(780, 285); g.stroke();
+      return c.toDataURL('image/jpeg', 0.85).split(',')[1];
+    });
+    await d.setInputFiles('#soSigFile', { name: 'signature.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(b64, 'base64') });
+    await d.waitForSelector('#soSigBox.pending img');
+    await d.click('#soSigSave');
+    await toast(d, /บันทึกลายเซ็นแล้ว/);
+    const sig = app.env.SpreadsheetApp.openById(app.env.state.props.SPREADSHEET_ID).getSheetByName('Signatures')._records();
+    assert.strictEqual(sig.length, 1);
+    assert.ok(/^data:image\/png;base64,/.test(sig[0].ImageData) && sig[0].Width <= 600 && sig[0].Height <= 200 && sig[0].Width > sig[0].Height * 1.8, JSON.stringify([sig[0].Width, sig[0].Height]));
+    const px = await d.evaluate((src) => new Promise(res => {
+      const i = new Image();
+      i.onload = () => { const c = document.createElement('canvas'); c.width = i.width; c.height = i.height; const g = c.getContext('2d'); g.drawImage(i, 0, 0);
+        const a = g.getImageData(0, 0, i.width, i.height).data; let ink = 0; for (let k = 3; k < a.length; k += 4) if (a[k] > 128) ink++;
+        res({ corner: a[3], ink: ink / (i.width * i.height) }); };
+      i.src = src;
+    }), sig[0].ImageData);
+    assert.ok(px.corner === 0 && px.ink > 0.02 && px.ink < 0.5, JSON.stringify(px)); // พื้นหลังโปร่งใส เหลือเฉพาะหมึก
+    // ลงนามในฐานะผู้รับรอง: เลือกทุกวันที่ยังไม่ได้ลงนาม แล้วเว้นไว้ 1 วัน
+    await d.selectOption('#soRole', 'CERTIFIER');
+    await d.fill('#soPosition', 'ผู้อำนวยการโรงเรียนวัดเสาหิน');
+    await d.click('#soSelectAll');
+    const boxes = d.locator('#soDays [data-so-date]');
+    const n = await boxes.count();
+    assert.ok(n >= 5, String(n));
+    await boxes.first().uncheck();
+    assert.ok(new RegExp('\\(' + (n - 1) + ' วัน\\)').test(await d.textContent('#soSignBtn')));
+    await d.click('#soSignBtn');
+    await modalAction(d, 'ลงนาม');
+    await toast(d, new RegExp('ลงนามรับรองบัญชีลงเวลาแล้ว ' + (n - 1) + ' วัน'));
+    await d.waitForFunction((k) => document.querySelectorAll('#soDays tr.so-done').length === k, n - 1);
+    await d.evaluate(() => document.querySelectorAll('.toast').forEach(t => t.remove()));
+    await shot(d, '41-signoff-desktop.png');
+    // พิมพ์ทั้งเดือน → ระบบเสนอให้ลงนามวันที่เหลือก่อน → ลายเซ็นรับรองอยู่ทุกหน้า
+    await capturePrint(d);
+    await d.click('#soPrintMonth');
+    await d.locator('.modal', { hasText: 'ยังไม่ได้ลงนาม 1 วัน' }).waitFor();
+    await modalAction(d, 'ลงนามทั้งหมดแล้วพิมพ์');
+    await d.waitForFunction(() => !!window.__printHtml, null, { timeout: 20000 });
+    const html = await d.evaluate(() => window.__printHtml);
+    const pages = (html.match(/class="sb-doc"/g) || []).length;
+    const signed = (html.match(/class="sb-sig"/g) || []).length;
+    assert.ok(pages >= n, pages + ' หน้า');
+    assert.strictEqual(signed, pages, 'ลายเซ็นรับรองอยู่ทุกหน้า');
+    assert.ok(html.includes('ลงนามผ่านระบบเมื่อ') && html.includes('ผู้อำนวยการโรงเรียนวัดเสาหิน') && html.includes('ตรวจแล้วถูกต้อง'));
+    assert.strictEqual(await printPreview(d, html.split('<div class="sb-doc">').slice(0, 2).join('<div class="sb-doc">'), 'portrait', '42-signbook-signed-print.png'), 1);
+    assert.strictEqual(await printPreview(d, html, 'portrait'), pages, '1 วัน = 1 หน้ากระดาษ');
+    // รายงานรายวันบอกสถานะการลงนาม
+    await d.click('#adminNav [data-sec="reports"]');
+    await d.click('#repTypeSeg [data-val="daily"]').catch(() => {});
+    await d.click('#repRunBtn');
+    await d.waitForSelector('#repSignStatus:not([hidden])');
+    assert.ok(/ลงนามแล้ว: .*ผู้รับรอง/.test(await d.textContent('#repSignStatus')), await d.textContent('#repSignStatus'));
+  });
+
   await step('E20', 'ไม่มี JavaScript error ในทุกหน้าที่ทดสอบ', async () => {
     assert.deepStrictEqual(pageErrors, []);
   });

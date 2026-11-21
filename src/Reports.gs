@@ -246,11 +246,11 @@ function reportDaily_(ctx, p) {
     });
   });
   rep.dayInfo = { isWorkday: info ? info.isWorkday : true, holidayName: info ? info.holidayName : '' };
-  var dp = parseYmd_(date), s = res.settings;
-  rep.signBook = {
-    dayName: THAI_DAYS[dayOfWeek_(date)], day: dp.d, month: THAI_MONTHS[dp.m - 1], year: dp.y + 543,
-    workStart: s.workStart, lateAfter: s.lateAfter, workEnd: s.workEnd
-  };
+  rep.signBook = signBookHead_(date, res.settings);
+  try { // ไม่ให้รายงานรายวันใช้ไม่ได้ถ้ายังไม่ได้อัปเกรดฐานข้อมูล (ยังไม่มีชีต SignOffs)
+    var so = signOffsBetween_(date, date)[date] || {};
+    rep.signOffs = { certifier: signOffView_(so.CERTIFIER, ctx), checker: signOffView_(so.CHECKER, ctx) };
+  } catch (e) { rep.signOffs = null; }
   rep.tables.push({
     key: 'main',
     title: info && !info.isWorkday ? 'หมายเหตุ: วันนี้เป็น' + info.holidayName : '',

@@ -193,6 +193,30 @@ var SCHEMA_ = {
       ['SessionVersion', 'num', 'SessionVersion ของบัญชีขณะจดจำ (เปลี่ยนรหัสผ่าน = ใช้ไม่ได้)'],
       ['LastSeenAt', 'datetime', 'ใช้งานล่าสุดผ่านการจดจำอุปกรณ์']
     ]
+  },
+  Signatures: {
+    color: '#1B4F72',
+    widths: { ImageData: 260 },
+    cols: [
+      ['EmployeeID', 'str', 'เจ้าของลายเซ็น (รหัสภายในของบุคลากร) — 1 คน 1 ลายเซ็น'],
+      ['ImageData', 'str', 'ภาพลายเซ็นสแกน: PNG พื้นหลังโปร่งใส (data URL ไม่เกิน 45,000 ตัวอักษร)'],
+      ['Width', 'num', 'ความกว้างภาพ (px)'],
+      ['Height', 'num', 'ความสูงภาพ (px)'],
+      ['UpdatedAt', 'datetime', 'อัปโหลดล่าสุด']
+    ]
+  },
+  SignOffs: {
+    color: '#1B4F72',
+    widths: { SignerName: 180, SignerPosition: 240 },
+    cols: [
+      ['SignOffID', 'str', 'รหัสการลงนาม'],
+      ['Date', 'date', 'วันที่ของบัญชีลงเวลาที่ลงนาม'],
+      ['Role', 'str', 'CERTIFIER=ผู้รับรอง (ตรวจแล้วถูกต้อง), CHECKER=ผู้ตรวจสอบ — บทบาทละ 1 คนต่อวัน'],
+      ['EmployeeID', 'str', 'รหัสภายในของผู้ลงนาม (ใช้ลายเซ็นของคนนี้)'],
+      ['SignerName', 'str', 'ชื่อผู้ลงนาม ณ เวลาที่ลงนาม'],
+      ['SignerPosition', 'str', 'ตำแหน่งที่พิมพ์ใต้ลายเซ็น'],
+      ['SignedAt', 'datetime', 'วันเวลาที่ลงนามจริง (ลงนามย้อนหลังได้ — แสดงในบัญชีที่พิมพ์)']
+    ]
   }
 };
 
@@ -767,7 +791,7 @@ function writeAudit_(ctx, action, targetType, targetId, details) {
 
 /**
  * ติดตั้งระบบ: รันจาก Apps Script Editor (เลือกฟังก์ชัน SetupSystem แล้วกด Run)
- * - สร้าง/ตรวจสอบชีตทั้ง 9 ชีตพร้อมหัวตาราง
+ * - สร้าง/ตรวจสอบชีตทั้ง 11 ชีตพร้อมหัวตาราง
  * - เพิ่มการตั้งค่าเริ่มต้นที่ยังไม่มี
  * - สร้างกุญแจเข้ารหัส (Pepper) ใน Script Properties ถ้ายังไม่มี
  * - สร้างโฟลเดอร์ Google Drive สำหรับเอกสารแนบ/ไฟล์รายงานชั่วคราว
@@ -958,7 +982,7 @@ function ensureSheet_(ss, name, schema) {
       sh.setColumnWidth(i + 1, w);
     }
     try {
-      if (['Employees', 'AttendanceLogs', 'AuditLogs', 'Sessions'].indexOf(name) >= 0) {
+      if (['Employees', 'AttendanceLogs', 'AuditLogs', 'Sessions', 'Signatures', 'SignOffs'].indexOf(name) >= 0) {
         sh.protect().setDescription('ข้อมูลระบบ — แก้ไขผ่านหน้าเว็บเท่านั้น').setWarningOnly(true);
       }
     } catch (e) { /* ignore */ }

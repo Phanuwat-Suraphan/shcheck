@@ -110,18 +110,19 @@ flowchart LR
     LV["Leave.gs<br/>ลา / คำร้อง / ไฟล์แนบ"]
     ADM["Admin.gs"]
     REP["Reports.gs<br/>คำนวณสถานะ / Export"]
+    SGN["SignOff.gs<br/>ลายเซ็นสแกน / ลงนามรับรอง"]
     DB["Database.gs<br/>CRUD / Cache / SetupSystem"]
   end
   subgraph Google["บริการฟรีของ Google"]
-    SH[("Google Sheets<br/>9 ชีต")]
+    SH[("Google Sheets<br/>11 ชีต")]
     DR[("Google Drive<br/>เอกสารแนบ / ไฟล์ชั่วคราว")]
     CA[("CacheService<br/>Session / แคช")]
     PR[("Script Properties<br/>Pepper / IDs")]
   end
   UI -- google.script.run --> API
   GPS --> UI
-  API --> AUTH & ATT & LV & ADM & REP
-  AUTH & ATT & LV & ADM & REP --> DB
+  API --> AUTH & ATT & LV & ADM & REP & SGN
+  AUTH & ATT & LV & ADM & REP & SGN --> DB
   DB --> SH
   LV --> DR
   REP --> DR
@@ -164,7 +165,7 @@ flowchart TD
 ```mermaid
 flowchart TD
   A[เจ้าของบัญชีวาง 3 ไฟล์ + Deploy] --> B[เปิด URL ครั้งแรก]
-  B --> C[getPublicConfig → setupCore_<br/>สร้างไฟล์ฐานข้อมูล 9 ชีต + กุญแจ + Trigger]
+  B --> C[getPublicConfig → setupCore_<br/>สร้างไฟล์ฐานข้อมูล 11 ชีต + กุญแจ + Trigger]
   C --> D[สร้างรหัสติดตั้งใช้ครั้งเดียว<br/>เก็บใน Script Properties + ชีต เริ่มต้นใช้งาน]
   D --> E[หน้าเว็บแสดงฟอร์ม เริ่มต้นใช้งานระบบ<br/>ไม่ส่งรหัสมาที่ Browser]
   E --> F[เจ้าของเปิด Google Sheet ของตนเอง คัดลอกรหัส]
@@ -285,7 +286,8 @@ flowchart LR
 | `src/Leave.gs` | ใบลา, คำร้องแก้ไขเวลา, ไฟล์แนบ (ตรวจชนิดไฟล์จริง, ตรวจสิทธิ์ก่อนดาวน์โหลด) |
 | `src/Admin.gs` | ภาพรวม, จัดการสมาชิก, ตั้งค่า, ปฏิทิน, Audit Log, คำนวณสรุปใหม่ |
 | `src/Reports.gs` | คำนวณสถานะรายวัน, รายงานรายวัน/เดือน/ปี/บุคคล, Export Excel/PDF |
-| `src/Database.gs` | Schema 9 ชีต, `SetupSystem()`, CRUD, แคชแบบมีเวอร์ชัน, Audit, งานบำรุงรักษา (`DailyMaintenance`) |
+| `src/SignOff.gs` | ลายเซ็นสแกน (ตรวจไฟล์ PNG), ลงนามรับรองบัญชีลงเวลาย้อนหลังหลายวัน, ข้อมูลพิมพ์บัญชีลงเวลาทั้งเดือน |
+| `src/Database.gs` | Schema 11 ชีต, `SetupSystem()`, CRUD, แคชแบบมีเวอร์ชัน, Audit, งานบำรุงรักษา (`DailyMaintenance`) |
 | `src/Index.html` | โครงหน้าเว็บหลัก (Template) |
 | `src/Login.html`, `src/Register.html`, `src/Dashboard.html` | หน้าเข้าสู่ระบบ, สมัครสมาชิก, หน้าบุคลากร + บังคับเปลี่ยนรหัสผ่าน |
 | `src/AdminDashboard.html`, `src/AdminScript.html` | หน้าผู้บริหาร/ผู้ดูแล — **ส่งให้เฉพาะผู้มีสิทธิ์ผ่าน `api('admin.view')`** ไม่ฝังในหน้าเว็บของทุกคน |
@@ -379,3 +381,7 @@ flowchart LR
 | ปฏิทิน: ปิดภาคเรียนเป็นรายการเดียว แก้ไข/ลบทั้งช่วง |
 |---|
 | ![](screenshots/40-calendar-range-desktop.png) |
+
+| ลงนามรับรองย้อนหลังหลายวัน (ลายเซ็นสแกน) | บัญชีลงเวลาที่พิมพ์: ลายเซ็นรับรองทุกหน้า |
+|---|---|
+| ![](screenshots/41-signoff-desktop.png) | ![](screenshots/42-signbook-signed-print.png) |

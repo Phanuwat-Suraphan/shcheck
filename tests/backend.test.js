@@ -123,11 +123,11 @@ function expectErr(r, code) {
 function ok(r) { assert.strictEqual(r.ok, true, JSON.stringify(r).slice(0, 400)); return r.data; }
 
 /* ================================================================== SETUP */
-test('S01', 'SetupSystem สร้างชีตครบ 9 ชีตพร้อม Header, ค่าตั้งต้น, Pepper, โฟลเดอร์ Drive, Trigger', () => {
+test('S01', 'SetupSystem สร้างชีตครบ 11 ชีตพร้อม Header, ค่าตั้งต้น, Pepper, โฟลเดอร์ Drive, Trigger', () => {
   const sys = newSystem({ noAdmin: true });
   const ss = sys.env.SpreadsheetApp.openById(sys.env.state.props.SPREADSHEET_ID);
   const names = ss.getSheets().map(s => s.getName()).filter(n => n !== 'เริ่มต้นใช้งาน').sort();
-  assert.deepStrictEqual(names, ['AttendanceLogs', 'AuditLogs', 'CorrectionRequests', 'DailySummary', 'Employees', 'LeaveRequests', 'Sessions', 'Settings', 'WorkCalendar'].sort());
+  assert.deepStrictEqual(names, ['AttendanceLogs', 'AuditLogs', 'CorrectionRequests', 'DailySummary', 'Employees', 'LeaveRequests', 'Sessions', 'Settings', 'SignOffs', 'Signatures', 'WorkCalendar'].sort());
   const emp = sheet(sys, 'Employees').getRange(1, 1, 1, 19).getValues()[0];
   assert.strictEqual(emp[0], 'EmployeeID');
   assert.ok(emp.includes('PasswordHash') && emp.includes('SessionVersion'));
@@ -2200,7 +2200,7 @@ test('F01', 'ติดตั้งอัตโนมัติเมื่อเ�
   assert.ok(!JSON.stringify(cfg).includes(p.SETUP_CODE) && !JSON.stringify(cfg).includes(p.SPREADSHEET_ID));
   const ss = env.SpreadsheetApp.openById(p.SPREADSHEET_ID);
   assert.strictEqual(ss.getName(), 'ฐานข้อมูลระบบลงเวลา โรงเรียนวัดเสาหิน');
-  assert.strictEqual(ss.getSheets().length, 10);
+  assert.strictEqual(ss.getSheets().length, 12); // 11 ชีตข้อมูล + ชีต "เริ่มต้นใช้งาน"
   assert.ok(JSON.stringify(ss.getSheetByName('เริ่มต้นใช้งาน').rows).includes(p.SETUP_CODE));
   const html = env.context.doGet({}).getContent();
   assert.ok(!html.includes(p.SETUP_CODE));
@@ -2266,6 +2266,131 @@ test('F05', 'อัปเดตโค้ดเวอร์ชันใหม่:
 });
 
 /* ================================================================== RUN */
+/* ================================================================ SIGN-OFF: ลายเซ็นสแกน + ลงนามรับรอง */
+const SIG_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAAAoCAYAAAA16j4lAAAAsklEQVR42u3awRGDMBAEQQVBEA7REV8cDsLnYln3Y/5TGg6pEOd6vQ96sQgCQ2AIDIEhMASGwAJDYDwn8IRL8lsIPMGi/BYDJ8ryW9iDJ1yU39Iha8IXk9/iKdrUFPiZmnI/U1Pu96un8u5F5bf4JWvCX5N/7Wdqyv3sieV+Trrlfqam3M/UlPsdU9Ptl3z1lngF9zi/9Iv04fedn99a/JMFgSEwBIbAEBgCCwyBITAC+AB5nXNDZjs/6AAAAABJRU5ErkJggg==';
+const SIG_PNG2 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAKAAAAAyCAYAAADbYdBlAAAA30lEQVR42u3bMQqEQBAF0Ynn/mfscxiZmIig/p7hBZUXTX3YhXHMOQeQwhEgQAgQECAECAgQAgQECAECAoQAAQFCgIAAIUDgtQCruSS/jf1OwWosym9jv6tgR1l+G/vdSVbzI/Jb3O+JaDU/JL8F/ayaX9TPqvlF/ayaX9Tvq9Wkj8pvEb+/ZEfzY/IL+Vk1v6if3zz8on7+CfKL+lk1v6ifVfOL+g2r5pf06/x0qOMTIn4v+3V/SFn89vbzLBy+CYEAAQFCgIAAIUBAgBAgIEAIEBAgBAgIEAIEBIj1OQDu41kM/u3hdAAAAABJRU5ErkJggg==';
+const SIG_TINY = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAIklEQVR42mMQ0ahgQMLPcGEGNIU4NeFTiKKBGIVgPDIVAgBvZlH/WsUUzwAAAABJRU5ErkJggg==';
+const NAME = (n) => regForm(n).fullName;
+
+test('SG01', 'ลายเซ็นสแกน: เฉพาะผู้บริหาร/ผู้ดูแลระบบ, รับเฉพาะ PNG ขนาดพอเหมาะ (ไม่เกิน 45,000 ตัวอักษร), 1 คน 1 ลายเซ็น แทนที่/ลบได้, Audit ไม่เก็บภาพ', () => {
+  const sys = newSystem({ now: '2026-11-09 07:00:00' });
+  const t = addTeacher(sys, 1);
+  const ex = addTeacher(sys, 2, 'EXECUTIVE');
+  ['sign.save', 'sign.month', 'sign.certify', 'sign.print', 'report.signBookMonth'].forEach(a => expectErr(sys.api(t.token, a, { image: SIG_PNG }), 'FORBIDDEN'));
+  expectErr(sys.api(ex.token, 'sign.save', { image: 'data:image/jpeg;base64,/9j/4AAQSkZJRg==' }), 'VALIDATION');
+  expectErr(sys.api(ex.token, 'sign.save', { image: 'data:image/png;base64,' + Buffer.from('this is not a png image at all!!').toString('base64') }), 'VALIDATION');
+  expectErr(sys.api(ex.token, 'sign.save', { image: SIG_TINY }), 'VALIDATION');
+  expectErr(sys.api(ex.token, 'sign.save', { image: 'data:image/png;base64,' + 'A'.repeat(45000) }), 'VALIDATION');
+  expectErr(sys.api(ex.token, 'sign.save', { image: SIG_PNG + '"><script>' }), 'VALIDATION');
+  let m = ok(sys.api(ex.token, 'sign.month', { year: 2026, month: 11, withSignature: true }));
+  assert.deepStrictEqual([m.hasSignature, m.signature.image], [false, '']);
+  assert.strictEqual(ok(sys.api(ex.token, 'sign.save', { image: SIG_PNG })).image, SIG_PNG);
+  ok(sys.api(ex.token, 'sign.save', { image: SIG_PNG2 })); // แทนที่ของเดิม
+  const rows = records(sys, 'Signatures');
+  assert.deepStrictEqual([rows.length, rows[0].EmployeeID, rows[0].Width, rows[0].Height], [1, ex.id, 160, 50]);
+  m = ok(sys.api(ex.token, 'sign.month', { year: 2026, month: 11, withSignature: true }));
+  assert.deepStrictEqual([m.hasSignature, m.signature.image], [true, SIG_PNG2]);
+  assert.strictEqual(ok(sys.api(ex.token, 'sign.month', { year: 2026, month: 11 })).signature, undefined, 'ไม่ส่งภาพซ้ำทุกครั้ง');
+  ok(sys.api(ex.token, 'sign.remove', {}));
+  assert.strictEqual(records(sys, 'Signatures').length, 0);
+  expectErr(sys.api(ex.token, 'sign.remove', {}), 'NOT_FOUND');
+  const logs = records(sys, 'AuditLogs');
+  assert.ok(logs.some(a => a.Action === 'SIGNATURE_UPDATE') && logs.some(a => a.Action === 'SIGNATURE_REMOVE'));
+  assert.ok(!logs.some(a => /base64|iVBOR/.test(a.Details || '')), 'Audit Log ไม่เก็บภาพลายเซ็น');
+});
+
+test('SG02', 'ลงนามรับรองย้อนหลังหลายวันในครั้งเดียว: ต้องมีลายเซ็นก่อน, ข้ามวันที่ลงนามไม่ได้ (วันข้างหน้า/วันนี้ก่อนเลิกงาน/ก่อนเริ่มใช้ระบบ/มีผู้ลงนามแล้ว/คนเดียวกันสองบทบาท), ยกเลิกได้เฉพาะเจ้าของหรือผู้ดูแลระบบ', () => {
+  const sys = newSystem({ now: '2026-11-02 07:00:00' }); // จันทร์
+  const t = addTeacher(sys, 1);
+  const dir = addTeacher(sys, 2, 'EXECUTIVE');
+  const dep = addTeacher(sys, 3, 'EXECUTIVE');
+  ok(sys.api(sys.admin, 'settings.save', { values: { DIRECTOR_NAME: NAME(2), DIRECTOR_POSITION: 'ผู้อำนวยการโรงเรียนวัดเสาหิน' } }));
+  sys.at('2026-11-02 07:40:00'); ok(sys.api(t.token, 'att.checkIn', INSIDE));
+  sys.at('2026-11-03 08:40:00'); ok(sys.api(t.token, 'att.checkIn', INSIDE));
+  sys.at('2026-11-05 15:00:00'); // พฤหัส ยังไม่เลิกงาน
+  let m = ok(sys.api(dir.token, 'sign.month', { year: 2026, month: 11 }));
+  const all = Array.from(m.days, d => d.date);
+  assert.deepStrictEqual(all, ['2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05']);
+  assert.deepStrictEqual([m.defaultRole, m.positions.CERTIFIER], ['CERTIFIER', 'ผู้อำนวยการโรงเรียนวัดเสาหิน']);
+  assert.deepStrictEqual(Array.from(m.days, d => d.signable), [true, true, true, false]);
+  assert.deepStrictEqual([m.days[0].counts.came, m.days[1].counts.late, m.days[2].counts.came], [1, 1, 0]);
+  expectErr(sys.api(dir.token, 'sign.certify', { role: 'CERTIFIER', dates: all }), 'NO_SIGNATURE');
+  ok(sys.api(dir.token, 'sign.save', { image: SIG_PNG }));
+  ok(sys.api(dep.token, 'sign.save', { image: SIG_PNG2 }));
+  expectErr(sys.api(dir.token, 'sign.certify', { role: 'BOSS', dates: all }), 'VALIDATION');
+  expectErr(sys.api(dir.token, 'sign.certify', { role: 'CERTIFIER', dates: [] }), 'VALIDATION');
+  expectErr(sys.api(dir.token, 'sign.certify', { role: 'CERTIFIER', dates: ['2026-11-31'] }), 'VALIDATION');
+  // ลงนามย้อนหลังทีเดียวหลายวัน — วันนี้ (ยังไม่เลิกงาน), วันข้างหน้า และวันก่อนเริ่มใช้ระบบถูกข้าม
+  let r = ok(sys.api(dir.token, 'sign.certify', { role: 'CERTIFIER', dates: all.concat(['2026-10-30', '2026-11-20', '2026-11-02']) }));
+  assert.strictEqual(r.signed, 3);
+  assert.deepStrictEqual([r.skipped.early, r.skipped.before, r.skipped.signed, r.skipped.self], [2, 1, 0, 0]);
+  assert.ok(/^ลงนามรับรองบัญชีลงเวลาแล้ว 3 วัน \(ข้าม:/.test(r.message), r.message);
+  expectErr(sys.api(dir.token, 'sign.certify', { role: 'CERTIFIER', dates: all.slice(0, 3) }), 'VALIDATION'); // ลงนามแล้วทุกวัน
+  expectErr(sys.api(dir.token, 'sign.certify', { role: 'CHECKER', dates: all.slice(0, 1) }), 'VALIDATION'); // คนเดียวกันสองบทบาท
+  r = ok(sys.api(dep.token, 'sign.certify', { role: 'CHECKER', position: 'รองผู้อำนวยการโรงเรียน', dates: all.slice(0, 2) }));
+  assert.strictEqual(r.signed, 2);
+  sys.at('2026-11-05 16:40:00'); // หลังเลิกงาน: วันนี้ลงนามได้
+  assert.strictEqual(ok(sys.api(dir.token, 'sign.certify', { role: 'CERTIFIER', dates: ['2026-11-05'] })).signed, 1);
+  m = ok(sys.api(dep.token, 'sign.month', { year: 2026, month: 11 }));
+  assert.deepStrictEqual(Array.from(m.days, d => d.certifier && d.certifier.name), [NAME(2), NAME(2), NAME(2), NAME(2)]);
+  assert.deepStrictEqual([m.days[0].checker.position, m.days[0].checker.mine, m.days[0].certifier.mine, m.defaultRole], ['รองผู้อำนวยการโรงเรียน', true, false, 'CHECKER']);
+  // ยกเลิก: คนอื่นยกเลิกไม่ได้ / เจ้าของยกเลิกได้ / ผู้ดูแลระบบยกเลิกได้
+  expectErr(sys.api(dep.token, 'sign.revoke', { date: '2026-11-02', role: 'CERTIFIER' }), 'FORBIDDEN');
+  ok(sys.api(dep.token, 'sign.revoke', { date: '2026-11-02', role: 'CHECKER' }));
+  ok(sys.api(sys.admin, 'sign.revoke', { date: '2026-11-03', role: 'CERTIFIER' }));
+  expectErr(sys.api(sys.admin, 'sign.revoke', { date: '2026-11-03', role: 'CERTIFIER' }), 'NOT_FOUND');
+  const offs = records(sys, 'SignOffs');
+  assert.deepStrictEqual(offs.map(o => o.Date + ' ' + o.Role).sort(), ['2026-11-02 CERTIFIER', '2026-11-03 CHECKER', '2026-11-04 CERTIFIER', '2026-11-05 CERTIFIER']);
+  assert.ok(offs.every(o => o.SignedAt >= '2026-11-05'), 'บันทึกวันเวลาที่ลงนามจริง (ย้อนหลัง)');
+  const acts = records(sys, 'AuditLogs').map(a => a.Action);
+  assert.ok(acts.includes('SIGNOFF') && acts.includes('SIGNOFF_REVOKE'));
+});
+
+test('SG03', 'พิมพ์บัญชีลงเวลา: รายงานรายวันบอกผู้ลงนาม (ไม่ส่งภาพ), ภาพลายเซ็นส่งเฉพาะของผู้ที่ลงนามในช่วงนั้น, พิมพ์ทั้งเดือน 1 หน้าต่อวัน (รวมวันหยุดที่มีผู้มาปฏิบัติงาน)', () => {
+  const sys = newSystem({ now: '2026-11-02 07:00:00' });
+  const t = addTeacher(sys, 1);
+  const dir = addTeacher(sys, 2, 'EXECUTIVE');
+  const other = addTeacher(sys, 3, 'EXECUTIVE');
+  ok(sys.api(dir.token, 'sign.save', { image: SIG_PNG }));
+  ok(sys.api(other.token, 'sign.save', { image: SIG_PNG2 })); // มีลายเซ็นแต่ไม่ได้ลงนาม → ห้ามส่งออกไป
+  sys.at('2026-11-02 07:40:00'); ok(sys.api(t.token, 'att.checkIn', INSIDE));
+  sys.at('2026-11-07 09:00:00'); ok(sys.api(t.token, 'att.checkIn', INSIDE)); // เสาร์ ปฏิบัติงานวันหยุด
+  sys.at('2026-11-09 17:00:00');
+  ok(sys.api(dir.token, 'sign.certify', { role: 'CERTIFIER', dates: ['2026-11-02', '2026-11-03'] }));
+  let d = ok(sys.api(sys.admin, 'report.daily', { date: '2026-11-02' }));
+  assert.deepStrictEqual([d.signOffs.certifier.name, d.signOffs.checker], [NAME(2), null]);
+  assert.ok(!/base64/.test(JSON.stringify(d)), 'รายงานรายวันไม่ส่งภาพลายเซ็น');
+  assert.strictEqual(ok(sys.api(sys.admin, 'report.daily', { date: '2026-11-04' })).signOffs.certifier, null);
+  let p = ok(sys.api(sys.admin, 'sign.print', { date: '2026-11-02' }));
+  assert.strictEqual(p.days['2026-11-02'].CERTIFIER.name, NAME(2));
+  assert.deepStrictEqual(Object.values(p.images), [SIG_PNG]);
+  p = ok(sys.api(sys.admin, 'sign.print', { date: '2026-11-04' }));
+  assert.deepStrictEqual([Object.keys(p.days).length, Object.keys(p.images).length], [0, 0]);
+  expectErr(sys.api(sys.admin, 'sign.print', { date: 'x' }), 'VALIDATION');
+  const mb = ok(sys.api(dir.token, 'report.signBookMonth', { year: 2026, month: 11 }));
+  assert.deepStrictEqual(Array.from(mb.pages, x => x.date), ['2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05', '2026-11-06', '2026-11-07', '2026-11-09']);
+  const sat = mb.pages.find(x => x.date === '2026-11-07');
+  assert.deepStrictEqual([sat.dayInfo.isWorkday, sat.rows.find(x => x.fullName === NAME(1)).checkIn], [false, '09:00']);
+  const first = mb.pages[0];
+  assert.deepStrictEqual([first.signBook.day, first.signBook.month, first.signBook.year], [2, 'พฤศจิกายน', 2569]);
+  assert.strictEqual(first.rows.find(x => x.fullName === NAME(1)).checkIn, '07:40');
+  assert.deepStrictEqual(Object.keys(mb.signOffs).sort(), ['2026-11-02', '2026-11-03']);
+  assert.deepStrictEqual(Object.keys(mb.images), [dir.id]);
+  assert.ok(records(sys, 'AuditLogs').some(a => a.Action === 'SIGNBOOK_PRINT'));
+  expectErr(sys.api(dir.token, 'report.signBookMonth', { year: 2026, month: 12 }), 'VALIDATION');
+});
+
+test('SG04', 'อัปเดตจากเวอร์ชันเดิม: เปิดเว็บครั้งแรกสร้างชีต Signatures/SignOffs ให้เอง และรายงานรายวันใช้ได้แม้ยังไม่ได้อัปเกรด', () => {
+  const sys = newSystem({ now: '2026-11-09 17:00:00' });
+  const ss = sys.env.SpreadsheetApp.openById(sys.env.state.props.SPREADSHEET_ID);
+  ['Signatures', 'SignOffs'].forEach(n => ss.deleteSheet(ss.getSheetByName(n)));
+  assert.strictEqual(ok(sys.api(sys.admin, 'report.daily', { date: '2026-11-09' })).signOffs, null);
+  sys.env.state.props.INSTALLED_VERSION = '1.19.0';
+  ok(sys.env.call('getPublicConfig'));
+  assert.ok(ss.getSheetByName('Signatures') && ss.getSheetByName('SignOffs'));
+  assert.ok(ok(sys.api(sys.admin, 'report.daily', { date: '2026-11-09' })).signOffs);
+});
+
 (function run() {
   const results = [];
   const t0 = Date.now();
