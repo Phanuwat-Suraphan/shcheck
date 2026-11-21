@@ -417,7 +417,10 @@ function resumeSession(deviceToken, clientInfo) {
     var cap = stampToMs_(rec.LoginAt) + REMEMBER_MAX_DAYS_ * 86400000;
     var nextUntil = Math.min(nowMs + s.rememberDays * 86400000, isFinite(cap) ? cap : nowMs);
     withLock_(function () {
-      updateRecord_('Sessions', rec._row, { LastSeenAt: nowStamp_(), RememberUntil: msToStamp_(nextUntil) });
+      // เลขแถวอาจเลื่อนระหว่างรอคิว (งานกลางคืนล้างประวัติเก่า) → ยืนยันแถวอีกครั้งก่อนบันทึก
+      var cur = getRecord_('Sessions', rec._row);
+      if (!cur || cur.SessionRef !== rec.SessionRef) cur = findOne_('Sessions', 'SessionRef', rec.SessionRef);
+      if (cur) updateRecord_('Sessions', cur._row, { LastSeenAt: nowStamp_(), RememberUntil: msToStamp_(nextUntil) });
     });
     var c = putCacheSession_(emp, rec.SessionRef);
     writeAudit_({ user: emp }, 'LOGIN_REMEMBERED', 'Employee', emp.EmployeeID, { ref: rec.SessionRef });

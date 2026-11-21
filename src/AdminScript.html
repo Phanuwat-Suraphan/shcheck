@@ -1207,11 +1207,12 @@ window.Admin = (function () {
   function bindCalendar() {
     var p = A.bkkParts(A.serverNow());
     setOpts($('#calYear'), [p.y - 1, p.y, p.y + 1].map(function (y) { return [y, 'ปี พ.ศ. ' + (y + 543)]; }), p.y);
-    $('#calYear').addEventListener('change', loadCalendar);
+    $('#calYear').addEventListener('change', function () { setCalEditing(null); loadCalendar(); });
     $('#calStart').addEventListener('change', function () { if (!$('#calEnd').value || $('#calEnd').value < $('#calStart').value) $('#calEnd').value = $('#calStart').value; });
     // ปุ่มลัดวันปิดภาคเรียน (วันที่โดยประมาณ — ให้ตรวจตามปฏิทินการศึกษาของเขตพื้นที่ก่อนบันทึก)
     $$('#calPresets [data-cal-preset]').forEach(function (b) {
       b.addEventListener('click', function () {
+        setCalEditing(null); // ปุ่มลัด = เพิ่มรายการใหม่
         var y = +$('#calYear').value, two = b.getAttribute('data-cal-preset') === 'break2';
         $('#calStart').value = two ? y + '-04-01' : y + '-10-11';
         $('#calEnd').value = two ? y + '-05-15' : y + '-10-31';
@@ -1223,9 +1224,13 @@ window.Admin = (function () {
     });
     $('#calForm').addEventListener('submit', function (e) {
       e.preventDefault();
-      A.api('cal.add', { startDate: $('#calStart').value, endDate: $('#calEnd').value, type: $('#calType').value, title: $('#calTitle').value.trim() })
-        .then(function (r) { A.toast(r.message, 'success'); $('#calTitle').value = ''; loadCalendar(); }).catch(err);
+      var v = { startDate: $('#calStart').value, endDate: $('#calEnd').value, type: $('#calType').value, title: $('#calTitle').value.trim() };
+      var ed = st.calEditing;
+      if (ed) { v.oldStartDate = ed.start; v.oldEndDate = ed.end; v.oldType = ed.type; v.oldTitle = ed.title; }
+      A.api(ed ? 'cal.updateRange' : 'cal.add', v)
+        .then(function (r) { A.toast(r.message, 'success'); $('#calTitle').value = ''; setCalEditing(null); loadCalendar(); }).catch(err);
     });
+    $('#calEditCancel').addEventListener('click', function () { setCalEditing(null); $('#calTitle').value = ''; });
     $('#calFixedBtn').addEventListener('click', function () {
       var y = +$('#calYear').value;
       A.confirmDialog({ title: 'เพิ่มวันหยุดราชการไทย', html: 'เพิ่มวันหยุดราชการไทยของปี พ.ศ. ' + (y + 543) + ' ลงปฏิทิน (รวมวันหยุดชดเชย)<br><span class="small muted">วันที่มีอยู่แล้วจะไม่ถูกเพิ่มซ้ำหรือแก้ไข</span>', confirmText: 'เพิ่ม' }).then(function (ok) {
@@ -1239,30 +1244,40 @@ window.Admin = (function () {
         ' · วันหยุดราชการไทยถูกเพิ่มให้อัตโนมัติทุกปี';
       $('#calFormCard').hidden = !c.canEdit;
       $('#calHolidayNote').textContent = c.holidayNote;
-      $('#calList').innerHTML = c.entries.length ? '<div class="table-wrap"><table class="table stack-mobile"><thead><tr><th>วันที่</th><th>รายละเอียด</th>' + (c.canEdit ? '<th></th>' : '') + '</tr></thead><tbody>' +
-        c.entries.map(function (e) {
-          return '<tr><td data-label="วันที่" class="nowrap">' + esc(e.dateLabel) + (e.weekend ? '<div class="tiny muted">ตรงกับเสาร์-อาทิตย์</div>' : '') + '</td>' +
-            '<td data-label="รายละเอียด">' + esc(e.title) + '<div><span class="badge ' + (e.type === 'SPECIAL_WORKDAY' ? 'success' : (e.type === 'SPECIAL_HOLIDAY' ? 'warning' : 'info')) + '">' + esc(e.typeLabel) + '</span></div></td>' +
-            (c.canEdit ? '<td class="actions" data-label="จัดการ"><button type="button" class="btn ghost sm" data-edit-cal="' + esc(e.date) + '" aria-label="แก้ไข">' + icon('edit') + '</button>' +
-              '<button type="button" class="btn ghost sm" data-del-cal="' + esc(e.date) + '" aria-label="ลบ">' + icon('delete') + '</button></td>' : '') + '</tr>';
+      // ช่วงวันที่ติดกันแสดงเป็นรายการเดียว (เช่น ปิดภาคเรียน 46 วัน) แก้ไข/ลบได้ทั้งช่วง
+      var list = c.groups || c.entries.map(function (e) { return { start: e.date, end: e.date, label: e.dateLabel, type: e.type, typeLabel: e.typeLabel, title: e.title, days: 1, weekend: e.weekend }; });
+      $('#calList').innerHTML = list.length ? '<div class="table-wrap"><table class="table stack-mobile"><thead><tr><th>วันที่</th><th>รายละเอียด</th>' + (c.canEdit ? '<th></th>' : '') + '</tr></thead><tbody>' +
+        list.map(function (g, i) {
+          return '<tr><td data-label="วันที่" class="nowrap">' + esc(g.label) + (g.days > 1 ? '<div class="tiny muted">' + g.days + ' วัน</div>' : (g.weekend ? '<div class="tiny muted">ตรงกับเสาร์-อาทิตย์</div>' : '')) + '</td>' +
+            '<td data-label="รายละเอียด">' + esc(g.title) + '<div><span class="badge ' + (g.type === 'SPECIAL_WORKDAY' ? 'success' : (g.type === 'SPECIAL_HOLIDAY' ? 'warning' : 'info')) + '">' + esc(g.typeLabel) + '</span></div></td>' +
+            (c.canEdit ? '<td class="actions" data-label="จัดการ"><button type="button" class="btn ghost sm" data-edit-cal="' + i + '" aria-label="แก้ไข">' + icon('edit') + '</button>' +
+              '<button type="button" class="btn ghost sm" data-del-cal="' + i + '" aria-label="ลบ">' + icon('delete') + '</button></td>' : '') + '</tr>';
         }).join('') + '</tbody></table></div>' : A.emptyState('ยังไม่มีวันหยุดที่บันทึกในปีนี้', 'event_note');
       $$('[data-edit-cal]').forEach(function (b) {
         b.addEventListener('click', function () {
-          var e = c.entries.filter(function (x) { return x.date === b.getAttribute('data-edit-cal'); })[0];
-          $('#calStart').value = e.date; $('#calEnd').value = e.date; $('#calType').value = e.type; $('#calTitle').value = e.title;
+          var g = list[+b.getAttribute('data-edit-cal')];
+          $('#calStart').value = g.start; $('#calEnd').value = g.end; $('#calType').value = g.type; $('#calTitle').value = g.title;
+          setCalEditing(g);
           $('#calFormCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
           $('#calTitle').focus();
-          A.toast('แก้ไขชื่อ/ประเภท แล้วกด “บันทึก”', 'info');
+          A.toast('แก้ไขวันที่/ชื่อ/ประเภท แล้วกด “บันทึก”', 'info');
         });
       });
       $$('[data-del-cal]').forEach(function (b) {
         b.addEventListener('click', function () {
-          A.confirmDialog({ title: 'ลบรายการ', message: 'ลบรายการวันที่ ' + A.thDate(b.getAttribute('data-del-cal')) + ' ใช่หรือไม่', confirmText: 'ลบ', danger: true }).then(function (y) {
-            if (y) A.api('cal.remove', { date: b.getAttribute('data-del-cal') }).then(function (r) { A.toast(r.message, 'success'); loadCalendar(); }).catch(err);
+          var g = list[+b.getAttribute('data-del-cal')];
+          A.confirmDialog({ title: 'ลบรายการ', message: 'ลบ “' + g.title + '” ' + g.label + (g.days > 1 ? ' (ทั้งช่วง ' + g.days + ' วัน)' : '') + ' ใช่หรือไม่', confirmText: 'ลบ', danger: true }).then(function (y) {
+            if (y) A.api('cal.removeRange', { startDate: g.start, endDate: g.end, type: g.type, title: g.title }).then(function (r) { A.toast(r.message, 'success'); setCalEditing(null); loadCalendar(); }).catch(err);
           });
         });
       });
     }).catch(err);
+  }
+  /** กำลังแก้ไขรายการเดิม (บันทึกแล้วแทนที่ทั้งช่วงเดิม) หรือ null = เพิ่มรายการใหม่ */
+  function setCalEditing(g) {
+    st.calEditing = g ? { start: g.start, end: g.end, type: g.type, title: g.title } : null;
+    $('#calEditNote').hidden = !g;
+    if (g) $('#calEditText').textContent = 'กำลังแก้ไข “' + g.title + '” ' + g.label + (g.days > 1 ? ' (' + g.days + ' วัน)' : '');
   }
 
   /* ------------------------------------------------------------------ settings */
@@ -1304,13 +1319,14 @@ window.Admin = (function () {
   }
   var TEXT_SETTINGS = ['SCHOOL_LAT', 'SCHOOL_LNG', 'GEOFENCE_RADIUS_M', 'MAX_GPS_ACCURACY_M', 'WORK_START_TIME', 'LATE_AFTER_TIME', 'WORK_END_TIME', 'CHECKIN_EARLIEST_TIME',
     'SESSION_TIMEOUT_MIN', 'MAX_LOGIN_ATTEMPTS', 'LOCKOUT_MIN', 'REMEMBER_DEVICE_DAYS', 'GPS_RETENTION_DAYS', 'CORRECTION_MAX_DAYS',
-    'DIRECTOR_NAME', 'DIRECTOR_POSITION', 'SCHOOL_AFFILIATION', 'EVAL_LEAVE_MAX_TIMES', 'EVAL_LEAVE_MAX_DAYS', 'EVAL_LATE_MAX_TIMES'];
+    'DIRECTOR_NAME', 'DIRECTOR_POSITION', 'SCHOOL_AFFILIATION', 'EVAL_LEAVE_MAX_TIMES', 'EVAL_LEAVE_MAX_DAYS', 'EVAL_LATE_MAX_TIMES', 'STATS_START_DATE'];
   function loadSettings() {
     A.api('settings.get', {}, { loadingText: 'กำลังโหลดการตั้งค่า...' }).then(function (s) {
       var f = $('#setForm'), v = s.values;
       A.clearFieldErrors(f);
       $('#setServerTime').textContent = 'เวลาเซิร์ฟเวอร์: ' + s.serverTime;
       TEXT_SETTINGS.forEach(function (k) { if (f[k]) f[k].value = v[k] || ''; });
+      $('#sStatsStart').max = A.bkkToday();
       ['ALLOW_HOLIDAY_CHECKIN', 'ALLOW_REGISTRATION', 'SETTINGS_CONFIRMED', 'LEAVE_REQUIRES_APPROVAL', 'CHECKOUT_REQUIRES_GPS'].forEach(function (k) { f[k].checked = String(v[k]).toUpperCase() === 'TRUE'; });
       renderBackupInfo(s.backup);
       loadSystemStatus();

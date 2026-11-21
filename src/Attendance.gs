@@ -346,6 +346,7 @@ function myAttendanceIssues_(emp, s, today) {
   var to = addDays_(today, -1);
   var from = addDays_(today, -Math.min(14, s.correctionMaxDays));
   if (emp.ActiveFrom && from < emp.ActiveFrom) from = emp.ActiveFrom;
+  if (s.statsStartDate && from < s.statsStartDate) from = s.statsStartDate;
   if (from > to) return [];
   var person = computeAttendance_({ employees: [emp], from: from, to: to }).people[0];
   if (!person) return [];

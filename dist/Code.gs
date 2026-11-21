@@ -1,5 +1,5 @@
 /*
- * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.18.0
+ * ระบบลงเวลาปฏิบัติงานออนไลน์ โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่ — v1.19.0
  * ชุดติดตั้งแบบง่าย: ไฟล์ Code.gs (โค้ดฝั่ง Server ทั้งหมด)
  * ไฟล์นี้สร้างอัตโนมัติจากโฟลเดอร์ src/ ด้วย tools/build-bundle.js — แก้ไขที่ src/ แล้วสร้างใหม่
  */
@@ -35,7 +35,7 @@ var APP = {
   SCHOOL_FULL: 'โรงเรียนวัดเสาหิน จังหวัดเชียงใหม่',
   NAME_EN: 'Wat Sao Hin School Attendance System',
   SLOGAN: 'ระบบลงเวลาอัจฉริยะ สะดวก โปร่งใส ตรวจสอบได้',
-  VERSION: '1.18.0',
+  VERSION: '1.19.0',
   TZ: 'Asia/Bangkok'
 };
 
@@ -282,6 +282,8 @@ function getRoutes_() {
     'settings.save': { fn: saveSettings_, roles: A },
     'cal.add': { fn: addCalendarEntries_, roles: A },
     'cal.remove': { fn: removeCalendarEntry_, roles: A },
+    'cal.removeRange': { fn: removeCalendarRange_, roles: A },
+    'cal.updateRange': { fn: updateCalendarRange_, roles: A },
     'cal.addFixed': { fn: addFixedHolidays_, roles: A },
     'audit.list': { fn: listAuditLogs_, roles: A },
     'sys.rebuildSummary': { fn: rebuildDailySummary_, roles: A },
@@ -755,6 +757,7 @@ var DEFAULT_SETTINGS_ = [
   ['CHECKIN_EARLIEST_TIME', '05:00', 'เวลาเร็วที่สุดที่เปิดให้ลงเวลาเข้างาน'],
   ['WORK_DAYS', '1,2,3,4,5', 'วันทำงานประจำสัปดาห์ 0=อาทิตย์ 1=จันทร์ ... 6=เสาร์'],
   ['ALLOW_HOLIDAY_CHECKIN', 'TRUE', 'อนุญาตให้ลงเวลาในวันหยุด (ปฏิบัติงานวันหยุด)'],
+  ['STATS_START_DATE', '', 'วันที่เริ่มใช้ระบบจริง: ก่อนวันนี้ไม่นับสถิติ (ขาด/สาย/ลงเวลาไม่ครบ) ของทุกคน (ว่าง = นับตั้งแต่วันที่อนุมัติบัญชีของแต่ละคน)'],
   ['SESSION_TIMEOUT_MIN', '30', 'ออกจากระบบอัตโนมัติเมื่อไม่ได้ใช้งาน (นาที)'],
   ['MAX_LOGIN_ATTEMPTS', '5', 'จำนวนครั้งที่ใส่รหัสผ่านผิดได้ก่อนล็อกชั่วคราว'],
   ['LOCKOUT_MIN', '15', 'ระยะเวลาล็อกบัญชีชั่วคราว (นาที)'],
@@ -1038,6 +1041,42 @@ function appendRecords_(name, recs) {
   markDirty_(name);
 }
 
+/**
+ * เขียนข้อมูลทั้งตารางใหม่ในคำสั่งเดียว (ใช้แทนการลบทีละแถว) — ต้องเรียกภายใต้ withLock_
+ * recs = รายการที่เหลือจาก readAll_ · lastRow = แถวสุดท้ายที่อ่านมา
+ * เขียนทับก่อนแล้วจึงล้างเฉพาะแถวท้ายที่อ่านมา → แถวที่ถูกเพิ่มด้วย appendRow พร้อมกัน
+ * (เช่น การเข้าสู่ระบบ ซึ่งไม่ได้รอคิว) อยู่หลัง lastRow เสมอ จึงไม่ถูกเขียนทับหรือล้างทิ้ง
+ */
+function rewriteRecords_(name, recs, lastRow) {
+  var t = getTable_(name);
+  if (recs.length) {
+    ensureRows_(t.sheet, recs.length + 1);
+    t.sheet.getRange(2, 1, recs.length, t.width).setValues(recs.map(function (r) {
+      var c = {};
+      for (var x in r) if (x !== '_row') c[x] = r[x];
+      return recordToRow_(t, c, null);
+    }));
+  }
+  if (lastRow > recs.length + 1) t.sheet.getRange(recs.length + 2, 1, lastRow - recs.length - 1, t.width).clearContent();
+  markDirty_(name);
+}
+
+/** แถวสุดท้ายของข้อมูลที่อ่านด้วย readAll_ (1 = ไม่มีข้อมูล) */
+function lastRowOf_(rows) { return rows.length ? rows[rows.length - 1]._row : 1; }
+
+/** ประวัติการเข้าสู่ระบบ (Sessions) ที่เก่ากว่า 180 วันและไม่ได้จดจำเครื่องแล้ว → ลบ (ประวัติยังอยู่ใน Audit Log) · เรียกภายใต้ withLock_ */
+function purgeOldSessions_() {
+  var now = nowStamp_(), cutoff = msToStamp_(nowMs_() - 180 * 86400000);
+  markDirty_('Sessions'); // อ่านจากชีตใหม่ภายใต้คิว
+  var rows = readAll_('Sessions');
+  var keep = rows.filter(function (r) {
+    return (r.RememberUntil && r.RememberUntil > now) || !r.LoginAt || r.LoginAt >= cutoff || (r.LastSeenAt && r.LastSeenAt >= cutoff);
+  });
+  var n = rows.length - keep.length;
+  if (n) rewriteRecords_('Sessions', keep, lastRowOf_(rows));
+  return n;
+}
+
 function ensureRows_(sheet, lastNeeded) {
   var max = sheet.getMaxRows();
   if (lastNeeded > max) sheet.insertRowsAfter(max, lastNeeded - max);
@@ -1189,6 +1228,8 @@ function parseSettings_(raw) {
     workEnd: time('WORK_END_TIME', '16:30'),
     checkinEarliest: time('CHECKIN_EARLIEST_TIME', '05:00'),
     workDays: workDays.length ? workDays : [1, 2, 3, 4, 5],
+    // วันในอนาคต (แก้ในชีตเอง) ยังไม่มีผลจนถึงวันนั้น — ไม่ให้หน้าวันนี้ว่างระหว่างทดลองใช้
+    statsStartDate: (function (v) { v = String(v || '').substr(0, 10); return isValidYmd_(v) && v <= todayStr_() ? v : ''; })(raw.STATS_START_DATE),
     allowHolidayCheckin: bool('ALLOW_HOLIDAY_CHECKIN'),
     checkoutRequiresGps: bool('CHECKOUT_REQUIRES_GPS'),
     sessionTimeoutMin: Math.min(360, Math.max(5, num('SESSION_TIMEOUT_MIN', 30))),
@@ -1699,14 +1740,17 @@ function runMaintenance_(ctx) {
     return count;
   });
   var cleaned = cleanupTempExports_();
+  var sessionsPurged = 0;
+  try { sessionsPurged = withLock_(purgeOldSessions_); } catch (es) { console.error('purge sessions: ' + es); }
   var backup = null;
   if (backupDue_()) {
     try { backup = backupDatabase_(); } catch (eb) { console.error('backup: ' + eb); backup = { error: eb.message || String(eb) }; }
   }
   var msg = 'ลบพิกัด GPS ที่เก่ากว่า ' + thaiDate_(cutoff) + ' จำนวน ' + purged + ' รายการ, ลบไฟล์รายงานชั่วคราว ' + cleaned + ' ไฟล์' +
     (holidaysAdded ? ', เพิ่มวันหยุดราชการไทย ' + holidaysAdded + ' วัน' : '') +
+    (sessionsPurged ? ', ลบประวัติการเข้าสู่ระบบเก่า ' + sessionsPurged + ' รายการ' : '') +
     (backup ? (backup.error ? ', สำรองข้อมูลไม่สำเร็จ: ' + backup.error : ', สำรองข้อมูลอัตโนมัติแล้ว') : '');
-  if (purged || holidaysAdded || backup || ctx) writeAudit_(ctx, 'MAINTENANCE', 'SYSTEM', '', { gpsPurged: purged, cutoff: cutoff, tempFilesRemoved: cleaned, holidaysAdded: holidaysAdded, backup: backup });
+  if (purged || holidaysAdded || backup || sessionsPurged || ctx) writeAudit_(ctx, 'MAINTENANCE', 'SYSTEM', '', { gpsPurged: purged, cutoff: cutoff, tempFilesRemoved: cleaned, holidaysAdded: holidaysAdded, sessionsPurged: sessionsPurged, backup: backup });
   try {
     PropertiesService.getScriptProperties().setProperties({ MAINT_LAST: nowStamp_(), MAINT_RESULT: msg.substr(0, 500) });
     PropertiesService.getScriptProperties().deleteProperty('MAINT_ERROR');
@@ -2452,7 +2496,10 @@ function resumeSession(deviceToken, clientInfo) {
     var cap = stampToMs_(rec.LoginAt) + REMEMBER_MAX_DAYS_ * 86400000;
     var nextUntil = Math.min(nowMs + s.rememberDays * 86400000, isFinite(cap) ? cap : nowMs);
     withLock_(function () {
-      updateRecord_('Sessions', rec._row, { LastSeenAt: nowStamp_(), RememberUntil: msToStamp_(nextUntil) });
+      // เลขแถวอาจเลื่อนระหว่างรอคิว (งานกลางคืนล้างประวัติเก่า) → ยืนยันแถวอีกครั้งก่อนบันทึก
+      var cur = getRecord_('Sessions', rec._row);
+      if (!cur || cur.SessionRef !== rec.SessionRef) cur = findOne_('Sessions', 'SessionRef', rec.SessionRef);
+      if (cur) updateRecord_('Sessions', cur._row, { LastSeenAt: nowStamp_(), RememberUntil: msToStamp_(nextUntil) });
     });
     var c = putCacheSession_(emp, rec.SessionRef);
     writeAudit_({ user: emp }, 'LOGIN_REMEMBERED', 'Employee', emp.EmployeeID, { ref: rec.SessionRef });
@@ -3121,6 +3168,7 @@ function myAttendanceIssues_(emp, s, today) {
   var to = addDays_(today, -1);
   var from = addDays_(today, -Math.min(14, s.correctionMaxDays));
   if (emp.ActiveFrom && from < emp.ActiveFrom) from = emp.ActiveFrom;
+  if (s.statsStartDate && from < s.statsStartDate) from = s.statsStartDate;
   if (from > to) return [];
   var person = computeAttendance_({ employees: [emp], from: from, to: to }).people[0];
   if (!person) return [];
@@ -3748,6 +3796,8 @@ function validateCorrectionInput_(emp, p, maxBackDays) {
     throw appError_('แก้ไขเวลาย้อนหลังได้ไม่เกิน ' + maxBackDays + ' วัน', 'VALIDATION', { field: 'date' });
   }
   if (emp.ActiveFrom && date < emp.ActiveFrom) throw appError_('วันที่เลือกอยู่ก่อนวันที่บัญชีเริ่มใช้งาน', 'VALIDATION', { field: 'date' });
+  var goLive = getSettings_().statsStartDate;
+  if (goLive && date < goLive) throw appError_('วันที่เลือกอยู่ก่อนวันเริ่มใช้ระบบของโรงเรียน (' + thaiDate_(goLive) + ') จึงไม่ต้องแก้ไข', 'VALIDATION', { field: 'date' });
   if (!ATT_TYPES[type]) throw appError_('กรุณาเลือกประเภท เวลาเข้า หรือ เวลาออก', 'VALIDATION', { field: 'type' });
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw appError_('กรุณาระบุเวลาให้ถูกต้อง (ชั่วโมง:นาที)', 'VALIDATION', { field: 'time' });
   if (date === today && time + ':00' > nowTimeStr_()) throw appError_('เวลาที่แจ้งต้องไม่เกินเวลาปัจจุบัน', 'VALIDATION', { field: 'time' });
@@ -4550,6 +4600,7 @@ var SETTING_RULES_ = {
   CHECKIN_EARLIEST_TIME: { type: 'time', label: 'เวลาเปิดให้ลงเวลาเข้า' },
   WORK_DAYS: { type: 'workdays', label: 'วันทำงานประจำสัปดาห์' },
   ALLOW_HOLIDAY_CHECKIN: { type: 'bool', label: 'อนุญาตลงเวลาวันหยุด' },
+  STATS_START_DATE: { type: 'optdate', notFuture: true, label: 'วันที่เริ่มใช้ระบบจริง' },
   SESSION_TIMEOUT_MIN: { type: 'int', min: 5, max: 360, label: 'หมดเวลาการใช้งาน (นาที)' },
   MAX_LOGIN_ATTEMPTS: { type: 'int', min: 3, max: 20, label: 'จำนวนครั้งที่ใส่รหัสผิดได้' },
   LOCKOUT_MIN: { type: 'int', min: 1, max: 1440, label: 'ระยะเวลาล็อกบัญชี (นาที)' },
@@ -4612,6 +4663,11 @@ function normalizeSetting_(key, value) {
       });
       if (!uniq.length) throw appError_('กรุณาเลือกวันทำงานอย่างน้อย 1 วัน', 'VALIDATION', { field: key });
       return uniq.sort().join(',');
+    case 'optdate': // เว้นว่าง = ไม่ใช้
+      if (v === '') return '';
+      if (!isValidYmd_(v)) throw appError_(rule.label + 'ไม่ถูกต้อง (รูปแบบ ปี-เดือน-วัน)', 'VALIDATION', { field: key });
+      if (rule.notFuture && v > todayStr_()) throw appError_(rule.label + 'ต้องไม่เกินวันนี้ — ตั้งค่าในวันแรกที่ใช้จริงหรือหลังจากนั้น (วันก่อนหน้าจะไม่ถูกนับย้อนหลังให้เอง)', 'VALIDATION', { field: key });
+      return v;
     case 'optint': // เว้นว่าง = ไม่ใช้
       if (v === '') return '';
       var o = toNumber_(v);
@@ -4813,6 +4869,12 @@ function seedThaiHolidays_(years) {
   return add.length;
 }
 
+/** "1 เม.ย. – 16 พ.ค. 2570" (ข้ามปี: "28 ธ.ค. 2569 – 3 ม.ค. 2570") — รูปแบบเดียวกับรายการวันเดียว */
+function calendarRangeLabel_(a, b) {
+  var p = parseYmd_(a), q = parseYmd_(b);
+  return p.d + ' ' + THAI_MONTHS_SHORT[p.m - 1] + (p.y !== q.y ? ' ' + (p.y + 543) : '') + ' – ' + q.d + ' ' + THAI_MONTHS_SHORT[q.m - 1] + ' ' + (q.y + 543);
+}
+
 /** 'yyyy-MM-dd' → '1 ม.ค. 2569 (พฤ.)' */
 function calendarDateLabel_(ymd) {
   var p = parseYmd_(ymd);
@@ -4835,46 +4897,116 @@ function listCalendar_(ctx, p) {
   var entries = readAll_('WorkCalendar').filter(function (r) { return String(r.Date).substr(0, 4) === String(y); })
     .sort(function (a, b) { return a.Date < b.Date ? -1 : 1; }).map(calendarView_);
   return {
-    year: y, entries: entries,
+    year: y, entries: entries, groups: calendarGroups_(entries),
     workDays: s.workDays, workDayNames: s.workDays.map(function (d) { return THAI_DAYS[d]; }),
     holidayDataComplete: info.complete, holidayNote: info.note,
     canEdit: ctx.user.Role === ROLES.ADMIN
   };
 }
 
-function addCalendarEntries_(ctx, p) {
-  var start = String(p.startDate || ''), end = String(p.endDate || p.startDate || '');
+/**
+ * ตรวจช่วงวันที่ของปฏิทิน · prefix 'old' = ช่วงเดิมที่จะแก้ไข/ลบ (oldStartDate/oldEndDate/oldType/oldTitle)
+ * existing = ช่วงที่มีอยู่แล้ว (ยาวได้ถึง 400 วัน เพราะอาจรวมจากการเพิ่มหลายครั้ง)
+ */
+function calendarInput_(p, prefix, existing) {
+  var f = function (n) { return prefix ? prefix + n.charAt(0).toUpperCase() + n.substr(1) : n; };
+  var start = String(p[f('startDate')] || ''), end = String(p[f('endDate')] || p[f('startDate')] || '');
   if (!isValidYmd_(start) || !isValidYmd_(end)) throw appError_('กรุณาเลือกวันที่ให้ถูกต้อง', 'VALIDATION');
   if (end < start) throw appError_('วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น', 'VALIDATION');
-  if (daysBetween_(start, end) > 120) throw appError_('เพิ่มได้ครั้งละไม่เกิน 120 วัน', 'VALIDATION');
-  var type = String(p.type || '');
+  if (daysBetween_(start, end) > (existing ? 400 : 120)) throw appError_('เพิ่มได้ครั้งละไม่เกิน 120 วัน', 'VALIDATION');
+  var type = String(p[f('type')] || '');
   if (!CALENDAR_TYPES[type]) throw appError_('กรุณาเลือกประเภทวัน', 'VALIDATION');
-  var title = cleanLine_(p.title, 150);
-  if (title.length < 2) throw appError_('กรุณาระบุชื่อวันหยุด/รายละเอียด', 'VALIDATION');
-  var dates = dateList_(start, end);
-  var res = withLock_(function () {
-    var rows = readAll_('WorkCalendar');
-    var byDate = {};
-    rows.forEach(function (r) { byDate[r.Date] = r; });
-    var added = [], updated = 0, kept = 0;
-    dates.forEach(function (d) {
-      // เพิ่มเป็นช่วง (เช่น ปิดภาคเรียน) ไม่ทับวันหยุดราชการเดิมในช่วงนั้น — แก้ไขรายวันได้โดยเลือกวันเดียว
-      if (byDate[d] && start !== end && byDate[d].Type === 'OFFICIAL_HOLIDAY' && type !== 'SPECIAL_WORKDAY') { kept++; return; }
-      if (byDate[d]) {
-        updateRecord_('WorkCalendar', byDate[d]._row, { Type: type, Title: title, CreatedBy: ctx.user.FullName, CreatedAt: nowStamp_() });
-        updated++;
-      } else {
-        added.push({ Date: d, Type: type, Title: title, CreatedBy: ctx.user.FullName, CreatedAt: nowStamp_() });
-      }
-    });
-    appendRecords_('WorkCalendar', added);
-    return { added: added.length, updated: updated, kept: kept };
+  var title = existing ? String(p[f('title')] || '') : cleanLine_(p[f('title')], 150);
+  if (title.length < (existing ? 1 : 2)) throw appError_('กรุณาระบุชื่อวันหยุด/รายละเอียด', 'VALIDATION');
+  return { start: start, end: end, type: type, title: title };
+}
+
+/** เพิ่ม/ปรับช่วงวันที่ (เรียกภายใต้ withLock_) — ช่วงหลายวันไม่ทับวันหยุดราชการเดิมในช่วงนั้น */
+function calendarAddCore_(v, ctx) {
+  var rows = readAll_('WorkCalendar');
+  var byDate = {};
+  rows.forEach(function (r) { byDate[r.Date] = r; });
+  var added = [], updated = 0, kept = 0;
+  dateList_(v.start, v.end).forEach(function (d) {
+    if (byDate[d] && v.start !== v.end && byDate[d].Type === 'OFFICIAL_HOLIDAY' && v.type !== 'SPECIAL_WORKDAY') { kept++; return; }
+    if (byDate[d]) {
+      updateRecord_('WorkCalendar', byDate[d]._row, { Type: v.type, Title: v.title, CreatedBy: ctx.user.FullName, CreatedAt: nowStamp_() });
+      updated++;
+    } else {
+      added.push({ Date: d, Type: v.type, Title: v.title, CreatedBy: ctx.user.FullName, CreatedAt: nowStamp_() });
+    }
   });
-  writeAudit_(ctx, 'CALENDAR_ADD', 'WorkCalendar', start + (end !== start ? '..' + end : ''), { type: type, title: title, added: res.added, updated: res.updated, kept: res.kept });
+  appendRecords_('WorkCalendar', added);
+  return { added: added.length, updated: updated, kept: kept };
+}
+
+/** ลบทุกวันในช่วงที่มีชื่อ/ประเภทตรงกัน (วันหยุดอื่นในช่วงคงไว้) — เขียนตารางใหม่ครั้งเดียว · เรียกภายใต้ withLock_ */
+function calendarRemoveCore_(old) {
+  var rows = readAll_('WorkCalendar');
+  var keep = rows.filter(function (r) { return !(r.Date >= old.start && r.Date <= old.end && r.Type === old.type && r.Title === old.title); });
+  var n = rows.length - keep.length;
+  if (n) rewriteRecords_('WorkCalendar', keep, lastRowOf_(rows));
+  return n;
+}
+
+function calendarRangeText_(v) { return v.start + (v.end !== v.start ? '..' + v.end : ''); }
+
+function addCalendarEntries_(ctx, p) {
+  var v = calendarInput_(p, '');
+  var res = withLock_(function () { return calendarAddCore_(v, ctx); });
+  writeAudit_(ctx, 'CALENDAR_ADD', 'WorkCalendar', calendarRangeText_(v), { type: v.type, title: v.title, added: res.added, updated: res.updated, kept: res.kept });
   return {
     added: res.added, updated: res.updated, kept: res.kept,
     message: 'บันทึกปฏิทินแล้ว (เพิ่ม ' + res.added + ' วัน, ปรับปรุง ' + res.updated + ' วัน' + (res.kept ? ', คงวันหยุดราชการเดิม ' + res.kept + ' วัน' : '') + ')'
   };
+}
+
+/** ลบทั้งช่วง (เช่น ปิดภาคเรียน 46 วัน) ในครั้งเดียว */
+function removeCalendarRange_(ctx, p) {
+  var old = calendarInput_(p, '', true);
+  var n = withLock_(function () { return calendarRemoveCore_(old); });
+  if (!n) throw appError_('ไม่พบรายการ อาจถูกลบไปแล้ว', 'NOT_FOUND');
+  writeAudit_(ctx, 'CALENDAR_REMOVE', 'WorkCalendar', calendarRangeText_(old), { type: old.type, title: old.title, removed: n });
+  return { removed: n, message: 'ลบ “' + old.title + '” แล้ว (' + n + ' วัน)' };
+}
+
+/** แก้ไขทั้งช่วง: ลบช่วงเดิมแล้วบันทึกช่วงใหม่ในคิวเดียวกัน (วันที่/ชื่อ/ประเภทเปลี่ยนได้) */
+function updateCalendarRange_(ctx, p) {
+  var old = calendarInput_(p, 'old', true), v = calendarInput_(p, '');
+  var res = withLock_(function () {
+    var removed = calendarRemoveCore_(old);
+    if (!removed) throw appError_('ไม่พบรายการเดิม อาจถูกแก้ไขไปแล้ว กรุณาโหลดใหม่', 'NOT_FOUND');
+    var r = calendarAddCore_(v, ctx);
+    r.removed = removed;
+    return r;
+  });
+  writeAudit_(ctx, 'CALENDAR_UPDATE', 'WorkCalendar', calendarRangeText_(v), { from: { range: calendarRangeText_(old), type: old.type, title: old.title }, type: v.type, title: v.title, removed: res.removed, added: res.added, updated: res.updated, kept: res.kept });
+  return {
+    removed: res.removed, added: res.added, updated: res.updated, kept: res.kept,
+    message: 'บันทึกปฏิทินแล้ว (แก้ไข “' + old.title + '” → ' + (res.added + res.updated) + ' วัน' + (res.kept ? ', คงวันหยุดราชการเดิม ' + res.kept + ' วัน' : '') + ')'
+  };
+}
+
+/** รวมวันที่ติดกันที่ชื่อ/ประเภทเดียวกันเป็นช่วงเดียว (วันหยุดอื่นที่คั่นอยู่ในช่วง เช่น วันจักรีกลางปิดภาคเรียน ไม่ทำให้ขาดตอน) */
+function calendarGroups_(entries) {
+  var has = {};
+  entries.forEach(function (e) { has[e.date] = true; });
+  function bridged(a, b) {
+    for (var d = addDays_(a, 1); d < b; d = addDays_(d, 1)) if (!has[d]) return false;
+    return true;
+  }
+  var open = {}, groups = [];
+  entries.forEach(function (e) { // เรียงตามวันที่แล้ว
+    var key = e.type + '|' + e.title, g = open[key];
+    if (g && bridged(g.end, e.date)) { g.end = e.date; g.days++; return; }
+    g = { start: e.date, end: e.date, type: e.type, typeLabel: e.typeLabel, title: e.title, days: 1, weekend: e.weekend };
+    open[key] = g; groups.push(g);
+  });
+  groups.forEach(function (g) {
+    g.label = g.start === g.end ? calendarDateLabel_(g.start) : calendarRangeLabel_(g.start, g.end);
+    if (g.days > 1) g.weekend = false;
+  });
+  return groups.sort(function (a, b) { return a.start < b.start ? -1 : (a.start > b.start ? 1 : 0); });
 }
 
 function removeCalendarEntry_(ctx, p) {
@@ -5065,6 +5197,7 @@ function computeAttendance_(opts) {
     var days = [];
     dates.forEach(function (date) {
       if (emp.ActiveFrom && date < emp.ActiveFrom) return;
+      if (s.statsStartDate && date < s.statsStartDate) return; // ก่อนวันเริ่มใช้ระบบจริงของโรงเรียน
       if (emp.ActiveTo && date > emp.ActiveTo) return;
       var key = date + '|' + emp.EmployeeID;
       var d = buildDay_(date, infos[date], sums[key] || null, leaves[key] || null, date < today || todayEnded);

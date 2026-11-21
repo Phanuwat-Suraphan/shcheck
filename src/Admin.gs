@@ -589,6 +589,7 @@ var SETTING_RULES_ = {
   CHECKIN_EARLIEST_TIME: { type: 'time', label: 'เวลาเปิดให้ลงเวลาเข้า' },
   WORK_DAYS: { type: 'workdays', label: 'วันทำงานประจำสัปดาห์' },
   ALLOW_HOLIDAY_CHECKIN: { type: 'bool', label: 'อนุญาตลงเวลาวันหยุด' },
+  STATS_START_DATE: { type: 'optdate', notFuture: true, label: 'วันที่เริ่มใช้ระบบจริง' },
   SESSION_TIMEOUT_MIN: { type: 'int', min: 5, max: 360, label: 'หมดเวลาการใช้งาน (นาที)' },
   MAX_LOGIN_ATTEMPTS: { type: 'int', min: 3, max: 20, label: 'จำนวนครั้งที่ใส่รหัสผิดได้' },
   LOCKOUT_MIN: { type: 'int', min: 1, max: 1440, label: 'ระยะเวลาล็อกบัญชี (นาที)' },
@@ -651,6 +652,11 @@ function normalizeSetting_(key, value) {
       });
       if (!uniq.length) throw appError_('กรุณาเลือกวันทำงานอย่างน้อย 1 วัน', 'VALIDATION', { field: key });
       return uniq.sort().join(',');
+    case 'optdate': // เว้นว่าง = ไม่ใช้
+      if (v === '') return '';
+      if (!isValidYmd_(v)) throw appError_(rule.label + 'ไม่ถูกต้อง (รูปแบบ ปี-เดือน-วัน)', 'VALIDATION', { field: key });
+      if (rule.notFuture && v > todayStr_()) throw appError_(rule.label + 'ต้องไม่เกินวันนี้ — ตั้งค่าในวันแรกที่ใช้จริงหรือหลังจากนั้น (วันก่อนหน้าจะไม่ถูกนับย้อนหลังให้เอง)', 'VALIDATION', { field: key });
+      return v;
     case 'optint': // เว้นว่าง = ไม่ใช้
       if (v === '') return '';
       var o = toNumber_(v);
@@ -852,6 +858,12 @@ function seedThaiHolidays_(years) {
   return add.length;
 }
 
+/** "1 เม.ย. – 16 พ.ค. 2570" (ข้ามปี: "28 ธ.ค. 2569 – 3 ม.ค. 2570") — รูปแบบเดียวกับรายการวันเดียว */
+function calendarRangeLabel_(a, b) {
+  var p = parseYmd_(a), q = parseYmd_(b);
+  return p.d + ' ' + THAI_MONTHS_SHORT[p.m - 1] + (p.y !== q.y ? ' ' + (p.y + 543) : '') + ' – ' + q.d + ' ' + THAI_MONTHS_SHORT[q.m - 1] + ' ' + (q.y + 543);
+}
+
 /** 'yyyy-MM-dd' → '1 ม.ค. 2569 (พฤ.)' */
 function calendarDateLabel_(ymd) {
   var p = parseYmd_(ymd);
@@ -874,46 +886,116 @@ function listCalendar_(ctx, p) {
   var entries = readAll_('WorkCalendar').filter(function (r) { return String(r.Date).substr(0, 4) === String(y); })
     .sort(function (a, b) { return a.Date < b.Date ? -1 : 1; }).map(calendarView_);
   return {
-    year: y, entries: entries,
+    year: y, entries: entries, groups: calendarGroups_(entries),
     workDays: s.workDays, workDayNames: s.workDays.map(function (d) { return THAI_DAYS[d]; }),
     holidayDataComplete: info.complete, holidayNote: info.note,
     canEdit: ctx.user.Role === ROLES.ADMIN
   };
 }
 
-function addCalendarEntries_(ctx, p) {
-  var start = String(p.startDate || ''), end = String(p.endDate || p.startDate || '');
+/**
+ * ตรวจช่วงวันที่ของปฏิทิน · prefix 'old' = ช่วงเดิมที่จะแก้ไข/ลบ (oldStartDate/oldEndDate/oldType/oldTitle)
+ * existing = ช่วงที่มีอยู่แล้ว (ยาวได้ถึง 400 วัน เพราะอาจรวมจากการเพิ่มหลายครั้ง)
+ */
+function calendarInput_(p, prefix, existing) {
+  var f = function (n) { return prefix ? prefix + n.charAt(0).toUpperCase() + n.substr(1) : n; };
+  var start = String(p[f('startDate')] || ''), end = String(p[f('endDate')] || p[f('startDate')] || '');
   if (!isValidYmd_(start) || !isValidYmd_(end)) throw appError_('กรุณาเลือกวันที่ให้ถูกต้อง', 'VALIDATION');
   if (end < start) throw appError_('วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น', 'VALIDATION');
-  if (daysBetween_(start, end) > 120) throw appError_('เพิ่มได้ครั้งละไม่เกิน 120 วัน', 'VALIDATION');
-  var type = String(p.type || '');
+  if (daysBetween_(start, end) > (existing ? 400 : 120)) throw appError_('เพิ่มได้ครั้งละไม่เกิน 120 วัน', 'VALIDATION');
+  var type = String(p[f('type')] || '');
   if (!CALENDAR_TYPES[type]) throw appError_('กรุณาเลือกประเภทวัน', 'VALIDATION');
-  var title = cleanLine_(p.title, 150);
-  if (title.length < 2) throw appError_('กรุณาระบุชื่อวันหยุด/รายละเอียด', 'VALIDATION');
-  var dates = dateList_(start, end);
-  var res = withLock_(function () {
-    var rows = readAll_('WorkCalendar');
-    var byDate = {};
-    rows.forEach(function (r) { byDate[r.Date] = r; });
-    var added = [], updated = 0, kept = 0;
-    dates.forEach(function (d) {
-      // เพิ่มเป็นช่วง (เช่น ปิดภาคเรียน) ไม่ทับวันหยุดราชการเดิมในช่วงนั้น — แก้ไขรายวันได้โดยเลือกวันเดียว
-      if (byDate[d] && start !== end && byDate[d].Type === 'OFFICIAL_HOLIDAY' && type !== 'SPECIAL_WORKDAY') { kept++; return; }
-      if (byDate[d]) {
-        updateRecord_('WorkCalendar', byDate[d]._row, { Type: type, Title: title, CreatedBy: ctx.user.FullName, CreatedAt: nowStamp_() });
-        updated++;
-      } else {
-        added.push({ Date: d, Type: type, Title: title, CreatedBy: ctx.user.FullName, CreatedAt: nowStamp_() });
-      }
-    });
-    appendRecords_('WorkCalendar', added);
-    return { added: added.length, updated: updated, kept: kept };
+  var title = existing ? String(p[f('title')] || '') : cleanLine_(p[f('title')], 150);
+  if (title.length < (existing ? 1 : 2)) throw appError_('กรุณาระบุชื่อวันหยุด/รายละเอียด', 'VALIDATION');
+  return { start: start, end: end, type: type, title: title };
+}
+
+/** เพิ่ม/ปรับช่วงวันที่ (เรียกภายใต้ withLock_) — ช่วงหลายวันไม่ทับวันหยุดราชการเดิมในช่วงนั้น */
+function calendarAddCore_(v, ctx) {
+  var rows = readAll_('WorkCalendar');
+  var byDate = {};
+  rows.forEach(function (r) { byDate[r.Date] = r; });
+  var added = [], updated = 0, kept = 0;
+  dateList_(v.start, v.end).forEach(function (d) {
+    if (byDate[d] && v.start !== v.end && byDate[d].Type === 'OFFICIAL_HOLIDAY' && v.type !== 'SPECIAL_WORKDAY') { kept++; return; }
+    if (byDate[d]) {
+      updateRecord_('WorkCalendar', byDate[d]._row, { Type: v.type, Title: v.title, CreatedBy: ctx.user.FullName, CreatedAt: nowStamp_() });
+      updated++;
+    } else {
+      added.push({ Date: d, Type: v.type, Title: v.title, CreatedBy: ctx.user.FullName, CreatedAt: nowStamp_() });
+    }
   });
-  writeAudit_(ctx, 'CALENDAR_ADD', 'WorkCalendar', start + (end !== start ? '..' + end : ''), { type: type, title: title, added: res.added, updated: res.updated, kept: res.kept });
+  appendRecords_('WorkCalendar', added);
+  return { added: added.length, updated: updated, kept: kept };
+}
+
+/** ลบทุกวันในช่วงที่มีชื่อ/ประเภทตรงกัน (วันหยุดอื่นในช่วงคงไว้) — เขียนตารางใหม่ครั้งเดียว · เรียกภายใต้ withLock_ */
+function calendarRemoveCore_(old) {
+  var rows = readAll_('WorkCalendar');
+  var keep = rows.filter(function (r) { return !(r.Date >= old.start && r.Date <= old.end && r.Type === old.type && r.Title === old.title); });
+  var n = rows.length - keep.length;
+  if (n) rewriteRecords_('WorkCalendar', keep, lastRowOf_(rows));
+  return n;
+}
+
+function calendarRangeText_(v) { return v.start + (v.end !== v.start ? '..' + v.end : ''); }
+
+function addCalendarEntries_(ctx, p) {
+  var v = calendarInput_(p, '');
+  var res = withLock_(function () { return calendarAddCore_(v, ctx); });
+  writeAudit_(ctx, 'CALENDAR_ADD', 'WorkCalendar', calendarRangeText_(v), { type: v.type, title: v.title, added: res.added, updated: res.updated, kept: res.kept });
   return {
     added: res.added, updated: res.updated, kept: res.kept,
     message: 'บันทึกปฏิทินแล้ว (เพิ่ม ' + res.added + ' วัน, ปรับปรุง ' + res.updated + ' วัน' + (res.kept ? ', คงวันหยุดราชการเดิม ' + res.kept + ' วัน' : '') + ')'
   };
+}
+
+/** ลบทั้งช่วง (เช่น ปิดภาคเรียน 46 วัน) ในครั้งเดียว */
+function removeCalendarRange_(ctx, p) {
+  var old = calendarInput_(p, '', true);
+  var n = withLock_(function () { return calendarRemoveCore_(old); });
+  if (!n) throw appError_('ไม่พบรายการ อาจถูกลบไปแล้ว', 'NOT_FOUND');
+  writeAudit_(ctx, 'CALENDAR_REMOVE', 'WorkCalendar', calendarRangeText_(old), { type: old.type, title: old.title, removed: n });
+  return { removed: n, message: 'ลบ “' + old.title + '” แล้ว (' + n + ' วัน)' };
+}
+
+/** แก้ไขทั้งช่วง: ลบช่วงเดิมแล้วบันทึกช่วงใหม่ในคิวเดียวกัน (วันที่/ชื่อ/ประเภทเปลี่ยนได้) */
+function updateCalendarRange_(ctx, p) {
+  var old = calendarInput_(p, 'old', true), v = calendarInput_(p, '');
+  var res = withLock_(function () {
+    var removed = calendarRemoveCore_(old);
+    if (!removed) throw appError_('ไม่พบรายการเดิม อาจถูกแก้ไขไปแล้ว กรุณาโหลดใหม่', 'NOT_FOUND');
+    var r = calendarAddCore_(v, ctx);
+    r.removed = removed;
+    return r;
+  });
+  writeAudit_(ctx, 'CALENDAR_UPDATE', 'WorkCalendar', calendarRangeText_(v), { from: { range: calendarRangeText_(old), type: old.type, title: old.title }, type: v.type, title: v.title, removed: res.removed, added: res.added, updated: res.updated, kept: res.kept });
+  return {
+    removed: res.removed, added: res.added, updated: res.updated, kept: res.kept,
+    message: 'บันทึกปฏิทินแล้ว (แก้ไข “' + old.title + '” → ' + (res.added + res.updated) + ' วัน' + (res.kept ? ', คงวันหยุดราชการเดิม ' + res.kept + ' วัน' : '') + ')'
+  };
+}
+
+/** รวมวันที่ติดกันที่ชื่อ/ประเภทเดียวกันเป็นช่วงเดียว (วันหยุดอื่นที่คั่นอยู่ในช่วง เช่น วันจักรีกลางปิดภาคเรียน ไม่ทำให้ขาดตอน) */
+function calendarGroups_(entries) {
+  var has = {};
+  entries.forEach(function (e) { has[e.date] = true; });
+  function bridged(a, b) {
+    for (var d = addDays_(a, 1); d < b; d = addDays_(d, 1)) if (!has[d]) return false;
+    return true;
+  }
+  var open = {}, groups = [];
+  entries.forEach(function (e) { // เรียงตามวันที่แล้ว
+    var key = e.type + '|' + e.title, g = open[key];
+    if (g && bridged(g.end, e.date)) { g.end = e.date; g.days++; return; }
+    g = { start: e.date, end: e.date, type: e.type, typeLabel: e.typeLabel, title: e.title, days: 1, weekend: e.weekend };
+    open[key] = g; groups.push(g);
+  });
+  groups.forEach(function (g) {
+    g.label = g.start === g.end ? calendarDateLabel_(g.start) : calendarRangeLabel_(g.start, g.end);
+    if (g.days > 1) g.weekend = false;
+  });
+  return groups.sort(function (a, b) { return a.start < b.start ? -1 : (a.start > b.start ? 1 : 0); });
 }
 
 function removeCalendarEntry_(ctx, p) {

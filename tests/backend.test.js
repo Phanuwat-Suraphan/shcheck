@@ -930,6 +930,40 @@ test('T09', 'ออกก่อนเวลาเลิกงาน → บั�
   assert.strictEqual(ok(sys.api(t.token, 'att.checkOut', INSIDE)).status, 'EARLY');
 });
 
+test('T15', 'วันเริ่มใช้ระบบจริง (STATS_START_DATE): ก่อนวันนั้นไม่นับขาด/สาย/ลงเวลาไม่ครบของทุกคน, ยื่นแก้ไขเวลาก่อนวันนั้นไม่ได้, เว้นว่าง = นับตามวันอนุมัติบัญชี', () => {
+  const sys = newSystem({ now: '2026-11-09 07:00:00' }); // จันทร์
+  const t = addTeacher(sys, 1);
+  // ช่วงทดลองระบบ: 9 พ.ย. ไม่ได้ลงเวลา, 10 พ.ย. ลงเวลาสาย — ใช้จริงตั้งแต่ 11 พ.ย.
+  sys.at('2026-11-10 08:50:00'); ok(sys.api(t.token, 'att.checkIn', INSIDE));
+  sys.at('2026-11-11 07:45:00'); ok(sys.api(t.token, 'att.checkIn', INSIDE));
+  sys.at('2026-11-12 17:00:00');
+  const month = () => ok(sys.api(sys.admin, 'report.monthly', { year: 2026, month: 11 })).tables[0].rows.find(r => r.employeeId === t.id);
+  let m = month();
+  assert.deepStrictEqual([m.workdays, m.absent, m.late], [4, 2, 1]);
+  expectErr(sys.api(sys.admin, 'settings.save', { values: { STATS_START_DATE: '11/11/2026' } }), 'VALIDATION');
+  expectErr(sys.api(sys.admin, 'settings.save', { values: { STATS_START_DATE: '2026-11-13' } }), 'VALIDATION'); // อนาคต
+  ok(sys.api(sys.admin, 'settings.save', { values: { STATS_START_DATE: '2026-11-11' } }));
+  assert.strictEqual(ok(sys.api(sys.admin, 'settings.get', {})).values.STATS_START_DATE, '2026-11-11');
+  m = month();
+  assert.deepStrictEqual([m.workdays, m.absent, m.late], [2, 1, 0]);
+  const d = ok(sys.api(t.token, 'me.dashboard', {}));
+  assert.ok(d.issues.length && !d.issues.some(x => x.date < '2026-11-11'), JSON.stringify(d.issues));
+  expectErr(sys.api(t.token, 'corr.submit', { date: '2026-11-10', type: 'OUT', time: '16:35', reason: 'ลืมกดลงเวลาออก' }), 'VALIDATION');
+  ok(sys.api(t.token, 'corr.submit', { date: '2026-11-11', type: 'OUT', time: '16:35', reason: 'ลืมกดลงเวลาออก' }));
+  const daily = ok(sys.api(sys.admin, 'report.daily', { date: '2026-11-10' }));
+  assert.ok(!daily.tables[0].rows.some(r => r.employeeId === t.id), 'วันก่อนเริ่มใช้ระบบไม่แสดงในรายงาน');
+  ok(sys.api(sys.admin, 'settings.save', { values: { STATS_START_DATE: '' } }));
+  assert.strictEqual(month().workdays, 4);
+  // ค่าในอนาคตที่แก้ในชีตเองยังไม่มีผลจนถึงวันนั้น (หน้า "วันนี้" ไม่ว่างระหว่างทดลองใช้)
+  const setSheet = sys.env.SpreadsheetApp.openById(sys.env.state.props.SPREADSHEET_ID).getSheetByName('Settings');
+  const keyRow = setSheet.getDataRange().getValues().findIndex(r => String(r[0]).replace(/^'/, '') === 'STATS_START_DATE') + 1;
+  assert.ok(keyRow > 1);
+  setSheet.getRange(keyRow, 2).setValue("'2026-11-20");
+  sys.at('2026-11-12 17:20:00'); // แคชการตั้งค่าหมดอายุ
+  assert.strictEqual(month().workdays, 4);
+  assert.ok(ok(sys.api(t.token, 'me.dashboard', {})).today.row, 'วันนี้ยังแสดงการลงเวลา');
+});
+
 test('T10', 'LockService ไม่ว่าง (ผู้ใช้พร้อมกันมาก) → แจ้งให้ลองใหม่ ไม่บันทึกข้อมูลครึ่ง ๆ กลาง ๆ', () => {
   const sys = newSystem();
   const t = addTeacher(sys, 1);
@@ -1742,6 +1776,48 @@ test('M13', 'ปฏิทิน: เพิ่มวันปิดภาคเ�
   assert.strictEqual(records(sys, 'WorkCalendar').find(c => c.Date === one).Title, 'แก้ไขรายวัน');
 });
 
+test('M15', 'ปฏิทิน: ช่วงวันที่ติดกันแสดงเป็นรายการเดียว (วันหยุดราชการที่คั่นไม่ทำให้ขาดตอน), แก้ไข/ลบทั้งช่วงในครั้งเดียว (วันหยุดราชการในช่วงคงไว้), เฉพาะผู้ดูแลระบบ', () => {
+  const sys = newSystem({ now: '2026-11-09 07:00:00' });
+  const ex = addTeacher(sys, 1, 'EXECUTIVE');
+  const title = 'ปิดภาคเรียนที่ 2';
+  ok(sys.api(sys.admin, 'cal.add', { startDate: '2027-04-01', endDate: '2027-05-16', type: 'SPECIAL_HOLIDAY', title }));
+  let c = ok(sys.api(sys.admin, 'cal.list', { year: 2027 }));
+  const officialIn = (cc) => cc.entries.filter(e => e.date >= '2027-04-01' && e.date <= '2027-05-16' && e.type === 'OFFICIAL_HOLIDAY').length;
+  const kept = officialIn(c);
+  assert.ok(kept > 0, 'มีวันหยุดราชการในช่วงปิดภาคเรียน');
+  const brk = c.groups.filter(g => g.title === title);
+  assert.strictEqual(brk.length, 1, JSON.stringify(brk));
+  assert.deepStrictEqual([brk[0].start, brk[0].end, brk[0].days], ['2027-04-01', '2027-05-16', 46 - kept]);
+  assert.strictEqual(brk[0].label, '1 เม.ย. – 16 พ.ค. 2570');
+  assert.ok(c.groups.length < c.entries.length);
+  // แก้ไขทั้งช่วง (เปลี่ยนวันสุดท้ายและชื่อ) — เฉพาะผู้ดูแลระบบ
+  const upd = { oldStartDate: '2027-04-01', oldEndDate: '2027-05-16', oldType: 'SPECIAL_HOLIDAY', oldTitle: title,
+    startDate: '2027-04-01', endDate: '2027-05-14', type: 'SPECIAL_HOLIDAY', title: title + ' ปีการศึกษา 2569' };
+  expectErr(sys.api(ex.token, 'cal.updateRange', upd), 'FORBIDDEN');
+  const r = ok(sys.api(sys.admin, 'cal.updateRange', upd));
+  assert.ok(/^บันทึกปฏิทินแล้ว/.test(r.message), r.message);
+  c = ok(sys.api(sys.admin, 'cal.list', { year: 2027 }));
+  assert.ok(!c.entries.some(e => e.title === title));
+  assert.ok(!c.entries.some(e => e.date > '2027-05-14' && /ปิดภาคเรียน/.test(e.title)));
+  const g2 = c.groups.find(g => g.title === upd.title);
+  assert.deepStrictEqual([g2.start, g2.end], ['2027-04-01', '2027-05-14']);
+  assert.strictEqual(officialIn(c), kept, 'วันหยุดราชการในช่วงยังอยู่ครบ');
+  // ลบทั้งช่วงในครั้งเดียว
+  expectErr(sys.api(ex.token, 'cal.removeRange', { startDate: g2.start, endDate: g2.end, type: g2.type, title: g2.title }), 'FORBIDDEN');
+  const rm = ok(sys.api(sys.admin, 'cal.removeRange', { startDate: g2.start, endDate: g2.end, type: g2.type, title: g2.title }));
+  assert.strictEqual(rm.removed, g2.days);
+  c = ok(sys.api(sys.admin, 'cal.list', { year: 2027 }));
+  assert.ok(!c.entries.some(e => /ปิดภาคเรียน/.test(e.title)));
+  assert.strictEqual(officialIn(c), kept);
+  expectErr(sys.api(sys.admin, 'cal.removeRange', { startDate: g2.start, endDate: g2.end, type: g2.type, title: g2.title }), 'NOT_FOUND');
+  expectErr(sys.api(sys.admin, 'cal.removeRange', { startDate: 'x', endDate: '2027-05-14', type: 'SPECIAL_HOLIDAY', title: 'ก' }), 'VALIDATION');
+  assert.ok(records(sys, 'AuditLogs').some(a => a.Action === 'CALENDAR_UPDATE') && records(sys, 'AuditLogs').some(a => a.Action === 'CALENDAR_REMOVE'));
+  // วันหยุดที่ไม่ติดกันแม้ชื่อเดียวกัน = คนละรายการ
+  ok(sys.api(sys.admin, 'cal.add', { startDate: '2027-06-07', endDate: '2027-06-07', type: 'SPECIAL_HOLIDAY', title: 'กีฬาสี' }));
+  ok(sys.api(sys.admin, 'cal.add', { startDate: '2027-06-09', endDate: '2027-06-09', type: 'SPECIAL_HOLIDAY', title: 'กีฬาสี' }));
+  assert.strictEqual(ok(sys.api(sys.admin, 'cal.list', { year: 2027 })).groups.filter(g => g.title === 'กีฬาสี').length, 2);
+});
+
 test('M14', 'เตือนในหน้าภาพรวมเมื่อปฏิทินปีนี้/ปีหน้า (ตั้งแต่ ต.ค.) ยังไม่มีวันหยุดทางพุทธศาสนา และหายเมื่อผู้ดูแลเพิ่มแล้ว', () => {
   const sys = newSystem({ now: '2026-11-09 07:00:00' });
   const warn = () => ok(sys.api(sys.admin, 'admin.overview', {})).warnings.filter(w => /วันหยุดทางพุทธศาสนา/.test(w));
@@ -1896,6 +1972,61 @@ test('N02', 'สรุปประจำวันสำหรับกลุ่�
   ok(sys.api(t2.token, 'att.checkIn', INSIDE));
   const r2 = ok(sys.api(sys.admin, 'admin.overview', {})).today.find(r => r.employeeId === t2.id);
   assert.deepStrictEqual([r2.leaveLabel, r2.status], ['ลากิจ ครึ่งวันเช้า', 'PRESENT']);
+});
+
+test('D03', 'งานกลางคืนลบประวัติการเข้าสู่ระบบ (Sessions) ที่เก่ากว่า 180 วัน — เครื่องที่ยังจดจำอยู่ใช้งานต่อได้', () => {
+  const sys = newSystem({ now: '2026-01-05 07:00:00', realSessions: true });
+  addTeacher(sys, 1);
+  sys.login('teacher1', 'Teach3rPass1'); sys.login('teacher1', 'Teach3rPass1');
+  const before = records(sys, 'Sessions').length;
+  assert.ok(before >= 4, String(before));
+  sys.at('2026-08-01 07:00:00'); // ผ่านไปมากกว่า 180 วัน
+  const rem = ok(sys.env.call('login', 'teacher1', 'Teach3rPass1', { ua: 'phone', remember: true }));
+  const msg = sys.env.call('DailyMaintenance');
+  assert.ok(/ลบประวัติการเข้าสู่ระบบเก่า \d+ รายการ/.test(msg), msg);
+  sys.env.context.resetMemo_();
+  const after = sys.env.context.readAll_('Sessions');
+  assert.strictEqual(after.length, 1, JSON.stringify(after.map(x => x.LoginAt)));
+  assert.ok(after[0].LoginAt >= '2026-08-01', after[0].LoginAt);
+  const b = ok(sys.env.call('bootstrap', '', rem.device, { ua: 'phone' }));
+  assert.ok(b.session && b.session.user.username === 'teacher1', 'เครื่องที่จำไว้ยังเข้าได้');
+  assert.ok(records(sys, 'AuditLogs').some(a => a.Action === 'MAINTENANCE' && /sessionsPurged/.test(a.Details || a.Detail || JSON.stringify(a))));
+});
+
+test('D04', 'ล้างประวัติการเข้าสู่ระบบขณะมีผู้ใช้งานพร้อมกัน: เครื่องที่จำไว้บันทึกลงแถวที่ถูกต้องแม้แถวเลื่อน และแถวที่เพิ่มระหว่างล้างข้อมูลไม่หาย', () => {
+  const sys = newSystem({ now: '2026-01-05 07:00:00', realSessions: true });
+  addTeacher(sys, 1);
+  sys.login('teacher1', 'Teach3rPass1');
+  sys.at('2026-08-01 07:00:00');
+  const rem = ok(sys.env.call('login', 'teacher1', 'Teach3rPass1', { ua: 'phone', remember: true }));
+  const ref = rem.device.split('.')[0];
+  const c = sys.env.context;
+  // 1) งานกลางคืนแทรกระหว่าง "หาแถว" กับ "บันทึก" ของการเข้าสู่ระบบด้วยเครื่องที่จำไว้ (แถวเลื่อนขึ้น)
+  sys.at('2026-08-02 07:00:00');
+  const origLock = c.withLock_;
+  let purged = -1;
+  c.withLock_ = function (fn, ms) {
+    if (purged < 0) purged = origLock(c.purgeOldSessions_);
+    return origLock(fn, ms);
+  };
+  try { ok(sys.env.call('resumeSession', rem.device, { ua: 'phone' })); } finally { c.withLock_ = origLock; }
+  assert.ok(purged > 0, String(purged));
+  c.resetMemo_();
+  let rows = c.readAll_('Sessions');
+  assert.deepStrictEqual(Array.from(rows, r => [r.SessionRef, r.LastSeenAt]), [[ref, '2026-08-02 07:00:00']], 'ไม่มีแถวเสีย และบันทึกลงแถวของเครื่องนี้');
+  // 2) มีผู้เข้าสู่ระบบ (appendRow ไม่ได้รอคิว) หลังงานล้างข้อมูลอ่านตารางแล้ว → แถวใหม่ต้องไม่ถูกล้างทิ้ง
+  sys.at('2027-03-01 07:00:00');
+  const origRewrite = c.rewriteRecords_;
+  c.rewriteRecords_ = function (name, recs, lastRow) {
+    if (name === 'Sessions') c.appendRecord_('Sessions', { SessionRef: 'feedfacefeedface', EmployeeID: rows[0].EmployeeID, Username: 'teacher1', LoginAt: c.nowStamp_(), SessionVersion: 0 });
+    return origRewrite(name, recs, lastRow);
+  };
+  let n;
+  try { n = c.withLock_(c.purgeOldSessions_); } finally { c.rewriteRecords_ = origRewrite; }
+  assert.strictEqual(n, 1);
+  c.resetMemo_();
+  rows = c.readAll_('Sessions');
+  assert.deepStrictEqual(Array.from(rows, r => r.SessionRef), ['feedfacefeedface']);
 });
 
 test('D01', 'ลบพิกัด GPS อัตโนมัติเมื่อเกินระยะเวลาเก็บรักษา (คงระยะทาง/เวลาไว้)', () => {

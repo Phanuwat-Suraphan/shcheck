@@ -271,13 +271,14 @@
       <div class="admin-grid-2" style="margin-top:0">
         <div class="card" id="calFormCard">
           <div class="card-title"><span class="ms">add_circle</span>เพิ่มวันหยุด / วันทำงานพิเศษ</div>
-          <p class="small muted">ใช้เพิ่มวันหยุดของโรงเรียนเอง เช่น ปิดภาคเรียน กีฬาสี วันหยุดพิเศษตามประกาศ หรือวันทำงานชดเชย (เลือกช่วงหลายวันได้) · เลือกวันที่มีอยู่แล้วเพื่อแก้ไขชื่อ/ประเภท</p>
+          <p class="small muted">ใช้เพิ่มวันหยุดของโรงเรียนเอง เช่น ปิดภาคเรียน กีฬาสี วันหยุดพิเศษตามประกาศ หรือวันทำงานชดเชย (เลือกช่วงหลายวันได้) · แก้ไขหรือลบรายการเดิมทั้งช่วงได้ที่ปุ่มดินสอ/ถังขยะในรายการ</p>
           <div class="row" style="gap:6px;margin:4px 0 12px" id="calPresets">
             <span class="small muted">ปุ่มลัด:</span>
             <button type="button" class="btn outline sm" data-cal-preset="break2"><span class="ms">beach_access</span>ปิดภาคเรียนที่ 2 (เม.ย.–พ.ค.)</button>
             <button type="button" class="btn outline sm" data-cal-preset="break1"><span class="ms">beach_access</span>ปิดภาคเรียนที่ 1 (ต.ค.)</button>
           </div>
           <form id="calForm" novalidate>
+            <div class="alert info" id="calEditNote" hidden style="margin-bottom:10px"><span class="ms">edit_calendar</span><div><span id="calEditText"></span> · <button type="button" class="link-btn" id="calEditCancel">ยกเลิกการแก้ไข</button></div></div>
             <div class="form-grid two">
               <div class="field"><label for="calStart">ตั้งแต่วันที่</label><input type="date" id="calStart" required></div>
               <div class="field"><label for="calEnd">ถึงวันที่</label><input type="date" id="calEnd" required></div>
@@ -339,6 +340,7 @@
               <label><input type="checkbox" value="4">พฤหัสบดี</label><label><input type="checkbox" value="5">ศุกร์</label><label><input type="checkbox" value="6">เสาร์</label><label><input type="checkbox" value="0">อาทิตย์</label>
             </div><span class="err"></span>
           </div>
+          <div class="field" data-field="STATS_START_DATE" style="max-width:360px"><label for="sStatsStart">เริ่มนับสถิติตั้งแต่วันที่ (วันเริ่มใช้ระบบจริง)</label><input type="date" id="sStatsStart" name="STATS_START_DATE"><span class="hint">ก่อนวันนี้ไม่นับขาด/สาย/ลงเวลาไม่ครบของทุกคน (เช่น ช่วงทดลองระบบ) · ตั้งในวันแรกที่ใช้จริงหรือหลังจากนั้น · เว้นว่าง = นับตั้งแต่วันที่อนุมัติบัญชี</span><span class="err"></span></div>
           <label class="switch"><input type="checkbox" name="ALLOW_HOLIDAY_CHECKIN"><span class="track"></span>อนุญาตให้ลงเวลาในวันหยุด (ปฏิบัติงานวันหยุด)</label>
         </div>
         <div class="set-group">

@@ -64,6 +64,7 @@ function computeAttendance_(opts) {
     var days = [];
     dates.forEach(function (date) {
       if (emp.ActiveFrom && date < emp.ActiveFrom) return;
+      if (s.statsStartDate && date < s.statsStartDate) return; // ก่อนวันเริ่มใช้ระบบจริงของโรงเรียน
       if (emp.ActiveTo && date > emp.ActiveTo) return;
       var key = date + '|' + emp.EmployeeID;
       var d = buildDay_(date, infos[date], sums[key] || null, leaves[key] || null, date < today || todayEnded);

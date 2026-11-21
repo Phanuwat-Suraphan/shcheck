@@ -559,6 +559,8 @@ function validateCorrectionInput_(emp, p, maxBackDays) {
     throw appError_('แก้ไขเวลาย้อนหลังได้ไม่เกิน ' + maxBackDays + ' วัน', 'VALIDATION', { field: 'date' });
   }
   if (emp.ActiveFrom && date < emp.ActiveFrom) throw appError_('วันที่เลือกอยู่ก่อนวันที่บัญชีเริ่มใช้งาน', 'VALIDATION', { field: 'date' });
+  var goLive = getSettings_().statsStartDate;
+  if (goLive && date < goLive) throw appError_('วันที่เลือกอยู่ก่อนวันเริ่มใช้ระบบของโรงเรียน (' + thaiDate_(goLive) + ') จึงไม่ต้องแก้ไข', 'VALIDATION', { field: 'date' });
   if (!ATT_TYPES[type]) throw appError_('กรุณาเลือกประเภท เวลาเข้า หรือ เวลาออก', 'VALIDATION', { field: 'type' });
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw appError_('กรุณาระบุเวลาให้ถูกต้อง (ชั่วโมง:นาที)', 'VALIDATION', { field: 'time' });
   if (date === today && time + ':00' > nowTimeStr_()) throw appError_('เวลาที่แจ้งต้องไม่เกินเวลาปัจจุบัน', 'VALIDATION', { field: 'time' });

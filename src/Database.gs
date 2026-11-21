@@ -209,6 +209,7 @@ var DEFAULT_SETTINGS_ = [
   ['CHECKIN_EARLIEST_TIME', '05:00', 'เวลาเร็วที่สุดที่เปิดให้ลงเวลาเข้างาน'],
   ['WORK_DAYS', '1,2,3,4,5', 'วันทำงานประจำสัปดาห์ 0=อาทิตย์ 1=จันทร์ ... 6=เสาร์'],
   ['ALLOW_HOLIDAY_CHECKIN', 'TRUE', 'อนุญาตให้ลงเวลาในวันหยุด (ปฏิบัติงานวันหยุด)'],
+  ['STATS_START_DATE', '', 'วันที่เริ่มใช้ระบบจริง: ก่อนวันนี้ไม่นับสถิติ (ขาด/สาย/ลงเวลาไม่ครบ) ของทุกคน (ว่าง = นับตั้งแต่วันที่อนุมัติบัญชีของแต่ละคน)'],
   ['SESSION_TIMEOUT_MIN', '30', 'ออกจากระบบอัตโนมัติเมื่อไม่ได้ใช้งาน (นาที)'],
   ['MAX_LOGIN_ATTEMPTS', '5', 'จำนวนครั้งที่ใส่รหัสผ่านผิดได้ก่อนล็อกชั่วคราว'],
   ['LOCKOUT_MIN', '15', 'ระยะเวลาล็อกบัญชีชั่วคราว (นาที)'],
@@ -492,6 +493,42 @@ function appendRecords_(name, recs) {
   markDirty_(name);
 }
 
+/**
+ * เขียนข้อมูลทั้งตารางใหม่ในคำสั่งเดียว (ใช้แทนการลบทีละแถว) — ต้องเรียกภายใต้ withLock_
+ * recs = รายการที่เหลือจาก readAll_ · lastRow = แถวสุดท้ายที่อ่านมา
+ * เขียนทับก่อนแล้วจึงล้างเฉพาะแถวท้ายที่อ่านมา → แถวที่ถูกเพิ่มด้วย appendRow พร้อมกัน
+ * (เช่น การเข้าสู่ระบบ ซึ่งไม่ได้รอคิว) อยู่หลัง lastRow เสมอ จึงไม่ถูกเขียนทับหรือล้างทิ้ง
+ */
+function rewriteRecords_(name, recs, lastRow) {
+  var t = getTable_(name);
+  if (recs.length) {
+    ensureRows_(t.sheet, recs.length + 1);
+    t.sheet.getRange(2, 1, recs.length, t.width).setValues(recs.map(function (r) {
+      var c = {};
+      for (var x in r) if (x !== '_row') c[x] = r[x];
+      return recordToRow_(t, c, null);
+    }));
+  }
+  if (lastRow > recs.length + 1) t.sheet.getRange(recs.length + 2, 1, lastRow - recs.length - 1, t.width).clearContent();
+  markDirty_(name);
+}
+
+/** แถวสุดท้ายของข้อมูลที่อ่านด้วย readAll_ (1 = ไม่มีข้อมูล) */
+function lastRowOf_(rows) { return rows.length ? rows[rows.length - 1]._row : 1; }
+
+/** ประวัติการเข้าสู่ระบบ (Sessions) ที่เก่ากว่า 180 วันและไม่ได้จดจำเครื่องแล้ว → ลบ (ประวัติยังอยู่ใน Audit Log) · เรียกภายใต้ withLock_ */
+function purgeOldSessions_() {
+  var now = nowStamp_(), cutoff = msToStamp_(nowMs_() - 180 * 86400000);
+  markDirty_('Sessions'); // อ่านจากชีตใหม่ภายใต้คิว
+  var rows = readAll_('Sessions');
+  var keep = rows.filter(function (r) {
+    return (r.RememberUntil && r.RememberUntil > now) || !r.LoginAt || r.LoginAt >= cutoff || (r.LastSeenAt && r.LastSeenAt >= cutoff);
+  });
+  var n = rows.length - keep.length;
+  if (n) rewriteRecords_('Sessions', keep, lastRowOf_(rows));
+  return n;
+}
+
 function ensureRows_(sheet, lastNeeded) {
   var max = sheet.getMaxRows();
   if (lastNeeded > max) sheet.insertRowsAfter(max, lastNeeded - max);
@@ -643,6 +680,8 @@ function parseSettings_(raw) {
     workEnd: time('WORK_END_TIME', '16:30'),
     checkinEarliest: time('CHECKIN_EARLIEST_TIME', '05:00'),
     workDays: workDays.length ? workDays : [1, 2, 3, 4, 5],
+    // วันในอนาคต (แก้ในชีตเอง) ยังไม่มีผลจนถึงวันนั้น — ไม่ให้หน้าวันนี้ว่างระหว่างทดลองใช้
+    statsStartDate: (function (v) { v = String(v || '').substr(0, 10); return isValidYmd_(v) && v <= todayStr_() ? v : ''; })(raw.STATS_START_DATE),
     allowHolidayCheckin: bool('ALLOW_HOLIDAY_CHECKIN'),
     checkoutRequiresGps: bool('CHECKOUT_REQUIRES_GPS'),
     sessionTimeoutMin: Math.min(360, Math.max(5, num('SESSION_TIMEOUT_MIN', 30))),
@@ -1153,14 +1192,17 @@ function runMaintenance_(ctx) {
     return count;
   });
   var cleaned = cleanupTempExports_();
+  var sessionsPurged = 0;
+  try { sessionsPurged = withLock_(purgeOldSessions_); } catch (es) { console.error('purge sessions: ' + es); }
   var backup = null;
   if (backupDue_()) {
     try { backup = backupDatabase_(); } catch (eb) { console.error('backup: ' + eb); backup = { error: eb.message || String(eb) }; }
   }
   var msg = 'ลบพิกัด GPS ที่เก่ากว่า ' + thaiDate_(cutoff) + ' จำนวน ' + purged + ' รายการ, ลบไฟล์รายงานชั่วคราว ' + cleaned + ' ไฟล์' +
     (holidaysAdded ? ', เพิ่มวันหยุดราชการไทย ' + holidaysAdded + ' วัน' : '') +
+    (sessionsPurged ? ', ลบประวัติการเข้าสู่ระบบเก่า ' + sessionsPurged + ' รายการ' : '') +
     (backup ? (backup.error ? ', สำรองข้อมูลไม่สำเร็จ: ' + backup.error : ', สำรองข้อมูลอัตโนมัติแล้ว') : '');
-  if (purged || holidaysAdded || backup || ctx) writeAudit_(ctx, 'MAINTENANCE', 'SYSTEM', '', { gpsPurged: purged, cutoff: cutoff, tempFilesRemoved: cleaned, holidaysAdded: holidaysAdded, backup: backup });
+  if (purged || holidaysAdded || backup || sessionsPurged || ctx) writeAudit_(ctx, 'MAINTENANCE', 'SYSTEM', '', { gpsPurged: purged, cutoff: cutoff, tempFilesRemoved: cleaned, holidaysAdded: holidaysAdded, sessionsPurged: sessionsPurged, backup: backup });
   try {
     PropertiesService.getScriptProperties().setProperties({ MAINT_LAST: nowStamp_(), MAINT_RESULT: msg.substr(0, 500) });
     PropertiesService.getScriptProperties().deleteProperty('MAINT_ERROR');

@@ -1282,6 +1282,34 @@ async function toast(page, re) { await page.locator('.toast', { hasText: re }).f
       .filter(r => r.Date === '2026-11-30' && r.Type === 'IN' && r.FullName === 'นางสาวสมศรี ใจดี').length, 1, 'บันทึกครั้งเดียว');
   });
 
+  await step('E47', 'ปฏิทิน: ปิดภาคเรียนหลายสิบวันแสดงเป็นรายการเดียว → ลบทั้งช่วงได้ในครั้งเดียว; หน้าตั้งค่ามี "เริ่มนับสถิติตั้งแต่วันที่"', async () => {
+    const d = await newPage({ desktop: true });
+    await loginOk(d, DEFAULTS.adminUser, ADMIN_NEW_PW);
+    await d.click('#toAdminBtn');
+    await d.waitForSelector('#view-admin:not([hidden])');
+    await d.click('#adminNav [data-sec="calendar"]');
+    await d.waitForSelector('#calList table');
+    await d.selectOption('#calYear', '2027');
+    await d.waitForFunction(() => /ม\.ค\. 2570/.test(document.querySelector('#calList').textContent));
+    await d.click('[data-cal-preset="break2"]');
+    await d.click('#calForm button[type=submit]');
+    await toast(d, /บันทึกปฏิทินแล้ว/);
+    const row = d.locator('#calList tr', { hasText: 'ปิดภาคเรียนที่ 2 ปีการศึกษา 2569' });
+    await row.first().waitFor();
+    assert.strictEqual(await row.count(), 1, 'ทั้งช่วงเป็นรายการเดียว');
+    assert.ok(/1 เม\.ย\. – 15 พ\.ค\. 2570/.test(await row.textContent()) && /\d+ วัน/.test(await row.textContent()), await row.textContent());
+    await d.evaluate(() => document.querySelectorAll('.toast').forEach(t => t.remove()));
+    await row.scrollIntoViewIfNeeded();
+    await shot(d, '40-calendar-range-desktop.png');
+    await row.locator('[data-del-cal]').click();
+    await modalAction(d, 'ลบ');
+    await toast(d, /ลบ “ปิดภาคเรียนที่ 2 ปีการศึกษา 2569” แล้ว/);
+    await d.waitForFunction(() => !/ปิดภาคเรียนที่ 2 ปีการศึกษา 2569/.test(document.querySelector('#calList').textContent));
+    await d.click('#adminNav [data-sec="settings"]');
+    await d.waitForSelector('#sStatsStart');
+    assert.strictEqual(await d.inputValue('#sStatsStart'), '');
+  });
+
   await step('E20', 'ไม่มี JavaScript error ในทุกหน้าที่ทดสอบ', async () => {
     assert.deepStrictEqual(pageErrors, []);
   });
